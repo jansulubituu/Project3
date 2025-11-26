@@ -9,7 +9,9 @@
     "start": "node dist/server.js",
     "test": "jest --coverage",
     "lint": "eslint . --ext .ts",
-    "lint:fix": "eslint . --ext .ts --fix"
+    "lint:fix": "eslint . --ext .ts --fix",
+    "seed": "ts-node src/scripts/seed.ts",
+    "seed:destroy": "ts-node src/scripts/seed.ts -d"
   },
   "keywords": [
     "edulearn",
