@@ -1,0 +1,211 @@
+# Project Context & History
+
+## Thông tin Dự án
+- **Tên dự án**: EduLearn - Website Học Trực Tuyến
+- **Thư mục**: C:\Thanh\HUST\20251\Project3
+- **Mục đích**: Xây dựng nền tảng học trực tuyến (E-Learning Platform) với đầy đủ tính năng quản lý khóa học, bài giảng, học viên, thanh toán, và theo dõi tiến độ học tập
+- **Ngôn ngữ chính**: TypeScript, JavaScript
+- **Framework/Libraries**: 
+  - Frontend: Next.js 14+ (App Router), React, TailwindCSS
+  - Backend: Express.js, Node.js
+  - Database: MongoDB (MongoDB Atlas)
+  - Authentication: NextAuth.js / JWT
+  - Payment: Stripe / VNPay
+
+## Lịch sử Prompt & Thay đổi
+
+### 20/11/2024
+**Prompt**: Tạo file .cursorrules để theo dõi lịch sử dự án
+**Thực hiện**: 
+- Tạo file .cursorrules với cấu trúc theo dõi lịch sử
+**Lý do**: Giúp các mô hình AI hiểu được ngữ cảnh và các quyết định trước đó
+
+### 20/11/2024 - Session 1
+**Prompt**: Tạo file .cursorrules để theo dõi lịch sử dự án
+**Thực hiện**: 
+- Tạo file .cursorrules với cấu trúc theo dõi lịch sử
+**Lý do**: Giúp các mô hình AI hiểu được ngữ cảnh và các quyết định trước đó
+
+### 20/11/2024 - Session 2
+**Prompt**: Yêu cầu kế hoạch chi tiết cho website học trực tuyến Next.js + Express.js + MongoDB
+**Thực hiện**:
+- ✅ Cập nhật .cursorrules với thông tin dự án đầy đủ
+- ✅ Tạo PROJECT_PLAN.md (6,500+ lines) - Master plan
+- ✅ Tạo docs/DATABASE_SCHEMA.md (800+ lines) - 9 collections chi tiết
+- ✅ Tạo docs/API.md (1,200+ lines) - 70+ endpoints
+- ✅ Tạo docs/GETTING_STARTED.md (500+ lines) - Setup guide từ A-Z
+- ✅ Tạo docs/ENV_TEMPLATE.md (300+ lines) - Environment variables
+- ✅ Tạo docs/DEPLOYMENT.md (600+ lines) - Production deployment
+- ✅ Tạo README.md - Project overview với badges
+- ✅ Tạo QUICKSTART.md - Quick start guide
+- ✅ Tạo DOCUMENTATION_INDEX.md - Danh mục tài liệu
+- ✅ Tạo START_HERE.md - Entry point cho người mới
+- ✅ Tạo .gitignore - Git ignore rules
+**Lý do**: Tạo bộ documentation hoàn chỉnh, chuyên nghiệp cho dự án e-learning platform
+**Outcome**: 11 files documentation (~10,000+ lines) covering every aspect from planning to deployment
+
+### 24/11/2024 - Session 3
+**Prompt**: Cấu hình base frontend và backend
+**Thực hiện**:
+- ✅ Tạo cấu trúc thư mục backend/
+  - src/ với config, controllers, models, routes, middleware, services, utils, types
+  - package.json với full dependencies (Express, TypeScript, MongoDB, JWT, etc.)
+  - tsconfig.json, .eslintrc.json
+  - server.ts - Entry point với Express app
+  - database.ts - MongoDB connection
+  - errorHandler.ts - Global error handling
+  - auth.ts middleware - JWT authentication
+  - jwt.ts utils - Token generation/verification
+- ✅ Tạo cấu trúc thư mục frontend/
+  - src/ với app, components, lib, hooks, types, store
+  - package.json với full dependencies (Next.js 14, TypeScript, TailwindCSS, etc.)
+  - tsconfig.json, next.config.js, tailwind.config.ts
+  - app/layout.tsx, app/page.tsx - Root layout & home page
+  - globals.css - TailwindCSS styles
+  - lib/api.ts - Axios client với interceptors
+  - lib/utils.ts - Helper functions
+  - types/index.ts - TypeScript types
+- ✅ Tạo environment files (.env.example, .env.local.example)
+- ✅ Tạo .gitignore cho backend & frontend
+- ✅ Tạo README.md cho backend & frontend
+- ✅ Tạo SETUP_INSTRUCTIONS.md - Hướng dẫn cài đặt chi tiết
+**Lý do**: Setup base code để có thể bắt đầu development ngay
+**Outcome**: Full project structure sẵn sàng, chỉ cần npm install và config .env là có thể chạy được
+
+---
+
+## Quy tắc & Quyết định Thiết kế
+
+### Cấu trúc Dự án
+```
+Project3/
+├── frontend/               # Next.js Application
+│   ├── src/
+│   │   ├── app/           # App Router
+│   │   ├── components/    # React Components
+│   │   ├── lib/           # Utilities & Helpers
+│   │   ├── hooks/         # Custom React Hooks
+│   │   └── types/         # TypeScript Types
+│   └── public/            # Static Assets
+├── backend/               # Express.js API
+│   ├── src/
+│   │   ├── controllers/   # Route Controllers
+│   │   ├── models/        # MongoDB Models
+│   │   ├── routes/        # API Routes
+│   │   ├── middleware/    # Express Middleware
+│   │   ├── services/      # Business Logic
+│   │   └── utils/         # Utilities
+│   └── config/            # Configuration
+└── docs/                  # Documentation
+```
+
+### Coding Standards
+- **Naming Convention**: 
+  - camelCase cho variables, functions
+  - PascalCase cho Components, Classes
+  - UPPER_SNAKE_CASE cho constants
+  - kebab-case cho files
+- **Comment Style**: 
+  - JSDoc cho functions
+  - Inline comments cho logic phức tạp
+  - TODO comments với format: // TODO: [Description]
+- **File Organization**: 
+  - Một component per file
+  - Index files cho exports
+  - Grouping by feature trong components
+
+### Quyết định Kỹ thuật
+1. **Frontend Framework**: Chọn Next.js 14 với App Router
+   - SSR/SSG cho SEO tốt hơn
+   - Built-in routing và optimization
+   - Server Components giảm bundle size
+2. **Backend Architecture**: RESTful API với Express.js
+   - Dễ scale và maintain
+   - Ecosystem mạnh mẽ
+   - Phù hợp với MongoDB
+3. **Database**: MongoDB Atlas
+   - Schema linh hoạt cho e-learning
+   - Cloud-based, dễ deploy
+   - Free tier cho development
+4. **Authentication**: JWT + NextAuth.js
+   - Stateless authentication
+   - Support OAuth providers
+   - Session management tốt
+5. **Styling**: TailwindCSS
+   - Utility-first, rapid development
+   - Consistent design system
+   - Small production bundle
+
+## Dependencies & Environment
+
+### Required Tools
+- Node.js - v18.x hoặc v20.x
+- npm hoặc yarn - Latest
+- MongoDB Atlas Account
+- Git - Latest
+- VSCode (recommended)
+
+### Environment Variables
+```env
+# Frontend (.env.local)
+NEXT_PUBLIC_API_URL=http://localhost:5000/api
+NEXTAUTH_URL=http://localhost:3000
+NEXTAUTH_SECRET=your-secret-key
+NEXT_PUBLIC_STRIPE_KEY=pk_test_xxx
+
+# Backend (.env)
+PORT=5000
+MONGODB_URI=mongodb+srv://user:pass@cluster.mongodb.net/edulearn
+JWT_SECRET=your-jwt-secret
+JWT_EXPIRE=7d
+STRIPE_SECRET_KEY=sk_test_xxx
+CLOUDINARY_URL=cloudinary://xxx
+NODE_ENV=development
+```
+
+## Known Issues & TODOs
+
+### Known Issues
+- [ ] Chưa có issues
+
+### TODO List - Phase 1 (Setup & Core)
+- [x] Setup project structure (frontend + backend) - 24/11/2024
+- [ ] Install dependencies (npm install)
+- [ ] Configure MongoDB Atlas
+- [ ] Setup Cloudinary credentials
+- [ ] Setup Stripe test keys
+- [ ] Implement authentication system
+- [ ] Create user models và API
+- [ ] Setup course models và schema
+- [ ] Build course listing page
+- [ ] Implement course detail page
+- [ ] Create admin dashboard structure
+
+## Testing Strategy
+- **Unit Tests**: Jest + React Testing Library cho components
+- **Integration Tests**: Supertest cho API endpoints
+- **E2E Tests**: Playwright cho user flows
+- **Test Coverage**: Mục tiêu 70%+ coverage cho critical paths
+
+## Important Notes for AI
+
+### Context Awareness
+- Luôn kiểm tra file này trước khi bắt đầu làm việc
+- Cập nhật lịch sử prompt sau mỗi thay đổi quan trọng
+- Ghi chú các quyết định thiết kế và lý do
+
+### Best Practices
+- Tuân thủ các quy tắc coding standards đã định nghĩa
+- Đảm bảo tính nhất quán với các quyết định trước đó
+- Hỏi người dùng nếu có mâu thuẫn với lịch sử
+
+### Update Instructions
+Khi hoàn thành một prompt quan trọng:
+1. Thêm entry mới vào phần "Lịch sử Prompt & Thay đổi"
+2. Cập nhật "Quyết định Kỹ thuật" nếu có thay đổi kiến trúc
+3. Cập nhật TODO list và Known Issues
+4. Ghi chú bất kỳ thay đổi dependencies nào
+
+---
+*File này nên được cập nhật thường xuyên để duy trì ngữ cảnh tốt cho các phiên làm việc tiếp theo.*
+

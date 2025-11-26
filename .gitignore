@@ -1,0 +1,89 @@
+# Dependencies
+node_modules/
+/.pnp
+.pnp.js
+
+# Testing
+/coverage
+
+# Next.js
+frontend/.next/
+frontend/out/
+frontend/build
+frontend/.next
+
+# Production
+build/
+dist/
+
+# Misc
+.DS_Store
+*.pem
+
+# Debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Local env files
+.env
+.env*.local
+.env.development
+.env.production
+frontend/.env.local
+backend/.env
+
+# Vercel
+.vercel
+
+# TypeScript
+*.tsbuildinfo
+next-env.d.ts
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+Thumbs.db
+
+# Logs
+logs/
+*.log
+
+# Uploads (development)
+uploads/
+temp/
+
+# Cache
+.cache/
+.parcel-cache/
+
+# MongoDB
+dump/
+
+# Coverage reports
+coverage/
+.nyc_output/
+
+/docs
+.DOCUMENTATION_INDEX.md/
+.QUICKSTART.md/
+.PROJECT_PLAN.md/
+.START_HERE.md/
+.cursorrules/
+
+.PROJECT_SETUP_COMPLETE.md/
+.SETUP_INSTRUCTIONS.md/
+.ENV_TEMPLATE.md/
+.DEPLOYMENT.md/
+.GETTING_STARTED.md/
+.DATABASE_SCHEMA.md/
+.API.md/
+
+
+
