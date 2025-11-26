@@ -73,6 +73,6 @@ coverage/
 # Documentation files - Ignore all markdown files
 *.md
 docs/
-.cursorrules
+.cursorrules/
 
 
