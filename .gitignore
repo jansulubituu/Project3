@@ -70,7 +70,7 @@ dump/
 coverage/
 .nyc_output/
 
-/docs
+docs/
 .DOCUMENTATION_INDEX.md/
 .QUICKSTART.md/
 .PROJECT_PLAN.md/
