@@ -74,7 +74,7 @@ coverage/
 *.md
 docs/
 
-# Cursor rules
-.cursorrules/
+# Cursor AI rules (personal configuration)
+.cursorrules
 
 
