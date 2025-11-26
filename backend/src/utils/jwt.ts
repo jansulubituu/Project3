@@ -1,4 +1,4 @@
-import jwt from 'jsonwebtoken';
+import jwt, { Secret } from 'jsonwebtoken';
 
 interface TokenPayload {
   id: string;
@@ -15,9 +15,9 @@ export const generateToken = (payload: TokenPayload): string => {
     throw new Error('JWT_SECRET is not defined');
   }
 
-  return jwt.sign(payload, jwtSecret, {
+  return jwt.sign(payload, jwtSecret as Secret, {
     expiresIn: jwtExpire,
-  });
+  } as jwt.SignOptions);
 };
 
 // Verify JWT token
@@ -28,7 +28,7 @@ export const verifyToken = (token: string): TokenPayload => {
     throw new Error('JWT_SECRET is not defined');
   }
 
-  return jwt.verify(token, jwtSecret) as TokenPayload;
+  return jwt.verify(token, jwtSecret as Secret) as TokenPayload;
 };
 
 
