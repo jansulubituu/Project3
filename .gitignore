@@ -70,29 +70,9 @@ dump/
 coverage/
 .nyc_output/
 
+# Documentation files - Ignore all markdown files
+*.md
 docs/
-.DOCUMENTATION_INDEX.md/
-.QUICKSTART.md/
-.PROJECT_PLAN.md/
-.START_HERE.md/
-.cursorrules/
-
-.PROJECT_SETUP_COMPLETE.md/
-.SETUP_INSTRUCTIONS.md/
-.ENV_TEMPLATE.md/
-.DEPLOYMENT.md/
-.GETTING_STARTED.md/
-.DATABASE_SCHEMA.md/
-.API.md/
-.README.md/
-.LICENSE.md/
-.CHANGELOG.md/
-.CONTRIBUTING.md/
-.CODE_OF_CONDUCT.md/
-.SECURITY.md/
-.SUPPORT.md/
-.FAQ.md/
-.ROADMAP.md/
-.ROADMAP.md/
+.cursorrules
 
 
