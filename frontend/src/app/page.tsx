@@ -5,6 +5,8 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { api } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
+import Header from '@/components/layout/Header';
+import Footer from '@/components/layout/Footer';
 
 interface Category {
   _id: string;
@@ -40,11 +42,10 @@ interface Course {
 }
 
 export default function LandingPage() {
-  const { isAuthenticated, user } = useAuth();
+  const { isAuthenticated } = useAuth();
   const [categories, setCategories] = useState<Category[]>([]);
   const [featuredCourses, setFeaturedCourses] = useState<Course[]>([]);
   const [loading, setLoading] = useState(true);
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   useEffect(() => {
     fetchData();
@@ -78,147 +79,10 @@ export default function LandingPage() {
   };
 
   return (
-    <div className="min-h-screen bg-white">
-      {/* Navigation */}
-      <nav className="bg-white shadow-sm sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
-            <div className="flex items-center">
-              <Link href="/" className="text-xl sm:text-2xl font-bold text-gray-900">
-                🎓 EduLearn
-              </Link>
-            </div>
-            
-            {/* Desktop Navigation */}
-            <div className="hidden md:flex items-center space-x-6 lg:space-x-8">
-              <Link href="/#features" className="text-sm lg:text-base text-gray-700 hover:text-blue-600 transition-colors">
-                Tính năng
-              </Link>
-              <Link href="/#categories" className="text-sm lg:text-base text-gray-700 hover:text-blue-600 transition-colors">
-                Danh mục
-              </Link>
-              <Link href="/#courses" className="text-sm lg:text-base text-gray-700 hover:text-blue-600 transition-colors">
-                Khóa học
-              </Link>
-              {isAuthenticated ? (
-                <div className="flex items-center space-x-3 lg:space-x-4">
-                  <Link
-                    href="/dashboard"
-                    className="text-sm lg:text-base text-gray-700 hover:text-blue-600 transition-colors"
-                  >
-                    Dashboard
-                  </Link>
-                  <Link
-                    href="/profile"
-                    className="px-3 lg:px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm lg:text-base"
-                  >
-                    {user?.fullName || 'Profile'}
-                  </Link>
-                </div>
-              ) : (
-                <div className="flex items-center space-x-3 lg:space-x-4">
-                  <Link
-                    href="/login"
-                    className="text-sm lg:text-base text-gray-700 hover:text-blue-600 transition-colors"
-                  >
-                    Đăng nhập
-                  </Link>
-                  <Link
-                    href="/register"
-                    className="px-3 lg:px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm lg:text-base"
-                  >
-                    Đăng ký
-                  </Link>
-                </div>
-              )}
-            </div>
+    <div className="min-h-screen bg-white flex flex-col">
+      <Header />
 
-            {/* Mobile Menu Button */}
-            <button
-              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="md:hidden p-2 rounded-md text-gray-700 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              aria-label="Toggle menu"
-            >
-              {mobileMenuOpen ? (
-                <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              ) : (
-                <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-                </svg>
-              )}
-            </button>
-          </div>
-
-          {/* Mobile Menu */}
-          {mobileMenuOpen && (
-            <div className="md:hidden py-4 border-t">
-              <div className="flex flex-col space-y-3">
-                <Link
-                  href="/#features"
-                  onClick={() => setMobileMenuOpen(false)}
-                  className="text-gray-700 hover:text-blue-600 transition-colors px-2 py-1"
-                >
-                  Tính năng
-                </Link>
-                <Link
-                  href="/#categories"
-                  onClick={() => setMobileMenuOpen(false)}
-                  className="text-gray-700 hover:text-blue-600 transition-colors px-2 py-1"
-                >
-                  Danh mục
-                </Link>
-                <Link
-                  href="/#courses"
-                  onClick={() => setMobileMenuOpen(false)}
-                  className="text-gray-700 hover:text-blue-600 transition-colors px-2 py-1"
-                >
-                  Khóa học
-                </Link>
-                <div className="pt-2 border-t">
-                  {isAuthenticated ? (
-                    <>
-                      <Link
-                        href="/dashboard"
-                        onClick={() => setMobileMenuOpen(false)}
-                        className="block text-gray-700 hover:text-blue-600 transition-colors px-2 py-1"
-                      >
-                        Dashboard
-                      </Link>
-                      <Link
-                        href="/profile"
-                        onClick={() => setMobileMenuOpen(false)}
-                        className="block px-2 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors mt-2"
-                      >
-                        {user?.fullName || 'Profile'}
-                      </Link>
-                    </>
-                  ) : (
-                    <>
-                      <Link
-                        href="/login"
-                        onClick={() => setMobileMenuOpen(false)}
-                        className="block text-gray-700 hover:text-blue-600 transition-colors px-2 py-1"
-                      >
-                        Đăng nhập
-                      </Link>
-                      <Link
-                        href="/register"
-                        onClick={() => setMobileMenuOpen(false)}
-                        className="block px-2 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors mt-2"
-                      >
-                        Đăng ký
-                      </Link>
-                    </>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-      </nav>
-
+      <main className="flex-1">
       {/* Hero Section */}
       <section className="bg-gradient-to-br from-blue-600 via-indigo-600 to-purple-600 text-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16 sm:py-20 md:py-24 lg:py-32">
@@ -533,83 +397,8 @@ export default function LandingPage() {
           )}
         </div>
       </section>
-
-      {/* Footer */}
-      <footer className="bg-gray-900 text-gray-300 py-8 sm:py-12">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 sm:gap-8">
-            <div>
-              <h3 className="text-xl sm:text-2xl font-bold text-white mb-3 sm:mb-4">🎓 EduLearn</h3>
-              <p className="text-xs sm:text-sm">
-                Nền tảng học trực tuyến hàng đầu với hàng ngàn khóa học chất lượng cao.
-              </p>
-            </div>
-            <div>
-              <h4 className="font-semibold text-white mb-3 sm:mb-4 text-sm sm:text-base">Khóa học</h4>
-              <ul className="space-y-2 text-xs sm:text-sm">
-                <li>
-                  <Link href="/courses" className="hover:text-white transition-colors">
-                    Tất cả khóa học
-                  </Link>
-                </li>
-                <li>
-                  <Link href="/courses?level=beginner" className="hover:text-white transition-colors">
-                    Khóa học cho người mới
-                  </Link>
-                </li>
-                <li>
-                  <Link href="/courses?level=advanced" className="hover:text-white transition-colors">
-                    Khóa học nâng cao
-                  </Link>
-                </li>
-              </ul>
-            </div>
-            <div>
-              <h4 className="font-semibold text-white mb-3 sm:mb-4 text-sm sm:text-base">Về chúng tôi</h4>
-              <ul className="space-y-2 text-xs sm:text-sm">
-                <li>
-                  <Link href="/about" className="hover:text-white transition-colors">
-                    Giới thiệu
-                  </Link>
-                </li>
-                <li>
-                  <Link href="/contact" className="hover:text-white transition-colors">
-                    Liên hệ
-                  </Link>
-                </li>
-                <li>
-                  <Link href="/blog" className="hover:text-white transition-colors">
-                    Blog
-                  </Link>
-                </li>
-              </ul>
-            </div>
-            <div>
-              <h4 className="font-semibold text-white mb-3 sm:mb-4 text-sm sm:text-base">Hỗ trợ</h4>
-              <ul className="space-y-2 text-xs sm:text-sm">
-                <li>
-                  <Link href="/help" className="hover:text-white transition-colors">
-                    Trung tâm trợ giúp
-                  </Link>
-                </li>
-                <li>
-                  <Link href="/faq" className="hover:text-white transition-colors">
-                    Câu hỏi thường gặp
-                  </Link>
-                </li>
-                <li>
-                  <Link href="/terms" className="hover:text-white transition-colors">
-                    Điều khoản sử dụng
-                  </Link>
-                </li>
-              </ul>
-            </div>
-          </div>
-          <div className="mt-6 sm:mt-8 pt-6 sm:pt-8 border-t border-gray-800 text-center text-xs sm:text-sm">
-            <p>&copy; 2024 EduLearn. All rights reserved.</p>
-          </div>
-        </div>
-      </footer>
+      </main>
+      <Footer />
     </div>
   );
 }

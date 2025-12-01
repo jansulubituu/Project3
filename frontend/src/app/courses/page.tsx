@@ -5,7 +5,8 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 import CourseCard from '@/components/courses/CourseCard';
 import CourseFilters from '@/components/courses/CourseFilters';
-import Link from 'next/link';
+import Header from '@/components/layout/Header';
+import Footer from '@/components/layout/Footer';
 
 interface Category {
   _id: string;
@@ -154,33 +155,8 @@ function CoursesPageContent() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white shadow">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <div className="flex justify-between items-center">
-            <div className="flex items-center space-x-4">
-              <Link href="/" className="text-2xl font-bold text-gray-900">
-                🎓 EduLearn
-              </Link>
-              <nav className="hidden md:flex space-x-4">
-                <Link href="/" className="text-gray-700 hover:text-blue-600">
-                  Trang chủ
-                </Link>
-                <Link href="/courses" className="text-blue-600 font-medium">
-                  Khóa học
-                </Link>
-              </nav>
-            </div>
-            <Link
-              href="/login"
-              className="text-sm text-gray-700 hover:text-blue-600 font-medium"
-            >
-              Đăng nhập
-            </Link>
-          </div>
-        </div>
-      </header>
+    <div className="min-h-screen bg-gray-50 flex flex-col">
+      <Header />
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -346,6 +322,7 @@ function CoursesPageContent() {
           </div>
         </div>
       </main>
+      <Footer />
     </div>
   );
 }
