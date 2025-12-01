@@ -7,17 +7,26 @@ import {
   deactivateUser,
   activateUser,
   getUserStats,
+  getMyProfile,
+  uploadAvatar,
+  getUserCourses,
 } from '../controllers/userController';
 import { protect } from '../middleware/auth';
 import { adminOnly } from '../middleware/authorize';
+import { uploadSingle } from '../middleware/upload';
 
 const router = Router();
 
 // Public routes
 router.get('/:id', getUserById);
+router.get('/:id/courses', getUserCourses);
+
+// Protected routes - Own profile
+router.get('/me/profile', protect, getMyProfile);
 
 // Protected routes - Own profile or Admin
 router.put('/:id', protect, updateUser);
+router.post('/:id/avatar', protect, uploadSingle, uploadAvatar);
 
 // Admin only routes
 router.get('/', protect, adminOnly, getAllUsers);

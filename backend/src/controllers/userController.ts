@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { User, Course, Enrollment, Review, Payment } from '../models';
 import mongoose from 'mongoose';
+import { uploadImageFromBuffer, deleteImage } from '../config/cloudinary';
 
 // @desc    Get all users (Admin only)
 // @route   GET /api/users
@@ -15,7 +16,7 @@ export const getAllUsers = async (req: Request, res: Response) => {
       isActive,
     } = req.query;
 
-    const query: any = {};
+    const query: Record<string, unknown> = {};
 
     // Filter by role
     if (role) {
@@ -161,7 +162,7 @@ export const updateUser = async (req: Request, res: Response) => {
     // Update only allowed fields
     allowedFields.forEach((field) => {
       if (req.body[field] !== undefined) {
-        (user as any)[field] = req.body[field];
+        (user as unknown as Record<string, unknown>)[field] = req.body[field];
       }
     });
 
@@ -393,7 +394,7 @@ export const getUserStats = async (req: Request, res: Response) => {
       });
     }
 
-    const stats: any = {
+    const stats: Record<string, unknown> = {
       userId: user._id,
       email: user.email,
       fullName: user.fullName,
@@ -454,6 +455,261 @@ export const getUserStats = async (req: Request, res: Response) => {
     });
   } catch (error) {
     console.error('Get user stats error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Server error',
+    });
+  }
+};
+
+// @desc    Get own profile (detailed)
+// @route   GET /api/users/me/profile
+// @access  Private
+export const getMyProfile = async (req: Request, res: Response) => {
+  try {
+    const user = await User.findById(req.user!.id)
+      .select('-password -emailVerificationToken -resetPasswordToken -emailOTP');
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        error: 'User not found',
+      });
+    }
+
+    // Get additional data based on role
+    let additionalData: Record<string, unknown> = {};
+
+    if (user.role === 'student') {
+      const enrollments = await Enrollment.find({ student: user._id })
+        .populate('course', 'title thumbnail price')
+        .sort({ enrolledAt: -1 })
+        .limit(10);
+
+      const totalEnrollments = await Enrollment.countDocuments({ student: user._id });
+      const completedCourses = await Enrollment.countDocuments({
+        student: user._id,
+        status: 'completed',
+      });
+
+      additionalData = {
+        enrollments: enrollments.slice(0, 5), // Recent 5
+        totalEnrollments,
+        completedCourses,
+      };
+    } else if (user.role === 'instructor') {
+      const courses = await Course.find({ instructor: user._id })
+        .select('title thumbnail price status enrollmentCount averageRating')
+        .sort({ createdAt: -1 })
+        .limit(10);
+
+      const totalCourses = await Course.countDocuments({ instructor: user._id });
+      const publishedCourses = await Course.countDocuments({
+        instructor: user._id,
+        status: 'published',
+      });
+      const totalStudents = await Course.aggregate([
+        { $match: { instructor: user._id } },
+        { $group: { _id: null, total: { $sum: '$enrollmentCount' } } },
+      ]);
+
+      additionalData = {
+        courses: courses.slice(0, 5), // Recent 5
+        totalCourses,
+        publishedCourses,
+        totalStudents: totalStudents[0]?.total || 0,
+      };
+    }
+
+    res.json({
+      success: true,
+      user: {
+        ...user.toObject(),
+        ...additionalData,
+      },
+    });
+  } catch (error) {
+    console.error('Get my profile error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Server error',
+    });
+  }
+};
+
+// @desc    Upload avatar
+// @route   POST /api/users/:id/avatar
+// @access  Private (Own profile or Admin)
+export const uploadAvatar = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    // Validate ObjectId
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid user ID',
+      });
+    }
+
+    // Check if user can update (own profile or admin)
+    if (req.user?.id !== id && req.user?.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        error: 'Not authorized to update this user',
+      });
+    }
+
+    // Check if file is uploaded
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        error: 'No file uploaded',
+      });
+    }
+
+    const user = await User.findById(id);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        error: 'User not found',
+      });
+    }
+
+    // Upload to Cloudinary
+    try {
+      const uploadResult = await uploadImageFromBuffer(
+        req.file.buffer,
+        req.file.mimetype,
+        'edulearn/avatars',
+        `avatar-${user._id}`
+      );
+
+      // Delete old avatar from Cloudinary if exists and not default
+      if (user.avatar && !user.avatar.includes('default-avatar')) {
+        try {
+          // Extract public_id from URL if possible
+          const oldPublicId = user.avatar.split('/').pop()?.split('.')[0];
+          if (oldPublicId) {
+            await deleteImage(oldPublicId);
+          }
+        } catch (deleteError) {
+          // Ignore delete errors (image might not exist in Cloudinary)
+          console.warn('Failed to delete old avatar:', deleteError);
+        }
+      }
+
+      // Update user avatar
+      user.avatar = uploadResult.secure_url;
+      await user.save();
+
+      res.json({
+        success: true,
+        message: 'Avatar uploaded successfully',
+        avatar: user.avatar,
+      });
+    } catch (uploadError) {
+      console.error('Avatar upload error:', uploadError);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to upload avatar',
+      });
+    }
+  } catch (error) {
+    console.error('Upload avatar error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Server error',
+    });
+  }
+};
+
+// @desc    Get user's courses (for instructor) or enrollments (for student)
+// @route   GET /api/users/:id/courses
+// @access  Public (or Private for own data)
+export const getUserCourses = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { page = 1, limit = 10, status } = req.query;
+
+    // Validate ObjectId
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid user ID',
+      });
+    }
+
+    const user = await User.findById(id).select('role');
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        error: 'User not found',
+      });
+    }
+
+    const skip = (Number(page) - 1) * Number(limit);
+
+    if (user.role === 'instructor') {
+      // Get instructor's courses
+      const query: any = { instructor: id };
+      if (status) {
+        query.status = status;
+      }
+
+      const courses = await Course.find(query)
+        .select('title thumbnail price status enrollmentCount averageRating totalReviews createdAt')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(Number(limit));
+
+      const total = await Course.countDocuments(query);
+
+      res.json({
+        success: true,
+        type: 'courses',
+        pagination: {
+          currentPage: Number(page),
+          totalPages: Math.ceil(total / Number(limit)),
+          totalItems: total,
+          itemsPerPage: Number(limit),
+        },
+        courses,
+      });
+    } else if (user.role === 'student') {
+      // Get student's enrollments
+      const query: any = { student: id };
+      if (status) {
+        query.status = status;
+      }
+
+      const enrollments = await Enrollment.find(query)
+        .populate('course', 'title thumbnail price instructor category')
+        .sort({ enrolledAt: -1 })
+        .skip(skip)
+        .limit(Number(limit));
+
+      const total = await Enrollment.countDocuments(query);
+
+      res.json({
+        success: true,
+        type: 'enrollments',
+        pagination: {
+          currentPage: Number(page),
+          totalPages: Math.ceil(total / Number(limit)),
+          totalItems: total,
+          itemsPerPage: Number(limit),
+        },
+        enrollments,
+      });
+    } else {
+      return res.status(400).json({
+        success: false,
+        error: 'User role does not have courses/enrollments',
+      });
+    }
+  } catch (error) {
+    console.error('Get user courses error:', error);
     res.status(500).json({
       success: false,
       error: 'Server error',
