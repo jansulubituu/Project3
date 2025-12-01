@@ -2,7 +2,37 @@
 const nextConfig = {
   reactStrictMode: true,
   images: {
-    domains: ['res.cloudinary.com', 'localhost'],
+    // Use remotePatterns (recommended) instead of domains (deprecated)
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: 'res.cloudinary.com',
+        pathname: '/**',
+      },
+      {
+        protocol: 'http',
+        hostname: 'localhost',
+        pathname: '/**',
+      },
+      {
+        protocol: 'https',
+        hostname: 'picsum.photos',
+        pathname: '/**',
+      },
+      {
+        protocol: 'https',
+        hostname: 'i.pravatar.cc',
+        pathname: '/**',
+      },
+      // Add other image hosts as needed
+      {
+        protocol: 'https',
+        hostname: '**.cloudinary.com',
+        pathname: '/**',
+      },
+    ],
+    // Fallback to domains for backward compatibility
+    domains: ['res.cloudinary.com', 'localhost', 'picsum.photos', 'i.pravatar.cc'],
     formats: ['image/avif', 'image/webp'],
   },
   env: {
