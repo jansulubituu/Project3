@@ -11,7 +11,8 @@
     "lint": "eslint . --ext .ts",
     "lint:fix": "eslint . --ext .ts --fix",
     "seed": "ts-node src/scripts/seed.ts",
-    "seed:destroy": "ts-node src/scripts/seed.ts -d"
+    "seed:destroy": "ts-node src/scripts/seed.ts -d",
+    "test:email": "ts-node src/scripts/test-email.ts"
   },
   "keywords": [
     "edulearn",

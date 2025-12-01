@@ -1,0 +1,222 @@
+### EduLearn API Tests
+### Sử dụng VS Code REST Client extension
+### Hoặc copy vào Postman/Thunder Client
+
+@baseUrl = http://localhost:5000/api
+@token = 
+@adminToken = 
+
+### ============================================
+### HEALTH CHECK
+### ============================================
+
+### Server Health
+GET {{baseUrl}}/health
+
+### ============================================
+### AUTHENTICATION
+### ============================================
+
+### 1. Register Student
+# @name register
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "email": "test@example.com",
+  "password": "password123",
+  "fullName": "Test User",
+  "role": "student"
+}
+
+### 2. Login Student
+# @name loginStudent
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "student@edulearn.com",
+  "password": "Student123!"
+}
+
+### 3. Login Admin
+# @name loginAdmin
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "admin@edulearn.com",
+  "password": "Admin123!"
+}
+
+### 4. Get Current User
+GET {{baseUrl}}/auth/me
+Authorization: Bearer {{token}}
+
+### 5. Verify OTP
+POST {{baseUrl}}/auth/verify-otp
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "otp": "123456"
+}
+
+### 6. Resend OTP
+POST {{baseUrl}}/auth/resend-otp
+Authorization: Bearer {{token}}
+
+### 7. Forgot Password
+POST {{baseUrl}}/auth/forgot-password
+Content-Type: application/json
+
+{
+  "email": "student@edulearn.com"
+}
+
+### 8. Reset Password
+POST {{baseUrl}}/auth/reset-password/YOUR_RESET_TOKEN
+Content-Type: application/json
+
+{
+  "password": "newPassword123"
+}
+
+### 9. Update Password
+PUT {{baseUrl}}/auth/update-password
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "currentPassword": "password123",
+  "newPassword": "newPassword456"
+}
+
+### 10. Logout
+POST {{baseUrl}}/auth/logout
+Authorization: Bearer {{token}}
+
+### ============================================
+### USER MANAGEMENT (ADMIN)
+### ============================================
+
+### 1. Get All Users
+GET {{baseUrl}}/users?page=1&limit=20
+Authorization: Bearer {{adminToken}}
+
+### 2. Get All Students
+GET {{baseUrl}}/users?role=student&isActive=true
+Authorization: Bearer {{adminToken}}
+
+### 3. Search Users
+GET {{baseUrl}}/users?search=john
+Authorization: Bearer {{adminToken}}
+
+### 4. Get User By ID (Public)
+GET {{baseUrl}}/users/USER_ID_HERE
+
+### 5. Get User Stats (Admin)
+GET {{baseUrl}}/users/USER_ID_HERE/stats
+Authorization: Bearer {{adminToken}}
+
+### 6. Update User Profile
+PUT {{baseUrl}}/users/USER_ID_HERE
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "fullName": "Updated Name",
+  "bio": "New bio",
+  "headline": "Software Developer"
+}
+
+### 7. Deactivate User (Admin) - SOFT DELETE
+PUT {{baseUrl}}/users/USER_ID_HERE/deactivate
+Authorization: Bearer {{adminToken}}
+
+### 8. Activate User (Admin)
+PUT {{baseUrl}}/users/USER_ID_HERE/activate
+Authorization: Bearer {{adminToken}}
+
+### 9. Delete User (Admin) ⚠️ HARD DELETE
+DELETE {{baseUrl}}/users/USER_ID_HERE
+Authorization: Bearer {{adminToken}}
+
+### ============================================
+### QUICK TEST FLOW
+### ============================================
+
+### Step 1: Login as Admin
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "admin@edulearn.com",
+  "password": "Admin123!"
+}
+
+# Copy token from response
+# Replace @adminToken at top of file
+
+### Step 2: Get All Users
+GET {{baseUrl}}/users
+Authorization: Bearer YOUR_ADMIN_TOKEN_HERE
+
+# Copy a user ID from response
+
+### Step 3: Delete User
+DELETE {{baseUrl}}/users/USER_ID_FROM_STEP_2
+Authorization: Bearer YOUR_ADMIN_TOKEN_HERE
+
+# Expected: "User deleted successfully"
+
+### Step 4: Verify Deletion
+GET {{baseUrl}}/users
+Authorization: Bearer YOUR_ADMIN_TOKEN_HERE
+
+# User should not be in list anymore
+
+### ============================================
+### TEST SCENARIOS
+### ============================================
+
+### Scenario 1: Register New User + Verify OTP
+# 1. Run "Register" request
+# 2. Check backend console for OTP
+# 3. Copy token to @token variable
+# 4. Run "Verify OTP" with OTP from console
+# 5. Run "Get Current User" to verify
+
+### Scenario 2: Admin Delete User
+# 1. Run "Login as Admin"
+# 2. Copy admin token
+# 3. Run "Get All Users"
+# 4. Copy a student user ID
+# 5. Run "Delete User" with that ID
+# 6. Verify with "Get All Users" again
+
+### Scenario 3: Deactivate/Activate User
+# 1. Login as Admin
+# 2. Deactivate a user
+# 3. Try login as that user (should fail)
+# 4. Activate user again
+# 5. Login works again
+
+### ============================================
+### NOTES
+### ============================================
+
+# • Replace {{token}} và {{adminToken}} với actual tokens
+# • Replace USER_ID_HERE với actual user IDs từ responses
+# • Backend phải đang chạy: npm run dev
+# • Database phải có data: npm run seed
+# • Check backend console cho OTP codes (development mode)
+
+### ============================================
+### VARIABLES TO UPDATE
+### ============================================
+
+# Sau khi login, update ở đầu file:
+# @token = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+# @adminToken = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+

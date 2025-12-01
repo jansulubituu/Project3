@@ -22,6 +22,8 @@ export interface IUser extends Document {
   isEmailVerified: boolean;
   emailVerificationToken?: string;
   emailVerificationExpires?: Date;
+  emailOTP?: string;
+  emailOTPExpires?: Date;
   resetPasswordToken?: string;
   resetPasswordExpires?: Date;
   isActive: boolean;
@@ -34,6 +36,7 @@ export interface IUser extends Document {
   generateAuthToken(): string;
   generateResetPasswordToken(): string;
   generateEmailVerificationToken(): string;
+  generateEmailOTP(): string;
 }
 
 const userSchema = new Schema<IUser>(
@@ -97,6 +100,8 @@ const userSchema = new Schema<IUser>(
     },
     emailVerificationToken: String,
     emailVerificationExpires: Date,
+    emailOTP: String,
+    emailOTPExpires: Date,
     resetPasswordToken: String,
     resetPasswordExpires: Date,
     isActive: {
@@ -176,6 +181,23 @@ userSchema.methods.generateEmailVerificationToken = function (): string {
   this.emailVerificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
   
   return verificationToken;
+};
+
+// Generate 6-digit OTP for email verification
+userSchema.methods.generateEmailOTP = function (): string {
+  // Generate 6-digit OTP
+  const otp = Math.floor(100000 + Math.random() * 900000).toString();
+  
+  // Hash OTP before storing (optional, for extra security)
+  this.emailOTP = crypto
+    .createHash('sha256')
+    .update(otp)
+    .digest('hex');
+  
+  // OTP expires in 10 minutes
+  this.emailOTPExpires = new Date(Date.now() + 10 * 60 * 1000);
+  
+  return otp; // Return plain OTP to send via email
 };
 
 // Virtual for courses (populated when needed)

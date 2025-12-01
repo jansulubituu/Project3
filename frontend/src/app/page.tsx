@@ -43,6 +43,22 @@ export default function Home() {
           <p className="text-xl text-gray-600">
             E-Learning Platform
           </p>
+          
+          {/* Auth Buttons */}
+          <div className="flex justify-center gap-4 mt-6">
+            <a
+              href="/login"
+              className="px-6 py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors"
+            >
+              Đăng nhập
+            </a>
+            <a
+              href="/register"
+              className="px-6 py-3 bg-white text-blue-600 border-2 border-blue-600 rounded-lg font-medium hover:bg-blue-50 transition-colors"
+            >
+              Đăng ký
+            </a>
+          </div>
         </div>
 
         {/* Backend Status Card */}

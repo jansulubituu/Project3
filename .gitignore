@@ -75,6 +75,8 @@ coverage/
 docs/
 
 # Cursor AI rules (personal configuration)
-.cursorrules
+.cursorrules/
 
-
+# Postman Collections
+EduLearn_API_Collection.postman_collection.json
+EduLearn_API_Environment.postman_environment.json

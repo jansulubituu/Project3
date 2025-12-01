@@ -47,9 +47,13 @@ app.get('/api/health', (_req: Request, res: Response) => {
   });
 });
 
-// API Routes (will be added later)
-// app.use('/api/auth', authRoutes);
-// app.use('/api/users', userRoutes);
+// Import routes
+import authRoutes from './routes/authRoutes';
+import userRoutes from './routes/userRoutes';
+
+// API Routes
+app.use('/api/auth', authRoutes);
+app.use('/api/users', userRoutes);
 // app.use('/api/courses', courseRoutes);
 // app.use('/api/enrollments', enrollmentRoutes);
 // app.use('/api/reviews', reviewRoutes);
