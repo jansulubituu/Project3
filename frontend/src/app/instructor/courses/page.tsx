@@ -33,9 +33,12 @@ function InstructorCoursesContent() {
       if (!user?.id) return;
       try {
         setLoading(true);
-        const params = filter !== 'all' ? { status: filter } : {};
-        const response = await api.get(`/users/${user.id}/courses`, { params });
-        if (response.data.success && response.data.type === 'courses') {
+        const params: Record<string, string | number> = {};
+        if (filter !== 'all') {
+          params.status = filter;
+        }
+        const response = await api.get('/courses/mine/list', { params });
+        if (response.data.success) {
           setCourses(response.data.courses || []);
         } else {
           setCourses([]);
