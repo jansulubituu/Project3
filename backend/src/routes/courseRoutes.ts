@@ -10,11 +10,13 @@ import {
   publishCourse,
   getMyCourses,
   getAdminCourses,
+  uploadCourseThumbnail,
 } from '../controllers/courseController';
 import { protect } from '../middleware/auth';
 import { instructorOrAdmin, adminOnly } from '../middleware/authorize';
 import { body } from 'express-validator';
 import { validate } from '../middleware/validation';
+import { uploadSingle } from '../middleware/upload';
 
 const router = Router();
 
@@ -110,6 +112,7 @@ router.get('/:id/reviews', getCourseReviews);
 // Management routes
 router.get('/mine/list', protect, instructorOrAdmin, getMyCourses);
 router.get('/admin/list', protect, adminOnly, getAdminCourses);
+router.post('/:id/thumbnail', protect, instructorOrAdmin, uploadSingle, uploadCourseThumbnail);
 
 // Protected routes - Instructor or Admin
 router.post('/', protect, instructorOrAdmin, createCourseValidation, createCourse);

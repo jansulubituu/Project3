@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { Course, Category, Section, Lesson, Review, Enrollment } from '../models';
 import mongoose from 'mongoose';
+import { uploadImageFromBuffer, deleteImage } from '../config/cloudinary';
 
 // @desc    Get all published courses (Public catalog)
 // @route   GET /api/courses
@@ -751,6 +752,90 @@ export const publishCourse = async (req: Request, res: Response) => {
     res.status(500).json({
       success: false,
       message: 'Error publishing course',
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+};
+
+// @desc    Upload course thumbnail
+// @route   POST /api/courses/:id/thumbnail
+// @access  Private/Instructor (own course) or Admin
+export const uploadCourseThumbnail = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid course ID',
+      });
+    }
+
+    const course = await Course.findById(id);
+
+    if (!course) {
+      return res.status(404).json({
+        success: false,
+        message: 'Course not found',
+      });
+    }
+
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required',
+      });
+    }
+
+    if (req.user.role !== 'admin' && course.instructor.toString() !== req.user.id) {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized to upload thumbnail for this course',
+      });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'No file uploaded',
+      });
+    }
+
+    // Upload new thumbnail to Cloudinary
+    const uploadResult = await uploadImageFromBuffer(
+      req.file.buffer,
+      req.file.mimetype,
+      'edulearn/course-thumbnails',
+      `course-thumb-${course._id}`
+    );
+
+    // Optionally try to delete old thumbnail if it's a Cloudinary URL
+    if (course.thumbnail && course.thumbnail.includes('res.cloudinary.com')) {
+      try {
+        const parts = course.thumbnail.split('/');
+        const last = parts[parts.length - 1];
+        const publicId = last.split('.')[0];
+        if (publicId) {
+          await deleteImage(publicId);
+        }
+      } catch (deleteError) {
+        console.warn('Failed to delete old course thumbnail:', deleteError);
+      }
+    }
+
+    course.thumbnail = uploadResult.secure_url;
+    await course.save();
+
+    res.json({
+      success: true,
+      message: 'Thumbnail uploaded successfully',
+      thumbnail: course.thumbnail,
+    });
+  } catch (error) {
+    console.error('Upload course thumbnail error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error uploading course thumbnail',
       error: error instanceof Error ? error.message : 'Unknown error',
     });
   }
