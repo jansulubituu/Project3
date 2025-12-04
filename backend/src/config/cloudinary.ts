@@ -131,5 +131,44 @@ export const uploadVideo = async (
   }
 };
 
+/**
+ * Upload video from buffer (for multer)
+ * @param buffer - File buffer from multer
+ * @param folder - Folder name in Cloudinary (optional)
+ * @returns Upload result with secure_url
+ */
+export const uploadVideoFromBuffer = async (
+  buffer: Buffer,
+  folder?: string
+): Promise<{ secure_url: string; public_id: string }> => {
+  try {
+    return new Promise((resolve, reject) => {
+      const uploadStream = cloudinary.uploader.upload_stream(
+        {
+          resource_type: 'video',
+          folder: folder || 'edulearn/videos',
+        },
+        (error, result) => {
+          if (error) {
+            reject(error);
+          } else if (result) {
+            resolve({
+              secure_url: result.secure_url,
+              public_id: result.public_id,
+            });
+          } else {
+            reject(new Error('Upload failed'));
+          }
+        }
+      );
+
+      uploadStream.end(buffer);
+    });
+  } catch (error) {
+    console.error('Cloudinary video upload from buffer error:', error);
+    throw new Error('Failed to upload video to Cloudinary');
+  }
+};
+
 export default cloudinary;
 

@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { uploadImageFromBuffer } from '../config/cloudinary';
+import { uploadImageFromBuffer, uploadVideoFromBuffer } from '../config/cloudinary';
 
 // @desc    Upload generic image (e.g. course thumbnail)
 // @route   POST /api/uploads/image
@@ -22,11 +22,7 @@ export const uploadImageHandler = async (req: Request, res: Response) => {
 
     const folder = (req.query.folder as string) || 'edulearn/uploads';
 
-    const result = await uploadImageFromBuffer(
-      req.file.buffer,
-      req.file.mimetype,
-      folder
-    );
+    const result = await uploadImageFromBuffer(req.file.buffer, req.file.mimetype, folder);
 
     return res.json({
       success: true,
@@ -44,4 +40,50 @@ export const uploadImageHandler = async (req: Request, res: Response) => {
   }
 };
 
+// @desc    Upload lesson video
+// @route   POST /api/uploads/video
+// @access  Private (authenticated)
+export const uploadVideoHandler = async (req: Request, res: Response) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required',
+      });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'No file uploaded',
+      });
+    }
+
+    const maxSizeMb = 100;
+    if (req.file.size > maxSizeMb * 1024 * 1024) {
+      return res.status(400).json({
+        success: false,
+        message: `Video size must be <= ${maxSizeMb}MB`,
+      });
+    }
+
+    const folder = (req.query.folder as string) || 'edulearn/lesson-videos';
+
+    const result = await uploadVideoFromBuffer(req.file.buffer, folder);
+
+    return res.json({
+      success: true,
+      message: 'Video uploaded successfully',
+      url: result.secure_url,
+      publicId: result.public_id,
+    });
+  } catch (error) {
+    console.error('Video upload error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to upload video',
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+};
 

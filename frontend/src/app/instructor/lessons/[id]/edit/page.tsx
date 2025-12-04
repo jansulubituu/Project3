@@ -63,6 +63,10 @@ function EditLessonContent() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
+  const [videoSource, setVideoSource] = useState<'upload' | 'url'>('url');
+  const [videoUploading, setVideoUploading] = useState(false);
+  const [videoUploadError, setVideoUploadError] = useState<string | null>(null);
+
   useEffect(() => {
     if (!lessonId) return;
 
@@ -461,48 +465,147 @@ function EditLessonContent() {
               {form.type === 'video' && (
                 <div className="space-y-4 border-t border-gray-200 pt-4">
                   <h2 className="text-lg font-semibold text-gray-900">Nội dung video</h2>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="md:col-span-2">
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Video URL
+                  <div className="space-y-3">
+                    <div className="flex flex-wrap gap-4 items-center">
+                      <span className="text-sm font-medium text-gray-700">Nguồn video:</span>
+                      <label className="inline-flex items-center text-sm text-gray-700">
+                        <input
+                          type="radio"
+                          name="videoSource"
+                          value="url"
+                          checked={videoSource === 'url'}
+                          onChange={() => setVideoSource('url')}
+                          className="h-4 w-4 text-blue-600 border-gray-300"
+                        />
+                        <span className="ml-2">Đường link (YouTube / URL khác)</span>
                       </label>
-                      <input
-                        type="text"
-                        name="videoUrl"
-                        value={form.videoUrl}
+                      <label className="inline-flex items-center text-sm text-gray-700">
+                        <input
+                          type="radio"
+                          name="videoSource"
+                          value="upload"
+                          checked={videoSource === 'upload'}
+                          onChange={() => setVideoSource('upload')}
+                          className="h-4 w-4 text-blue-600 border-gray-300"
+                        />
+                        <span className="ml-2">Tải file video lên (tối đa 100MB)</span>
+                      </label>
+                    </div>
+
+                    {videoSource === 'upload' && (
+                      <div className="space-y-2">
+                        <input
+                          type="file"
+                          accept="video/*"
+                          disabled={videoUploading}
+                          onChange={async (e) => {
+                            if (!e.target.files || e.target.files.length === 0 || !form) return;
+                            const file = e.target.files[0];
+                            if (!file) return;
+                            setVideoUploadError(null);
+                            const maxSizeMb = 100;
+                            if (file.size > maxSizeMb * 1024 * 1024) {
+                              setVideoUploadError(`Kích thước video phải nhỏ hơn hoặc bằng ${maxSizeMb}MB.`);
+                              e.target.value = '';
+                              return;
+                            }
+                            try {
+                              setVideoUploading(true);
+                              const formData = new FormData();
+                              formData.append('video', file);
+                              const res = await api.post('/uploads/video?folder=edulearn/lesson-videos', formData, {
+                                headers: { 'Content-Type': 'multipart/form-data' },
+                              });
+                              if (res.data?.success && res.data.url) {
+                                setForm({
+                                  ...form,
+                                  videoUrl: res.data.url,
+                                  videoProvider: 'cloudinary',
+                                });
+                                setSuccess('Upload video thành công.');
+                              } else {
+                                setVideoUploadError(res.data?.message || 'Upload video thất bại.');
+                              }
+                            } catch (uploadErr: unknown) {
+                              console.error('Failed to upload video:', uploadErr);
+                              let message = 'Không thể upload video. Vui lòng thử lại.';
+                              if (typeof uploadErr === 'object' && uploadErr !== null) {
+                                const anyErr = uploadErr as {
+                                  response?: { data?: { message?: string; error?: string } };
+                                };
+                                const data = anyErr.response?.data;
+                                message = data?.message || (data?.error as string | undefined) || message;
+                              }
+                              setVideoUploadError(message);
+                            } finally {
+                              setVideoUploading(false);
+                              e.target.value = '';
+                            }
+                          }}
+                          className="block w-full text-sm text-gray-700 file:mr-3 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                        />
+                        {videoUploading && (
+                          <p className="text-xs text-gray-500">Đang upload video, vui lòng đợi...</p>
+                        )}
+                        {videoUploadError && (
+                          <p className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-md px-3 py-2">
+                            {videoUploadError}
+                          </p>
+                        )}
+                        {form.videoUrl && (
+                          <p className="text-xs text-gray-600 break-all">
+                            Video hiện tại: <span className="text-blue-700">{form.videoUrl}</span>
+                          </p>
+                        )}
+                      </div>
+                    )}
+
+                    {videoSource === 'url' && (
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="md:col-span-2">
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Video URL
+                          </label>
+                          <input
+                            type="text"
+                            name="videoUrl"
+                            value={form.videoUrl}
+                            onChange={handleBasicChange}
+                            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            placeholder="https://www.youtube.com/watch?... hoặc URL video trực tiếp"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Thời lượng (giây)
+                          </label>
+                          <input
+                            type="number"
+                            name="videoDuration"
+                            min={0}
+                            value={form.videoDuration}
+                            onChange={handleBasicChange}
+                            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="max-w-xs">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Nguồn video
+                      </label>
+                      <select
+                        name="videoProvider"
+                        value={form.videoProvider}
                         onChange={handleBasicChange}
                         className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                        placeholder="https://..."
-                      />
+                      >
+                        <option value="cloudinary">Cloudinary</option>
+                        <option value="youtube">YouTube</option>
+                        <option value="vimeo">Vimeo</option>
+                      </select>
                     </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Thời lượng (giây)
-                      </label>
-                      <input
-                        type="number"
-                        name="videoDuration"
-                        min={0}
-                        value={form.videoDuration}
-                        onChange={handleBasicChange}
-                        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      />
-                    </div>
-                  </div>
-                  <div className="max-w-xs">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Nguồn video
-                    </label>
-                    <select
-                      name="videoProvider"
-                      value={form.videoProvider}
-                      onChange={handleBasicChange}
-                      className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    >
-                      <option value="cloudinary">Cloudinary</option>
-                      <option value="youtube">YouTube</option>
-                      <option value="vimeo">Vimeo</option>
-                    </select>
                   </div>
                 </div>
               )}

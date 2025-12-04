@@ -77,6 +77,9 @@ function InstructorCourseLessonsContent() {
     videoDuration: '',
     articleContent: '',
   });
+  const [videoSource, setVideoSource] = useState<'upload' | 'url'>('url');
+  const [videoUploading, setVideoUploading] = useState(false);
+  const [videoUploadError, setVideoUploadError] = useState<string | null>(null);
 
   // Section create/edit
   const [showSectionModal, setShowSectionModal] = useState(false);
@@ -775,37 +778,147 @@ function InstructorCourseLessonsContent() {
 
               {/* Fields theo loại bài học */}
               {formState.type === 'video' && (
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  <div className="sm:col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Video URL
+                <div className="space-y-3">
+                  <div className="flex flex-wrap gap-4 items-center">
+                    <span className="text-sm font-medium text-gray-700">Nguồn video:</span>
+                    <label className="inline-flex items-center text-sm text-gray-700">
+                      <input
+                        type="radio"
+                        name="createVideoSource"
+                        value="url"
+                        checked={videoSource === 'url'}
+                        onChange={() => setVideoSource('url')}
+                        className="h-4 w-4 text-blue-600 border-gray-300"
+                        disabled={submitting || videoUploading}
+                      />
+                      <span className="ml-2">Đường link (YouTube / URL khác)</span>
                     </label>
-                    <input
-                      type="text"
-                      value={formState.videoUrl}
-                      onChange={(e) =>
-                        setFormState((s) => ({ ...s, videoUrl: e.target.value }))
-                      }
-                      className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      placeholder="https://..."
-                      disabled={submitting}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Thời lượng (phút)
+                    <label className="inline-flex items-center text-sm text-gray-700">
+                      <input
+                        type="radio"
+                        name="createVideoSource"
+                        value="upload"
+                        checked={videoSource === 'upload'}
+                        onChange={() => setVideoSource('upload')}
+                        className="h-4 w-4 text-blue-600 border-gray-300"
+                        disabled={submitting || videoUploading}
+                      />
+                      <span className="ml-2">Tải file video lên (tối đa 100MB)</span>
                     </label>
-                    <input
-                      type="number"
-                      min={1}
-                      value={formState.videoDuration}
-                      onChange={(e) =>
-                        setFormState((s) => ({ ...s, videoDuration: e.target.value }))
-                      }
-                      className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      disabled={submitting}
-                    />
                   </div>
+
+                  {videoSource === 'upload' && (
+                    <div className="space-y-2">
+                      <input
+                        type="file"
+                        accept="video/*"
+                        disabled={submitting || videoUploading}
+                        onChange={async (e) => {
+                          if (!e.target.files || e.target.files.length === 0) return;
+                          const file = e.target.files[0];
+                          if (!file) return;
+                          setVideoUploadError(null);
+                          const maxSizeMb = 100;
+                          if (file.size > maxSizeMb * 1024 * 1024) {
+                            setVideoUploadError(
+                              `Kích thước video phải nhỏ hơn hoặc bằng ${maxSizeMb}MB.`
+                            );
+                            e.target.value = '';
+                            return;
+                          }
+                          try {
+                            setVideoUploading(true);
+                            const formData = new FormData();
+                            formData.append('video', file);
+                            const res = await api.post(
+                              '/uploads/video?folder=edulearn/lesson-videos',
+                              formData,
+                              {
+                                headers: { 'Content-Type': 'multipart/form-data' },
+                              }
+                            );
+                            if (res.data?.success && res.data.url) {
+                              setFormState((s) => ({
+                                ...s,
+                                videoUrl: res.data.url as string,
+                              }));
+                            } else {
+                              setVideoUploadError(
+                                (res.data?.message as string) || 'Upload video thất bại.'
+                              );
+                            }
+                          } catch (uploadErr: unknown) {
+                            console.error('Failed to upload video:', uploadErr);
+                            let message = 'Không thể upload video. Vui lòng thử lại.';
+                            if (typeof uploadErr === 'object' && uploadErr !== null) {
+                              const anyErr = uploadErr as {
+                                response?: { data?: { message?: string; error?: string } };
+                              };
+                              const data = anyErr.response?.data;
+                              message =
+                                (data?.message as string | undefined) ||
+                                (data?.error as string | undefined) ||
+                                message;
+                            }
+                            setVideoUploadError(message);
+                          } finally {
+                            setVideoUploading(false);
+                            e.target.value = '';
+                          }
+                        }}
+                        className="block w-full text-sm text-gray-700 file:mr-3 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                      />
+                      {videoUploading && (
+                        <p className="text-xs text-gray-500">Đang upload video, vui lòng đợi...</p>
+                      )}
+                      {videoUploadError && (
+                        <p className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-md px-3 py-2">
+                          {videoUploadError}
+                        </p>
+                      )}
+                      {formState.videoUrl && (
+                        <p className="text-xs text-gray-600 break-all">
+                          Video hiện tại:{' '}
+                          <span className="text-blue-700">{formState.videoUrl}</span>
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {videoSource === 'url' && (
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                      <div className="sm:col-span-2">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Video URL
+                        </label>
+                        <input
+                          type="text"
+                          value={formState.videoUrl}
+                          onChange={(e) =>
+                            setFormState((s) => ({ ...s, videoUrl: e.target.value }))
+                          }
+                          className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          placeholder="https://www.youtube.com/watch?... hoặc URL video trực tiếp"
+                          disabled={submitting}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Thời lượng (phút)
+                        </label>
+                        <input
+                          type="number"
+                          min={1}
+                          value={formState.videoDuration}
+                          onChange={(e) =>
+                            setFormState((s) => ({ ...s, videoDuration: e.target.value }))
+                          }
+                          className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          disabled={submitting}
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
