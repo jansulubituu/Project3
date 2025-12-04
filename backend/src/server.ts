@@ -56,6 +56,7 @@ import sectionRoutes from './routes/sectionRoutes';
 import lessonRoutes from './routes/lessonRoutes';
 import enrollmentRoutes from './routes/enrollmentRoutes';
 import progressRoutes from './routes/progressRoutes';
+import uploadRoutes from './routes/uploadRoutes';
 
 // API Routes
 app.use('/api/auth', authRoutes);
@@ -66,6 +67,7 @@ app.use('/api/sections', sectionRoutes);
 app.use('/api/lessons', lessonRoutes);
 app.use('/api/enrollments', enrollmentRoutes);
 app.use('/api/progress', progressRoutes);
+app.use('/api/uploads', uploadRoutes);
 // app.use('/api/reviews', reviewRoutes);
 // app.use('/api/payments', paymentRoutes);
 // app.use('/api/admin', adminRoutes);

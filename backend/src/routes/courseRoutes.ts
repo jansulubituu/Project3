@@ -12,7 +12,7 @@ import {
   getAdminCourses,
   uploadCourseThumbnail,
 } from '../controllers/courseController';
-import { protect } from '../middleware/auth';
+import { protect, optionalAuth } from '../middleware/auth';
 import { instructorOrAdmin, adminOnly } from '../middleware/authorize';
 import { body } from 'express-validator';
 import { validate } from '../middleware/validation';
@@ -103,10 +103,10 @@ const updateCourseValidation = [
   validate,
 ];
 
-// Public routes
-router.get('/', getAllCourses);
-router.get('/:id', getCourseById);
-router.get('/:id/curriculum', getCourseCurriculum);
+// Public routes (with optional auth to allow instructor/admin to see drafts)
+router.get('/', optionalAuth, getAllCourses);
+router.get('/:id', optionalAuth, getCourseById);
+router.get('/:id/curriculum', optionalAuth, getCourseCurriculum);
 router.get('/:id/reviews', getCourseReviews);
 
 // Management routes

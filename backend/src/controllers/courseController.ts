@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { Course, Category, Section, Lesson, Review, Enrollment } from '../models';
+import { Course, Category, Section, Lesson, Review, Enrollment, User } from '../models';
 import mongoose from 'mongoose';
 import { uploadImageFromBuffer, deleteImage } from '../config/cloudinary';
 
@@ -496,7 +496,33 @@ export const createCourse = async (req: Request, res: Response) => {
       learningOutcomes,
       targetAudience,
       tags,
+      instructor: instructorFromBody,
     } = req.body;
+
+    // Resolve instructor: admin có thể tạo course cho giảng viên khác
+    let instructorId = req.user!.id;
+    if (req.user!.role === 'admin' && instructorFromBody) {
+      // Validate instructorFromBody
+      if (!mongoose.Types.ObjectId.isValid(instructorFromBody)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid instructor ID',
+        });
+      }
+
+      const instructorUser = await User.findById(instructorFromBody).select('role');
+      if (!instructorUser || instructorUser.role !== 'instructor') {
+        return res.status(400).json({
+          success: false,
+          message: 'Instructor not found or not an instructor',
+        });
+      }
+
+      instructorId = instructorFromBody;
+    }
+
+    // Normalize optional fields
+    const normalizedSubcategory = subcategory || undefined;
 
     // Validate category
     const categoryDoc = await Category.findById(category);
@@ -508,8 +534,8 @@ export const createCourse = async (req: Request, res: Response) => {
     }
 
     // Validate subcategory if provided
-    if (subcategory) {
-      const subcategoryDoc = await Category.findById(subcategory);
+    if (normalizedSubcategory) {
+      const subcategoryDoc = await Category.findById(normalizedSubcategory);
       if (!subcategoryDoc || subcategoryDoc.parent?.toString() !== category) {
         return res.status(400).json({
           success: false,
@@ -540,9 +566,9 @@ export const createCourse = async (req: Request, res: Response) => {
       slug,
       description,
       shortDescription,
-      instructor: req.user!.id,
+      instructor: instructorId,
       category,
-      subcategory,
+      subcategory: normalizedSubcategory,
       level: level || 'all_levels',
       thumbnail,
       previewVideo,
@@ -595,6 +621,11 @@ export const updateCourse = async (req: Request, res: Response) => {
         success: false,
         message: 'Not authorized to update this course',
       });
+    }
+
+    // Normalize optional fields to avoid casting errors
+    if (updateData.subcategory === '') {
+      updateData.subcategory = undefined;
     }
 
     // If title is being updated, regenerate slug

@@ -11,45 +11,38 @@ export interface AuthRequest extends Request {
   };
 }
 
-// Protect routes - verify JWT token
+const decodeTokenFromRequest = (req: Request): { id: string; email: string; role: string } | null => {
+  let token: string | undefined;
+
+  if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
+    token = req.headers.authorization.split(' ')[1];
+  } else if ((req as any).cookies?.token) {
+    token = (req as any).cookies.token;
+  }
+
+  if (!token) return null;
+
+  const jwtSecret = process.env.JWT_SECRET;
+  if (!jwtSecret) {
+    throw new AppError('JWT secret not configured', 500);
+  }
+
+  return jwt.verify(token, jwtSecret) as { id: string; email: string; role: string };
+};
+
+// Protect routes - verify JWT token (required)
 export const protect = async (
   req: AuthRequest,
   _res: Response,
   next: NextFunction
 ) => {
   try {
-    let token: string | undefined;
+    const decoded = decodeTokenFromRequest(req);
 
-    // Get token from Authorization header
-    if (
-      req.headers.authorization &&
-      req.headers.authorization.startsWith('Bearer')
-    ) {
-      token = req.headers.authorization.split(' ')[1];
-    }
-    // Or get token from cookies
-    else if (req.cookies?.token) {
-      token = req.cookies.token;
-    }
-
-    // Check if token exists
-    if (!token) {
+    if (!decoded) {
       return next(new AppError('Not authorized, no token', 401));
     }
 
-    // Verify token
-    const jwtSecret = process.env.JWT_SECRET;
-    if (!jwtSecret) {
-      return next(new AppError('JWT secret not configured', 500));
-    }
-
-    const decoded = jwt.verify(token, jwtSecret) as {
-      id: string;
-      email: string;
-      role: string;
-    };
-
-    // Attach user to request
     req.user = {
       id: decoded.id,
       email: decoded.email,
@@ -59,6 +52,30 @@ export const protect = async (
     next();
   } catch (error) {
     next(new AppError('Not authorized, token failed', 401));
+  }
+};
+
+// Optional auth - attach user if token exists, but don't fail if missing/invalid
+export const optionalAuth = async (
+  req: AuthRequest,
+  _res: Response,
+  next: NextFunction
+) => {
+  try {
+    const decoded = decodeTokenFromRequest(req);
+
+    if (decoded) {
+      req.user = {
+        id: decoded.id,
+        email: decoded.email,
+        role: decoded.role,
+      };
+    }
+
+    next();
+  } catch {
+    // If token invalid, just continue without user
+    next();
   }
 };
 
