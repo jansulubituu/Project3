@@ -459,6 +459,45 @@ function LessonSectionBlock({
 
 function LessonContent({ lesson }: { lesson: LessonDetail }) {
   if (lesson.type === 'video' && lesson.videoUrl) {
+    const url = lesson.videoUrl;
+    const isYouTube =
+      url.includes('youtube.com') || url.includes('youtu.be') || lesson.videoProvider === 'youtube';
+
+    if (isYouTube) {
+      // Extract YouTube video ID and build embed URL
+      let videoId = '';
+      try {
+        if (url.includes('youtu.be/')) {
+          const parts = url.split('youtu.be/');
+          videoId = parts[1]?.split(/[?&]/)[0] ?? '';
+        } else if (url.includes('watch?v=')) {
+          const parts = url.split('watch?v=');
+          videoId = parts[1]?.split('&')[0] ?? '';
+        } else if (url.includes('/embed/')) {
+          const parts = url.split('/embed/');
+          videoId = parts[1]?.split(/[?&]/)[0] ?? '';
+        }
+      } catch {
+        videoId = '';
+      }
+
+      const embedUrl = videoId ? `https://www.youtube.com/embed/${videoId}` : url;
+
+      return (
+        <div className="bg-black rounded-2xl shadow overflow-hidden">
+          <div className="relative w-full pb-[56.25%]">
+            <iframe
+              src={embedUrl}
+              title={lesson.title}
+              className="absolute inset-0 h-full w-full"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+              allowFullScreen
+            />
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="bg-black rounded-2xl shadow overflow-hidden">
         <video controls controlsList="nodownload" className="w-full aspect-video">
