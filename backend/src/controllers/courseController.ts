@@ -345,14 +345,18 @@ export const getCourseCurriculum = async (req: Request, res: Response) => {
     }
 
     // Check if user can view
-    if (course.status !== 'published' && (!req.user || (req.user.id !== course.instructor.toString() && req.user.role !== 'admin'))) {
+    if (
+      course.status !== 'published' &&
+      (!req.user ||
+        (req.user.id !== course.instructor.toString() && req.user.role !== 'admin'))
+    ) {
       return res.status(403).json({
         success: false,
         message: 'Course is not published',
       });
     }
 
-    // Check if user is enrolled
+    // Check if user is enrolled (for progress / UI hints)
     let isEnrolled = false;
     if (req.user) {
       const enrollment = await Enrollment.findOne({
@@ -363,15 +367,17 @@ export const getCourseCurriculum = async (req: Request, res: Response) => {
       isEnrolled = !!enrollment;
     }
 
+    // Determine role for lesson visibility
+    const isInstructor = req.user && course.instructor.toString() === req.user.id;
+    const isAdmin = req.user && req.user.role === 'admin';
+
     // Get sections with lessons
     const sections = await Section.find({ course: course._id })
       .sort({ order: 1 })
       .populate({
         path: 'lessons',
         select: 'title description type order duration isFree isPublished',
-        match: isEnrolled || req.user?.id === course.instructor.toString() || req.user?.role === 'admin'
-          ? {}
-          : { isPublished: true },
+        match: isInstructor || isAdmin ? {} : { isPublished: true },
         options: { sort: { order: 1 } },
       });
 

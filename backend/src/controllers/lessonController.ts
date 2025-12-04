@@ -144,19 +144,23 @@ export const getLessonDetails = async (req: Request, res: Response) => {
 
     const course: any = lesson.course;
 
-    // Check if course is published or user is instructor/admin
+    // Check role
     const isInstructor = req.user && course?.instructor?.toString() === req.user.id;
     const isAdmin = req.user && req.user.role === 'admin';
 
-    if (
-      course &&
-      course.status !== 'published' &&
-      !isInstructor &&
-      !isAdmin
-    ) {
+    // Course must be published for students
+    if (course && course.status !== 'published' && !isInstructor && !isAdmin) {
       return res.status(403).json({
         success: false,
         message: 'Course is not published',
+      });
+    }
+
+    // Lesson must be published for students (instructor/admin vẫn xem được)
+    if (!lesson.isPublished && !isInstructor && !isAdmin) {
+      return res.status(403).json({
+        success: false,
+        message: 'Lesson is not published',
       });
     }
 
