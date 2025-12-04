@@ -36,7 +36,13 @@ export default function Header() {
             {isAuthenticated ? (
               <>
                 <Link
-                  href="/dashboard"
+                  href={
+                    user?.role === 'admin'
+                      ? '/admin/dashboard'
+                      : user?.role === 'instructor'
+                      ? '/instructor/dashboard'
+                      : '/dashboard'
+                  }
                   className="text-sm lg:text-base text-gray-700 hover:text-blue-600 transition-colors"
                 >
                   Dashboard
@@ -127,7 +133,13 @@ export default function Header() {
               {isAuthenticated ? (
                 <>
                   <Link
-                    href="/dashboard"
+                    href={
+                      user?.role === 'admin'
+                        ? '/admin/dashboard'
+                        : user?.role === 'instructor'
+                        ? '/instructor/dashboard'
+                        : '/dashboard'
+                    }
                     onClick={() => setMobileMenuOpen(false)}
                     className="text-gray-700 hover:text-blue-600 transition-colors px-2 py-1"
                   >

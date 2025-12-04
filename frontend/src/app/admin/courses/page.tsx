@@ -229,6 +229,12 @@ function AdminCoursesContent() {
                         </td>
                         <td className="px-4 py-3 text-right space-x-2">
                           <Link
+                            href={`/instructor/courses/${course._id}`}
+                            className="inline-flex items-center px-3 py-1.5 rounded-md border border-gray-300 text-xs font-medium text-gray-700 hover:bg-gray-100"
+                          >
+                            Quản lý
+                          </Link>
+                          <Link
                             href={`/instructor/courses/${course._id}/edit`}
                             className="inline-flex items-center px-3 py-1.5 rounded-md border border-gray-300 text-xs font-medium text-gray-700 hover:bg-gray-100"
                           >
