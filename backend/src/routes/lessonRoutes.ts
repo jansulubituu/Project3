@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import {
+  getLessonDetails,
   updateLesson,
   deleteLesson,
   uploadVideo,
@@ -10,6 +11,9 @@ import { body } from 'express-validator';
 import { validate } from '../middleware/validation';
 
 const router = Router();
+
+// Student / general access
+router.get('/:id', protect, getLessonDetails);
 
 // Validation middleware
 const updateLessonValidation = [

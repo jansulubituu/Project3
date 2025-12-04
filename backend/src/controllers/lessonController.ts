@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { Lesson, Section } from '../models';
+import { Enrollment, Lesson, Progress, Section } from '../models';
 
 // @desc    Create lesson
 // @route   POST /api/sections/:sectionId/lessons
@@ -113,6 +113,99 @@ export const createLesson = async (req: Request, res: Response) => {
     res.status(500).json({
       success: false,
       message: 'Error creating lesson',
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+};
+
+// @desc    Get lesson details (for students)
+// @route   GET /api/lessons/:id
+// @access  Private (student must be enrolled, except free lessons)
+export const getLessonDetails = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    const lesson = await Lesson.findById(id)
+      .populate({
+        path: 'section',
+        select: 'title order',
+      })
+      .populate({
+        path: 'course',
+        select: 'title slug instructor status isPublished totalLessons',
+      });
+
+    if (!lesson) {
+      return res.status(404).json({
+        success: false,
+        message: 'Lesson not found',
+      });
+    }
+
+    const course: any = lesson.course;
+
+    // Check if course is published or user is instructor/admin
+    const isInstructor = req.user && course?.instructor?.toString() === req.user.id;
+    const isAdmin = req.user && req.user.role === 'admin';
+
+    if (
+      course &&
+      course.status !== 'published' &&
+      !isInstructor &&
+      !isAdmin
+    ) {
+      return res.status(403).json({
+        success: false,
+        message: 'Course is not published',
+      });
+    }
+
+    // If lesson is not free, ensure user is enrolled or instructor/admin
+    let isEnrolled = false;
+    let lessonProgress = null;
+
+    if (req.user) {
+      if (!lesson.isFree && !isInstructor && !isAdmin) {
+        const enrollment = await Enrollment.findOne({
+          student: req.user.id,
+          course: course?._id,
+          status: 'active',
+        });
+
+        if (!enrollment) {
+          return res.status(403).json({
+            success: false,
+            message: 'You must be enrolled in this course to view this lesson',
+          });
+        }
+
+        isEnrolled = true;
+      } else if (lesson.isFree) {
+        // Free lessons can be viewed by any authenticated user
+        isEnrolled = !!(await Enrollment.findOne({
+          student: req.user.id,
+          course: course?._id,
+          status: 'active',
+        }));
+      }
+
+      // Load progress for this lesson if exists
+      lessonProgress = await Progress.findOne({
+        student: req.user.id,
+        lesson: lesson._id,
+      }).select('status lastPosition timeSpent updatedAt');
+    }
+
+    res.json({
+      success: true,
+      lesson,
+      isEnrolled,
+      progress: lessonProgress,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching lesson details',
       error: error instanceof Error ? error.message : 'Unknown error',
     });
   }
