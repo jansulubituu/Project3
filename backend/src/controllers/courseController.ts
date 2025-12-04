@@ -21,9 +21,11 @@ export const getAllCourses = async (req: Request, res: Response) => {
       instructor,
     } = req.query;
 
+      // Only show courses that are published in public catalog.
+    // Some legacy data may have status='published' but isPublished=false,
+    // so we rely on status as the single source of truth here.
     const query: Record<string, unknown> = {
       status: 'published',
-      isPublished: true,
     };
 
     // Filter by category

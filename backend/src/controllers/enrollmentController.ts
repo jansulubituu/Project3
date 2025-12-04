@@ -82,7 +82,7 @@ export const enrollInCourse = async (req: Request, res: Response) => {
       });
     }
 
-    if (course.status !== 'published' || !course.isPublished) {
+    if (course.status !== 'published') {
       return res.status(400).json({
         success: false,
         message: 'Course is not available for enrollment',
