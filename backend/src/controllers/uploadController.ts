@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { uploadImageFromBuffer, uploadVideoFromBuffer } from '../config/cloudinary';
+import { uploadImageFromBuffer, uploadVideoFromBuffer, uploadRawFromBuffer } from '../config/cloudinary';
 
 // @desc    Upload generic image (e.g. course thumbnail)
 // @route   POST /api/uploads/image
@@ -82,6 +82,53 @@ export const uploadVideoHandler = async (req: Request, res: Response) => {
     return res.status(500).json({
       success: false,
       message: 'Failed to upload video',
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+};
+
+// @desc    Upload generic file (e.g. PDF attachment)
+// @route   POST /api/uploads/file
+// @access  Private (authenticated)
+export const uploadFileHandler = async (req: Request, res: Response) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required',
+      });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'No file uploaded',
+      });
+    }
+
+    const maxSizeMb = 20;
+    if (req.file.size > maxSizeMb * 1024 * 1024) {
+      return res.status(400).json({
+        success: false,
+        message: `File size must be <= ${maxSizeMb}MB`,
+      });
+    }
+
+    const folder = (req.query.folder as string) || 'edulearn/lesson-files';
+
+    const result = await uploadRawFromBuffer(req.file.buffer, folder);
+
+    return res.json({
+      success: true,
+      message: 'File uploaded successfully',
+      url: result.secure_url,
+      publicId: result.public_id,
+    });
+  } catch (error) {
+    console.error('File upload error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to upload file',
       error: error instanceof Error ? error.message : 'Unknown error',
     });
   }

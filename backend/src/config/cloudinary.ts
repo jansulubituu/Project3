@@ -170,5 +170,44 @@ export const uploadVideoFromBuffer = async (
   }
 };
 
+/**
+ * Upload raw file (e.g. PDF) from buffer (for multer)
+ * @param buffer - File buffer from multer
+ * @param folder - Folder name in Cloudinary (optional)
+ * @returns Upload result with secure_url
+ */
+export const uploadRawFromBuffer = async (
+  buffer: Buffer,
+  folder?: string
+): Promise<{ secure_url: string; public_id: string }> => {
+  try {
+    return new Promise((resolve, reject) => {
+      const uploadStream = cloudinary.uploader.upload_stream(
+        {
+          resource_type: 'raw',
+          folder: folder || 'edulearn/files',
+        },
+        (error, result) => {
+          if (error) {
+            reject(error);
+          } else if (result) {
+            resolve({
+              secure_url: result.secure_url,
+              public_id: result.public_id,
+            });
+          } else {
+            reject(new Error('Upload failed'));
+          }
+        }
+      );
+
+      uploadStream.end(buffer);
+    });
+  } catch (error) {
+    console.error('Cloudinary raw upload from buffer error:', error);
+    throw new Error('Failed to upload file to Cloudinary');
+  }
+};
+
 export default cloudinary;
 

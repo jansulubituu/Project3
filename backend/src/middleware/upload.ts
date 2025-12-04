@@ -56,6 +56,31 @@ export const uploadVideoMulter = multer({
   fileFilter: videoFileFilter,
 });
 
+// Raw/PDF file filter
+const rawFileFilter = (
+  _req: unknown,
+  file: Express.Multer.File,
+  cb: multer.FileFilterCallback
+) => {
+  const allowedTypes = /pdf|octet-stream/;
+  const extname = /\.pdf$/i.test(file.originalname);
+  const mimetype = allowedTypes.test(file.mimetype);
+
+  if (mimetype && extname) {
+    return cb(null, true);
+  } else {
+    cb(new Error('Only PDF files are allowed'));
+  }
+};
+
+export const uploadRawMulter = multer({
+  storage,
+  limits: {
+    fileSize: 20 * 1024 * 1024, // 20MB
+  },
+  fileFilter: rawFileFilter,
+});
+
 // Single file upload middleware
 export const uploadSingle = upload.single('image');
 
@@ -64,4 +89,7 @@ export const uploadMultiple = upload.array('images', 10);
 
 // Single video upload middleware
 export const uploadVideoSingle = uploadVideoMulter.single('video');
+
+// Single raw/PDF upload middleware
+export const uploadFileSingle = uploadRawMulter.single('file');
 

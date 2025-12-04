@@ -80,6 +80,8 @@ function InstructorCourseLessonsContent() {
   const [videoSource, setVideoSource] = useState<'upload' | 'url'>('url');
   const [videoUploading, setVideoUploading] = useState(false);
   const [videoUploadError, setVideoUploadError] = useState<string | null>(null);
+  const [fileUploading, setFileUploading] = useState(false);
+  const [fileUploadError, setFileUploadError] = useState<string | null>(null);
 
   // Section create/edit
   const [showSectionModal, setShowSectionModal] = useState(false);
@@ -923,19 +925,93 @@ function InstructorCourseLessonsContent() {
               )}
 
               {formState.type === 'article' && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Nội dung bài viết
-                  </label>
-                  <textarea
-                    value={formState.articleContent}
-                    onChange={(e) =>
-                      setFormState((s) => ({ ...s, articleContent: e.target.value }))
-                    }
-                    className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    rows={5}
-                    disabled={submitting}
-                  />
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Nội dung bài viết
+                    </label>
+                    <textarea
+                      value={formState.articleContent}
+                      onChange={(e) =>
+                        setFormState((s) => ({ ...s, articleContent: e.target.value }))
+                      }
+                      className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      rows={5}
+                      disabled={submitting}
+                    />
+                  </div>
+
+                  {/* Upload PDF cho bài viết (lưu dưới dạng tài liệu đính kèm sau khi chỉnh sửa ở trang edit) */}
+                  <div className="space-y-2 border-t border-dashed border-gray-200 pt-3">
+                    <p className="text-sm font-medium text-gray-800">Tài liệu PDF (tùy chọn)</p>
+                    <p className="text-xs text-gray-500">
+                      Chọn file PDF (≤ 20MB). File sẽ được upload và bạn có thể thêm/sửa chi tiết ở
+                      trang edit bài học sau này.
+                    </p>
+                    <input
+                      type="file"
+                      accept="application/pdf"
+                      disabled={fileUploading || submitting}
+                      onChange={async (e) => {
+                        if (!e.target.files || e.target.files.length === 0) return;
+                        const file = e.target.files[0];
+                        if (!file) return;
+                        setFileUploadError(null);
+                        const maxSizeMb = 20;
+                        if (file.size > maxSizeMb * 1024 * 1024) {
+                          setFileUploadError(`Kích thước file phải nhỏ hơn hoặc bằng ${maxSizeMb}MB.`);
+                          e.target.value = '';
+                          return;
+                        }
+                        try {
+                          setFileUploading(true);
+                          const formData = new FormData();
+                          formData.append('file', file);
+                          const res = await api.post(
+                            '/uploads/file?folder=edulearn/lesson-files',
+                            formData,
+                            {
+                              headers: { 'Content-Type': 'multipart/form-data' },
+                            }
+                          );
+                          if (res.data?.success && res.data.url) {
+                            // Chỉ hiển thị thông báo; attachments sẽ được quản lý chi tiết hơn ở trang edit lesson
+                            alert('Upload PDF thành công. Hãy dùng trang Edit lesson để gắn tài liệu vào bài học.');
+                          } else {
+                            setFileUploadError(
+                              (res.data?.message as string) || 'Upload PDF thất bại.'
+                            );
+                          }
+                        } catch (uploadErr: unknown) {
+                          console.error('Failed to upload PDF:', uploadErr);
+                          let message = 'Không thể upload PDF. Vui lòng thử lại.';
+                          if (typeof uploadErr === 'object' && uploadErr !== null) {
+                            const anyErr = uploadErr as {
+                              response?: { data?: { message?: string; error?: string } };
+                            };
+                            const data = anyErr.response?.data;
+                            message =
+                              (data?.message as string | undefined) ||
+                              (data?.error as string | undefined) ||
+                              message;
+                          }
+                          setFileUploadError(message);
+                        } finally {
+                          setFileUploading(false);
+                          e.target.value = '';
+                        }
+                      }}
+                      className="block w-full text-sm text-gray-700 file:mr-3 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-gray-100 file:text-gray-800 hover:file:bg-gray-200"
+                    />
+                    {fileUploading && (
+                      <p className="text-xs text-gray-500">Đang upload PDF, vui lòng đợi...</p>
+                    )}
+                    {fileUploadError && (
+                      <p className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-md px-3 py-2">
+                        {fileUploadError}
+                      </p>
+                    )}
+                  </div>
                 </div>
               )}
 

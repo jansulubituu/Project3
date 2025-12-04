@@ -67,6 +67,9 @@ function EditLessonContent() {
   const [videoUploading, setVideoUploading] = useState(false);
   const [videoUploadError, setVideoUploadError] = useState<string | null>(null);
 
+  const [fileUploading, setFileUploading] = useState(false);
+  const [fileUploadError, setFileUploadError] = useState<string | null>(null);
+
   useEffect(() => {
     if (!lessonId) return;
 
@@ -624,6 +627,89 @@ function EditLessonContent() {
                     rows={10}
                     className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   />
+
+                  {/* Upload tài liệu PDF / ảnh như attachments */}
+                  <div className="space-y-2 border-t border-dashed border-gray-200 pt-3">
+                    <p className="text-sm font-medium text-gray-800">Tài liệu đính kèm (PDF/ảnh)</p>
+                    <p className="text-xs text-gray-500">
+                      Chọn file PDF hoặc ảnh, hệ thống sẽ tự upload và thêm vào danh sách tài liệu đính
+                      kèm bên dưới.
+                    </p>
+                    <input
+                      type="file"
+                      accept="application/pdf,image/*"
+                      disabled={fileUploading}
+                      onChange={async (e) => {
+                        if (!e.target.files || e.target.files.length === 0 || !form) return;
+                        const file = e.target.files[0];
+                        if (!file) return;
+                        setFileUploadError(null);
+                        const maxSizeMb = 20;
+                        if (file.size > maxSizeMb * 1024 * 1024) {
+                          setFileUploadError(`Kích thước file phải nhỏ hơn hoặc bằng ${maxSizeMb}MB.`);
+                          e.target.value = '';
+                          return;
+                        }
+                        try {
+                          setFileUploading(true);
+                          const formData = new FormData();
+                          let endpoint = '/uploads/file?folder=edulearn/lesson-files';
+                          if (file.type.startsWith('image/')) {
+                            endpoint = '/uploads/image?folder=edulearn/lesson-images';
+                            formData.append('image', file);
+                          } else {
+                            formData.append('file', file);
+                          }
+                          const res = await api.post(endpoint, formData, {
+                            headers: { 'Content-Type': 'multipart/form-data' },
+                          });
+                          if (res.data?.success && res.data.url) {
+                            const newAttachment: AttachmentForm = {
+                              name: file.name,
+                              url: res.data.url as string,
+                              type: file.type || (file.name.toLowerCase().endsWith('.pdf') ? 'pdf' : 'file'),
+                              size: file.size,
+                            };
+                            setForm({
+                              ...form,
+                              attachments: [...form.attachments, newAttachment],
+                            });
+                            setSuccess('Upload tài liệu thành công.');
+                          } else {
+                            setFileUploadError(
+                              (res.data?.message as string) || 'Upload tài liệu thất bại.'
+                            );
+                          }
+                        } catch (uploadErr: unknown) {
+                          console.error('Failed to upload file:', uploadErr);
+                          let message = 'Không thể upload tài liệu. Vui lòng thử lại.';
+                          if (typeof uploadErr === 'object' && uploadErr !== null) {
+                            const anyErr = uploadErr as {
+                              response?: { data?: { message?: string; error?: string } };
+                            };
+                            const data = anyErr.response?.data;
+                            message =
+                              (data?.message as string | undefined) ||
+                              (data?.error as string | undefined) ||
+                              message;
+                          }
+                          setFileUploadError(message);
+                        } finally {
+                          setFileUploading(false);
+                          e.target.value = '';
+                        }
+                      }}
+                      className="block w-full text-sm text-gray-700 file:mr-3 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-gray-100 file:text-gray-800 hover:file:bg-gray-200"
+                    />
+                    {fileUploading && (
+                      <p className="text-xs text-gray-500">Đang upload tài liệu, vui lòng đợi...</p>
+                    )}
+                    {fileUploadError && (
+                      <p className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-md px-3 py-2">
+                        {fileUploadError}
+                      </p>
+                    )}
+                  </div>
                 </div>
               )}
 

@@ -546,28 +546,60 @@ function LessonSummary({ lesson }: { lesson: LessonDetail }) {
 }
 
 function LessonAttachments({ attachments }: { attachments: LessonAttachment[] }) {
+  const pdfAttachments = attachments.filter((file) => {
+    const type = (file.type || '').toLowerCase();
+    const url = file.url.toLowerCase();
+    return type.includes('pdf') || url.endsWith('.pdf');
+  });
+
+  const firstPdf = pdfAttachments[0];
+
   return (
-    <div className="bg-white rounded-2xl shadow p-6">
-      <h3 className="text-lg font-semibold text-gray-900 mb-4">Tài liệu đính kèm</h3>
-      <div className="space-y-3">
-        {attachments.map((file) => (
-          <a
-            key={file.url}
-            href={file.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center justify-between rounded-xl border border-gray-200 px-4 py-3 hover:border-blue-500 hover:bg-blue-50"
-          >
-            <div>
-              <p className="text-sm font-medium text-gray-900">{file.name}</p>
-              <p className="text-xs text-gray-500">
-                {file.type || 'Tài liệu'} · {file.size ? `${(file.size / 1024 / 1024).toFixed(2)} MB` : 'không rõ dung lượng'}
-              </p>
-            </div>
-            <span className="text-sm font-semibold text-blue-600">Tải xuống</span>
-          </a>
-        ))}
+    <div className="bg-white rounded-2xl shadow p-6 space-y-4">
+      <div>
+        <h3 className="text-lg font-semibold text-gray-900 mb-2">Tài liệu đính kèm</h3>
+        <div className="space-y-3">
+          {attachments.map((file) => (
+            <a
+              key={file.url}
+              href={file.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center justify-between rounded-xl border border-gray-200 px-4 py-3 hover:border-blue-500 hover:bg-blue-50"
+            >
+              <div>
+                <p className="text-sm font-medium text-gray-900">{file.name}</p>
+                <p className="text-xs text-gray-500">
+                  {file.type || 'Tài liệu'} ·{' '}
+                  {file.size ? `${(file.size / 1024 / 1024).toFixed(2)} MB` : 'không rõ dung lượng'}
+                </p>
+              </div>
+              <span className="text-sm font-semibold text-blue-600">
+                {file.type?.toLowerCase().includes('pdf') || file.url.toLowerCase().endsWith('.pdf')
+                  ? 'Xem / tải'
+                  : 'Tải xuống'}
+              </span>
+            </a>
+          ))}
+        </div>
       </div>
+
+      {firstPdf && (
+        <div className="border-t border-gray-200 pt-4">
+          <h4 className="text-sm font-semibold text-gray-800 mb-2">
+            Xem nhanh tài liệu PDF: {firstPdf.name}
+          </h4>
+          <div className="relative w-full h-96 rounded-lg border border-gray-200 overflow-hidden">
+            <iframe
+              src={`https://docs.google.com/gview?url=${encodeURIComponent(
+                firstPdf.url
+              )}&embedded=true`}
+              title={firstPdf.name}
+              className="w-full h-full"
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
