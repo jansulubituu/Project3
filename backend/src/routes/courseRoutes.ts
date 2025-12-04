@@ -8,9 +8,11 @@ import {
   updateCourse,
   deleteCourse,
   publishCourse,
+  getMyCourses,
+  getAdminCourses,
 } from '../controllers/courseController';
 import { protect } from '../middleware/auth';
-import { instructorOrAdmin } from '../middleware/authorize';
+import { instructorOrAdmin, adminOnly } from '../middleware/authorize';
 import { body } from 'express-validator';
 import { validate } from '../middleware/validation';
 
@@ -104,6 +106,10 @@ router.get('/', getAllCourses);
 router.get('/:id', getCourseById);
 router.get('/:id/curriculum', getCourseCurriculum);
 router.get('/:id/reviews', getCourseReviews);
+
+// Management routes
+router.get('/mine/list', protect, instructorOrAdmin, getMyCourses);
+router.get('/admin/list', protect, adminOnly, getAdminCourses);
 
 // Protected routes - Instructor or Admin
 router.post('/', protect, instructorOrAdmin, createCourseValidation, createCourse);

@@ -353,7 +353,12 @@ function LessonPage() {
                 )}
 
                 {lesson.type === 'quiz' && lesson.quizQuestions && (
-                  <LessonQuizPreview questions={lesson.quizQuestions} />
+                  <LessonQuiz
+                    lessonId={lesson._id}
+                    questions={lesson.quizQuestions}
+                    progress={progress}
+                    onProgressUpdate={setProgress}
+                  />
                 )}
 
                 <LessonActions
@@ -528,30 +533,165 @@ function LessonAttachments({ attachments }: { attachments: LessonAttachment[] })
   );
 }
 
-function LessonQuizPreview({
+function LessonQuiz({
+  lessonId,
   questions,
+  progress,
+  onProgressUpdate,
 }: {
-  questions: LessonDetail['quizQuestions'];
+  lessonId: string;
+  questions: NonNullable<LessonDetail['quizQuestions']>;
+  progress: LessonProgress | null;
+  onProgressUpdate: (progress: LessonProgress | null) => void;
 }) {
+  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [submitting, setSubmitting] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
   if (!questions?.length) return null;
+
+  const handleChange = (index: number, value: string) => {
+    setAnswers((prev) => ({ ...prev, [String(index)]: value }));
+  };
+
+  const handleSubmit = async () => {
+    setSubmitting(true);
+    setMessage(null);
+    setError(null);
+
+    try {
+      const payload = {
+        status: 'in_progress' as const,
+        answers: questions.map((_q, index) => ({
+          questionId: String(index),
+          answer: answers[String(index)] ?? '',
+        })),
+      };
+
+      const response = await api.put(`/progress/lesson/${lessonId}`, payload);
+      if (response.data?.success) {
+        const updated = response.data.progress;
+        onProgressUpdate({
+          status: updated.status,
+          lastPosition: updated.lastPosition,
+          timeSpent: updated.timeSpent,
+          updatedAt: updated.updatedAt,
+        });
+        if (typeof updated.quizScore === 'number') {
+          setMessage(`Bạn đã nộp bài! Điểm: ${updated.quizScore}%`);
+        } else {
+          setMessage('Đã lưu bài làm của bạn.');
+        }
+      }
+    } catch (err) {
+      console.error('Failed to submit quiz:', err);
+      setError('Không thể nộp bài kiểm tra. Vui lòng thử lại.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   return (
     <div className="bg-white rounded-2xl shadow p-6 space-y-4">
-      <h3 className="text-lg font-semibold text-gray-900">Câu hỏi ôn tập</h3>
-      <div className="space-y-3">
-        {questions.map((question, index) => (
-          <div key={`${question.question}-${index}`} className="border border-gray-100 rounded-xl p-4">
-            <p className="text-sm font-medium text-gray-900">
-              {index + 1}. {question.question}
-            </p>
-            {question.options && (
-              <ul className="mt-2 space-y-1 text-sm text-gray-600 list-disc list-inside">
-                {question.options.map((option) => (
-                  <li key={option}>{option}</li>
-                ))}
-              </ul>
-            )}
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-lg font-semibold text-gray-900">Bài kiểm tra nhanh</h3>
+          <p className="text-sm text-gray-500">
+            Chọn đáp án cho mỗi câu hỏi bên dưới rồi nhấn &quot;Nộp bài&quot; để chấm điểm.
+          </p>
+        </div>
+        {typeof (progress as any)?.quizScore === 'number' && (
+          <div className="text-right">
+            <p className="text-xs text-gray-500">Điểm lần gần nhất</p>
+            <p className="text-lg font-semibold text-blue-600">{(progress as any).quizScore}%</p>
           </div>
-        ))}
+        )}
+      </div>
+
+      <div className="space-y-4">
+        {questions.map((question, index) => {
+          const key = String(index);
+          const value = answers[key] ?? '';
+
+          return (
+            <div key={`${question.question}-${index}`} className="border border-gray-100 rounded-xl p-4 space-y-2">
+              <p className="text-sm font-medium text-gray-900">
+                Câu {index + 1}. {question.question}
+              </p>
+
+              {question.type === 'multiple_choice' && question.options && (
+                <div className="space-y-2">
+                  {question.options.map((option) => (
+                    <label
+                      key={option}
+                      className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer"
+                    >
+                      <input
+                        type="radio"
+                        name={`q-${index}`}
+                        value={option}
+                        checked={value === option}
+                        onChange={(e) => handleChange(index, e.target.value)}
+                        className="h-4 w-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                      />
+                      <span>{option}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
+
+              {question.type === 'true_false' && (
+                <div className="space-y-2">
+                  {['true', 'false'].map((option) => (
+                    <label
+                      key={option}
+                      className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer"
+                    >
+                      <input
+                        type="radio"
+                        name={`q-${index}`}
+                        value={option}
+                        checked={value === option}
+                        onChange={(e) => handleChange(index, e.target.value)}
+                        className="h-4 w-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                      />
+                      <span>{option === 'true' ? 'Đúng' : 'Sai'}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
+
+              {question.type === 'short_answer' && (
+                <div>
+                  <textarea
+                    value={value}
+                    onChange={(e) => handleChange(index, e.target.value)}
+                    rows={3}
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    placeholder="Nhập câu trả lời ngắn của bạn..."
+                  />
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <button
+          onClick={handleSubmit}
+          disabled={submitting}
+          className="inline-flex items-center justify-center rounded-xl bg-blue-600 px-6 py-3 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
+        >
+          {submitting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+          Nộp bài
+        </button>
+
+        <div className="text-sm">
+          {message && <p className="text-green-600">{message}</p>}
+          {error && <p className="text-red-600">{error}</p>}
+        </div>
       </div>
     </div>
   );

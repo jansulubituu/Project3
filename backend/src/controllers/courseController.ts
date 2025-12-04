@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import { Course, Category, Section, Lesson, Review, Enrollment } from '../models';
 import mongoose from 'mongoose';
 
-// @desc    Get all courses (Public)
+// @desc    Get all published courses (Public catalog)
 // @route   GET /api/courses
 // @access  Public
 export const getAllCourses = async (req: Request, res: Response) => {
@@ -18,18 +18,12 @@ export const getAllCourses = async (req: Request, res: Response) => {
       search,
       sort = 'newest',
       instructor,
-      status,
     } = req.query;
 
-    const query: any = {};
-
-    // Only show published courses for public
-    if (!req.user || req.user.role !== 'admin') {
-      query.status = 'published';
-      query.isPublished = true;
-    } else if (status) {
-      query.status = status;
-    }
+    const query: Record<string, unknown> = {
+      status: 'published',
+      isPublished: true,
+    };
 
     // Filter by category
     if (category) {
@@ -62,18 +56,18 @@ export const getAllCourses = async (req: Request, res: Response) => {
 
     // Filter by price
     if (minPrice) {
-      query.$or = [
+      (query as any).$or = [
         { discountPrice: { $gte: Number(minPrice) } },
         { price: { $gte: Number(minPrice) } },
       ];
     }
     if (maxPrice) {
       if (query.$or) {
-        query.$and = [
+        (query as any).$and = [
           { $or: [{ discountPrice: { $lte: Number(maxPrice) } }, { price: { $lte: Number(maxPrice) } }] },
         ];
       } else {
-        query.$or = [
+        (query as any).$or = [
           { discountPrice: { $lte: Number(maxPrice) } },
           { price: { $lte: Number(maxPrice) } },
         ];
@@ -82,12 +76,12 @@ export const getAllCourses = async (req: Request, res: Response) => {
 
     // Filter by rating
     if (minRating) {
-      query.averageRating = { $gte: Number(minRating) };
+      (query as any).averageRating = { $gte: Number(minRating) };
     }
 
     // Filter by instructor
     if (instructor) {
-      query.instructor = instructor;
+      (query as any).instructor = instructor;
     }
 
     // Search
@@ -145,6 +139,131 @@ export const getAllCourses = async (req: Request, res: Response) => {
     res.status(500).json({
       success: false,
       message: 'Error fetching courses',
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+};
+
+// @desc    Get instructor's own courses
+// @route   GET /api/courses/mine
+// @access  Private/Instructor or Admin (admin thấy của chính mình nếu dùng endpoint này)
+export const getMyCourses = async (req: Request, res: Response) => {
+  try {
+    const {
+      page = 1,
+      limit = 12,
+      status,
+      search,
+    } = req.query;
+
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required',
+      });
+    }
+
+    const query: Record<string, unknown> = {
+      instructor: req.user.id,
+    };
+
+    if (status) {
+      query.status = status;
+    }
+
+    if (search) {
+      (query as any).$or = [
+        { title: { $regex: search, $options: 'i' } },
+        { shortDescription: { $regex: search, $options: 'i' } },
+        { tags: { $in: [new RegExp(search as string, 'i')] } },
+      ];
+    }
+
+    const skip = (Number(page) - 1) * Number(limit);
+
+    const courses = await Course.find(query)
+      .populate('category', 'name slug')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(Number(limit));
+
+    const total = await Course.countDocuments(query);
+
+    res.json({
+      success: true,
+      pagination: {
+        currentPage: Number(page),
+        totalPages: Math.ceil(total / Number(limit)),
+        totalItems: total,
+        itemsPerPage: Number(limit),
+      },
+      courses,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching instructor courses',
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+};
+
+// @desc    Get all courses for admin management
+// @route   GET /api/courses/admin
+// @access  Private/Admin
+export const getAdminCourses = async (req: Request, res: Response) => {
+  try {
+    const {
+      page = 1,
+      limit = 20,
+      instructor,
+      status,
+      search,
+    } = req.query;
+
+    const query: Record<string, unknown> = {};
+
+    if (instructor) {
+      query.instructor = instructor;
+    }
+
+    if (status) {
+      query.status = status;
+    }
+
+    if (search) {
+      (query as any).$or = [
+        { title: { $regex: search, $options: 'i' } },
+        { shortDescription: { $regex: search, $options: 'i' } },
+        { tags: { $in: [new RegExp(search as string, 'i')] } },
+      ];
+    }
+
+    const skip = (Number(page) - 1) * Number(limit);
+
+    const courses = await Course.find(query)
+      .populate('instructor', 'fullName email role')
+      .populate('category', 'name slug')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(Number(limit));
+
+    const total = await Course.countDocuments(query);
+
+    res.json({
+      success: true,
+      pagination: {
+        currentPage: Number(page),
+        totalPages: Math.ceil(total / Number(limit)),
+        totalItems: total,
+        itemsPerPage: Number(limit),
+      },
+      courses,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching admin courses',
       error: error instanceof Error ? error.message : 'Unknown error',
     });
   }
@@ -403,8 +522,8 @@ export const createCourse = async (req: Request, res: Response) => {
       .toLowerCase()
       .trim()
       .replace(/\s+/g, '-')
-      .replace(/[^\w\-]+/g, '')
-      .replace(/\-\-+/g, '-');
+      .replace(/[^\w-]+/g, '')
+      .replace(/-+/g, '-');
 
     // Check if slug exists
     const existingCourse = await Course.findOne({ slug });
@@ -483,8 +602,8 @@ export const updateCourse = async (req: Request, res: Response) => {
         .toLowerCase()
         .trim()
         .replace(/\s+/g, '-')
-        .replace(/[^\w\-]+/g, '')
-        .replace(/\-\-+/g, '-');
+        .replace(/[^\w-]+/g, '')
+        .replace(/-+/g, '-');
 
       const existingCourse = await Course.findOne({ slug, _id: { $ne: id } });
       if (existingCourse) {
