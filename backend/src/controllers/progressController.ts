@@ -129,13 +129,23 @@ export const updateLessonProgress = async (req: Request, res: Response) => {
 
       await (progress as any).submitQuiz(mappedAnswers);
     } else {
+      // If status is being set to completed, ensure it's marked as modified
+      if (status === 'completed') {
+        (progress as any).status = 'completed';
+        (progress as any).markModified('status');
+      }
       await progress.save();
     }
+
+    // Reload enrollment to get updated data (timeSpent, lastAccessed, completedLessons, etc.)
+    const updatedEnrollment = await Enrollment.findById(enrollment._id)
+      .select('progress status completedLessons totalLessons totalTimeSpent lastAccessed');
 
     res.json({
       success: true,
       message: 'Progress updated successfully',
       progress,
+      enrollment: updatedEnrollment,
     });
   } catch (error) {
     res.status(500).json({
@@ -203,10 +213,15 @@ export const completeLesson = async (req: Request, res: Response) => {
 
     await (progress as any).markCompleted();
 
+    // Reload enrollment to get updated progress (including completedLessons)
+    const updatedEnrollment = await Enrollment.findById(enrollment._id)
+      .select('progress status completedLessons totalLessons totalTimeSpent lastAccessed');
+
     res.json({
       success: true,
       message: 'Lesson marked as completed',
       progress,
+      enrollment: updatedEnrollment,
     });
   } catch (error) {
     res.status(500).json({

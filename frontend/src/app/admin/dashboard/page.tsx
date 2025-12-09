@@ -211,6 +211,18 @@ function AdminDashboardContent() {
                 Quản lý danh mục
               </Link>
               <Link
+                href="/admin/reviews"
+                className="px-4 py-3 bg-rose-600 text-white rounded-lg hover:bg-rose-700 transition-colors text-center font-medium"
+              >
+                Quản lý đánh giá
+              </Link>
+              <Link
+                href="/admin/images"
+                className="px-4 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors text-center font-medium"
+              >
+                Quản lý hình ảnh
+              </Link>
+              <Link
                 href="/admin/analytics"
                 className="px-4 py-3 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 transition-colors text-center font-medium"
               >

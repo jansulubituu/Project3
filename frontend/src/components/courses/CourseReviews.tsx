@@ -121,7 +121,7 @@ export default function CourseReviews({ courseId, isEnrolled = false, courseInst
     }
   };
 
-  const isCourseInstructor = courseInstructorId && user?.id === courseInstructorId;
+  const isCourseInstructor = !!courseInstructorId && user?.id === courseInstructorId;
   const isInstructor = (user?.role === 'instructor' || user?.role === 'admin') && isCourseInstructor;
 
   if (loading && reviews.length === 0) {
@@ -217,7 +217,7 @@ export default function CourseReviews({ courseId, isEnrolled = false, courseInst
           <div className="space-y-6">
             {reviews.map((review) => {
               const isOwner =
-                user &&
+                !!user &&
                 typeof review.student === 'object' &&
                 review.student._id === user.id;
               const isCourseInstructor = isInstructor; // You might want to check if user is the course instructor

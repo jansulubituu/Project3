@@ -1,0 +1,355 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import ProtectedRoute from '@/components/ProtectedRoute';
+import { api } from '@/lib/api';
+import Header from '@/components/layout/Header';
+import Footer from '@/components/layout/Footer';
+import Image from 'next/image';
+import Link from 'next/link';
+
+interface Enrollment {
+  _id: string;
+  progress: number;
+  status: string;
+  enrolledAt: string;
+  completedLessons: number;
+  totalLessons: number;
+  totalTimeSpent: number;
+  course: {
+    _id: string;
+    title: string;
+    slug: string;
+    thumbnail: string;
+    level: string;
+    totalLessons: number;
+    enrollmentCount: number;
+    averageRating: number;
+    instructor: {
+      _id: string;
+      fullName: string;
+      avatar: string;
+      headline?: string;
+    };
+  };
+}
+
+export default function MyLearningPage() {
+  return (
+    <ProtectedRoute>
+      <MyLearningContent />
+    </ProtectedRoute>
+  );
+}
+
+function MyLearningContent() {
+  const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState<'all' | 'active' | 'completed'>('all');
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    loadEnrollments();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filter]);
+
+  const loadEnrollments = async () => {
+    try {
+      setLoading(true);
+      setError('');
+      // Backend validation requires limit between 1-50
+      const params: { limit?: number; status?: string } = { limit: 50 };
+      if (filter !== 'all') {
+        params.status = filter;
+      }
+      
+      console.log('Loading enrollments with params:', params);
+      const response = await api.get('/enrollments/my-courses', { params });
+      console.log('Enrollments API response:', response.data);
+      
+      if (response.data.success) {
+        const enrollmentsData = response.data.enrollments || [];
+        console.log('Enrollments data:', enrollmentsData);
+        setEnrollments(enrollmentsData);
+        if (enrollmentsData.length === 0) {
+          setError('');
+        }
+      } else {
+        setError(response.data.message || 'Không thể tải danh sách khóa học');
+      }
+    } catch (err: any) {
+      console.error('Failed to load enrollments:', err);
+      console.error('Error details:', {
+        message: err?.message,
+        response: err?.response?.data,
+        status: err?.response?.status,
+        statusText: err?.response?.statusText,
+      });
+      
+      // Extract validation errors if any
+      const errorData = err?.response?.data;
+      let errorMessage = 'Không thể tải danh sách khóa học';
+      
+      if (errorData) {
+        if (errorData.message) {
+          errorMessage = errorData.message;
+        } else if (errorData.errors && Array.isArray(errorData.errors)) {
+          errorMessage = errorData.errors.map((e: any) => e.msg || e.message).join(', ');
+        } else if (typeof errorData === 'string') {
+          errorMessage = errorData;
+        }
+      } else if (err?.message) {
+        errorMessage = err.message;
+      }
+      
+      setError(errorMessage);
+      
+      // Set empty array on error to show empty state
+      setEnrollments([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const formatTime = (minutes: number) => {
+    if (!minutes || minutes === 0) return '0 phút';
+    if (minutes < 60) return `${minutes} phút`;
+    const hours = Math.floor(minutes / 60);
+    const mins = minutes % 60;
+    return mins > 0 ? `${hours}h ${mins}p` : `${hours} giờ`;
+  };
+
+  const getLevelColor = (level: string) => {
+    switch (level) {
+      case 'beginner':
+        return 'bg-green-100 text-green-800';
+      case 'intermediate':
+        return 'bg-yellow-100 text-yellow-800';
+      case 'advanced':
+        return 'bg-red-100 text-red-800';
+      default:
+        return 'bg-blue-100 text-blue-800';
+    }
+  };
+
+  const getLevelLabel = (level: string) => {
+    switch (level) {
+      case 'beginner':
+        return 'Cơ bản';
+      case 'intermediate':
+        return 'Trung bình';
+      case 'advanced':
+        return 'Nâng cao';
+      case 'all_levels':
+        return 'Mọi cấp độ';
+      default:
+        return level;
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex flex-col">
+        <Header />
+        <main className="flex-1 flex items-center justify-center">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+            <p className="mt-4 text-gray-600">Đang tải khóa học của bạn...</p>
+          </div>
+        </main>
+        <Footer />
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50 flex flex-col">
+      <Header />
+
+      <main className="flex-1 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full">
+        {/* Header */}
+        <div className="mb-8">
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">Học tập của tôi</h1>
+          <p className="text-gray-600">Quản lý và tiếp tục các khóa học bạn đã đăng ký</p>
+        </div>
+
+        {/* Filter Tabs */}
+        <div className="mb-6 border-b border-gray-200">
+          <nav className="-mb-px flex space-x-8">
+            <button
+              onClick={() => setFilter('all')}
+              className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                filter === 'all'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              Tất cả ({enrollments.length})
+            </button>
+            <button
+              onClick={() => setFilter('active')}
+              className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                filter === 'active'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              Đang học
+            </button>
+            <button
+              onClick={() => setFilter('completed')}
+              className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                filter === 'completed'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              Đã hoàn thành
+            </button>
+          </nav>
+        </div>
+
+        {/* Error Message */}
+        {error && (
+          <div className="mb-6 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium">Lỗi khi tải dữ liệu</p>
+                <p className="text-sm mt-1">{error}</p>
+              </div>
+              <button
+                onClick={loadEnrollments}
+                className="ml-4 px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700 text-sm"
+              >
+                Thử lại
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Enrollments List */}
+        {!loading && enrollments.length === 0 && !error && (
+          <div className="bg-white rounded-lg shadow p-12 text-center">
+            <div className="text-6xl mb-4">📚</div>
+            <h3 className="text-xl font-semibold text-gray-900 mb-2">
+              {filter === 'all' ? 'Chưa có khóa học nào' : `Chưa có khóa học ${filter === 'active' ? 'đang học' : 'đã hoàn thành'}`}
+            </h3>
+            <p className="text-gray-600 mb-6">
+              {filter === 'all'
+                ? 'Bắt đầu khám phá các khóa học mới ngay hôm nay!'
+                : filter === 'active'
+                ? 'Bạn chưa có khóa học nào đang học.'
+                : 'Bạn chưa hoàn thành khóa học nào.'}
+            </p>
+            {filter === 'all' && (
+              <Link
+                href="/courses"
+                className="inline-block px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                Khám phá khóa học
+              </Link>
+            )}
+          </div>
+        )}
+        {enrollments.length > 0 && (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {enrollments.map((enrollment) => (
+              <div
+                key={enrollment._id}
+                className="bg-white rounded-lg shadow hover:shadow-lg transition-shadow overflow-hidden"
+              >
+                {/* Course Thumbnail */}
+                <Link href={`/courses/${enrollment.course.slug}`}>
+                  <div className="relative aspect-video bg-gray-200">
+                    {enrollment.course.thumbnail ? (
+                      <Image
+                        src={enrollment.course.thumbnail}
+                        alt={enrollment.course.title}
+                        fill
+                        className="object-cover"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-gray-400 text-4xl">
+                        📚
+                      </div>
+                    )}
+                    {enrollment.status === 'completed' && (
+                      <div className="absolute top-2 right-2">
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-500 text-white">
+                          ✓ Hoàn thành
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </Link>
+
+                {/* Course Info */}
+                <div className="p-4">
+                  <Link href={`/courses/${enrollment.course.slug}`}>
+                    <h3 className="font-semibold text-gray-900 mb-2 hover:text-blue-600 line-clamp-2">
+                      {enrollment.course.title}
+                    </h3>
+                  </Link>
+
+                  {/* Instructor */}
+                  <div className="flex items-center space-x-2 mb-3 text-sm text-gray-600">
+                    <span>👤 {enrollment.course.instructor.fullName}</span>
+                  </div>
+
+                  {/* Progress */}
+                  <div className="mb-3">
+                    <div className="flex items-center justify-between text-sm mb-1">
+                      <span className="text-gray-600">Tiến độ</span>
+                      <span className="font-medium text-gray-900">
+                        {enrollment.progress}% ({enrollment.completedLessons}/{enrollment.totalLessons || enrollment.course.totalLessons || 0})
+                      </span>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-2">
+                      <div
+                        className={`h-2 rounded-full transition-all ${
+                          enrollment.status === 'completed'
+                            ? 'bg-green-500'
+                            : 'bg-blue-600'
+                        }`}
+                        style={{ width: `${enrollment.progress}%` }}
+                      ></div>
+                    </div>
+                  </div>
+
+                  {/* Meta Info */}
+                  <div className="flex items-center justify-between text-xs text-gray-500 mb-3">
+                    <span className={`px-2 py-1 rounded ${getLevelColor(enrollment.course.level)}`}>
+                      {getLevelLabel(enrollment.course.level)}
+                    </span>
+                    <span>⏱️ {formatTime(enrollment.totalTimeSpent)}</span>
+                  </div>
+
+                  {/* Actions */}
+                  <div className="flex space-x-2">
+                    <Link
+                      href={`/courses/${enrollment.course.slug}`}
+                      className="flex-1 text-center px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors text-sm font-medium"
+                    >
+                      Xem chi tiết
+                    </Link>
+                    {enrollment.status === 'active' && (
+                      <Link
+                        href={`/courses/${enrollment.course.slug}?tab=curriculum`}
+                        className="flex-1 text-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
+                      >
+                        Tiếp tục học
+                      </Link>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </main>
+
+      <Footer />
+    </div>
+  );
+}
+

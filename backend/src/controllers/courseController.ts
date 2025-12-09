@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { Course, Category, Section, Lesson, Review, Enrollment, User } from '../models';
+import { Course, Category, Section, Lesson, Review, Enrollment, User, Progress } from '../models';
 import mongoose from 'mongoose';
 import { uploadImageFromBuffer, deleteImage } from '../config/cloudinary';
 
@@ -358,8 +358,9 @@ export const getCourseCurriculum = async (req: Request, res: Response) => {
 
     // Check if user is enrolled (for progress / UI hints)
     let isEnrolled = false;
+    let enrollment = null;
     if (req.user) {
-      const enrollment = await Enrollment.findOne({
+      enrollment = await Enrollment.findOne({
         student: req.user.id,
         course: course._id,
         status: 'active',
@@ -381,6 +382,37 @@ export const getCourseCurriculum = async (req: Request, res: Response) => {
         options: { sort: { order: 1 } },
       });
 
+    // Get progress for all lessons if user is enrolled
+    let lessonProgressMap: Record<string, { status: string; completedAt?: Date }> = {};
+    if (isEnrolled && enrollment && req.user) {
+      const progresses = await Progress.find({
+        student: req.user.id,
+        course: course._id,
+      }).select('lesson status completedAt');
+      
+      progresses.forEach((p: any) => {
+        lessonProgressMap[p.lesson.toString()] = {
+          status: p.status,
+          completedAt: p.completedAt,
+        };
+      });
+    }
+
+    // Add progress status to each lesson
+    const sectionsWithProgress = sections.map((section: any) => ({
+      ...section.toObject(),
+      lessons: section.lessons.map((lesson: any) => {
+        const progress = lessonProgressMap[lesson._id.toString()];
+        return {
+          ...lesson.toObject(),
+          progress: progress ? {
+            status: progress.status,
+            completedAt: progress.completedAt,
+          } : null,
+        };
+      }),
+    }));
+
     res.json({
       success: true,
       course: {
@@ -390,7 +422,12 @@ export const getCourseCurriculum = async (req: Request, res: Response) => {
         totalLessons: course.totalLessons,
       },
       isEnrolled,
-      sections,
+      enrollment: enrollment ? {
+        progress: enrollment.progress,
+        completedLessons: enrollment.completedLessons.length,
+        totalLessons: enrollment.totalLessons,
+      } : null,
+      sections: sectionsWithProgress,
     });
   } catch (error) {
     res.status(500).json({

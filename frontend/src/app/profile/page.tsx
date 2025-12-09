@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import Image from 'next/image';
+import Link from 'next/link';
 import { api } from '@/lib/api';
 import AvatarUpload from '@/components/profile/AvatarUpload';
 import ProfileForm from '@/components/profile/ProfileForm';
@@ -33,6 +34,7 @@ interface ProfileData {
       _id: string;
       title: string;
       thumbnail: string;
+      slug?: string;
     };
     progress: number;
     status: string;
@@ -279,41 +281,86 @@ function ProfileContent() {
             )}
 
             {/* Courses/Enrollments Section */}
-            {profile.role === 'student' && profile.enrollments && profile.enrollments.length > 0 && (
+            {profile.role === 'student' && (
               <div className="bg-white rounded-lg shadow p-6">
-                <h2 className="text-xl font-semibold text-gray-900 mb-4">
-                  Khóa học đã đăng ký
-                </h2>
-                <div className="space-y-4">
-                  {profile.enrollments.map((enrollment) => (
-                    <div key={enrollment._id} className="flex items-center space-x-4 p-4 border rounded-lg">
-                      {enrollment.course.thumbnail && (
-                        <Image
-                          src={enrollment.course.thumbnail}
-                          alt={enrollment.course.title}
-                          width={80}
-                          height={80}
-                          className="rounded-lg object-cover"
-                        />
-                      )}
-                      <div className="flex-1">
-                        <h3 className="font-medium text-gray-900">{enrollment.course.title}</h3>
-                        <div className="mt-2">
-                          <div className="flex items-center justify-between text-sm text-gray-600 mb-1">
-                            <span>Tiến độ</span>
-                            <span>{enrollment.progress}%</span>
-                          </div>
-                          <div className="w-full bg-gray-200 rounded-full h-2">
-                            <div
-                              className="bg-blue-600 h-2 rounded-full"
-                              style={{ width: `${enrollment.progress}%` }}
-                            ></div>
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-xl font-semibold text-gray-900">
+                    Khóa học đã đăng ký
+                  </h2>
+                  <Link
+                    href="/my-learning"
+                    className="text-sm text-blue-600 hover:text-blue-700 font-medium"
+                  >
+                    Xem tất cả →
+                  </Link>
+                </div>
+                {profile.enrollments && profile.enrollments.length > 0 ? (
+                  <div className="space-y-4">
+                    {profile.enrollments.slice(0, 5).map((enrollment) => (
+                      <Link
+                        key={enrollment._id}
+                        href={`/courses/${(enrollment.course as any).slug || enrollment.course._id}`}
+                        className="flex items-center space-x-4 p-4 border rounded-lg hover:bg-gray-50 transition-colors"
+                      >
+                        {enrollment.course.thumbnail && (
+                          <Image
+                            src={enrollment.course.thumbnail}
+                            alt={enrollment.course.title}
+                            width={80}
+                            height={80}
+                            className="rounded-lg object-cover flex-shrink-0"
+                          />
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <h3 className="font-medium text-gray-900 hover:text-blue-600 line-clamp-1">
+                            {enrollment.course.title}
+                          </h3>
+                          <div className="mt-2">
+                            <div className="flex items-center justify-between text-sm text-gray-600 mb-1">
+                              <span>Tiến độ</span>
+                              <span className="font-medium">{enrollment.progress}%</span>
+                            </div>
+                            <div className="w-full bg-gray-200 rounded-full h-2">
+                              <div
+                                className={`h-2 rounded-full transition-all ${
+                                  enrollment.status === 'completed'
+                                    ? 'bg-green-500'
+                                    : 'bg-blue-600'
+                                }`}
+                                style={{ width: `${enrollment.progress}%` }}
+                              ></div>
+                            </div>
+                            {enrollment.status === 'completed' && (
+                              <p className="text-xs text-green-600 mt-1 font-medium">
+                                ✓ Đã hoàn thành
+                              </p>
+                            )}
                           </div>
                         </div>
+                      </Link>
+                    ))}
+                    {profile.enrollments.length > 5 && (
+                      <div className="text-center pt-2">
+                        <Link
+                          href="/my-learning"
+                          className="text-sm text-blue-600 hover:text-blue-700 font-medium"
+                        >
+                          Xem thêm {profile.enrollments.length - 5} khóa học khác →
+                        </Link>
                       </div>
-                    </div>
-                  ))}
-                </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="text-center py-8">
+                    <p className="text-gray-600 mb-4">Bạn chưa đăng ký khóa học nào</p>
+                    <Link
+                      href="/courses"
+                      className="inline-block px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                    >
+                      Khám phá khóa học
+                    </Link>
+                  </div>
+                )}
               </div>
             )}
 

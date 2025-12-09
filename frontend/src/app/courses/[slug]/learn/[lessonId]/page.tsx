@@ -41,6 +41,10 @@ interface LessonListItem {
   duration?: number;
   isFree: boolean;
   isPublished: boolean;
+  progress?: {
+    status: 'not_started' | 'in_progress' | 'completed';
+    completedAt?: string;
+  } | null;
 }
 
 interface LessonDetail extends LessonListItem {
@@ -214,7 +218,7 @@ function LessonPage() {
   );
 
   const handleMarkComplete = async () => {
-    if (!lesson) return;
+    if (!lesson || !course) return;
     setMarkingComplete(true);
     setActionMessage(null);
     setActionError(null);
@@ -222,11 +226,34 @@ function LessonPage() {
     try {
       const response = await api.post(`/progress/lesson/${lesson._id}/complete`);
       if (response.data?.success) {
+        const updatedProgress = response.data.progress;
         setProgress({
           status: 'completed',
-          updatedAt: new Date().toISOString(),
+          updatedAt: updatedProgress?.updatedAt || new Date().toISOString(),
         });
         setActionMessage('Đã đánh dấu hoàn thành bài học!');
+        
+        // Reload course data and curriculum to get updated enrollment progress
+        // This ensures the sidebar and other components show updated progress
+        try {
+          const courseResponse = await api.get(`/courses/${slug}`);
+          if (courseResponse.data?.success) {
+            setCourse(courseResponse.data.course);
+            setIsEnrolled(courseResponse.data.isEnrolled || false);
+            
+            // Reload curriculum to update lesson progress in sidebar
+            const courseId = courseResponse.data.course?._id;
+            if (courseId) {
+              const curriculumRes = await api.get(`/courses/${courseId}/curriculum`);
+              if (curriculumRes.data?.success) {
+                setSections(curriculumRes.data.sections || []);
+              }
+            }
+          }
+        } catch (reloadErr) {
+          console.warn('Failed to reload course data:', reloadErr);
+          // Non-critical error, continue
+        }
       }
     } catch (err) {
       console.error('Failed to mark lesson complete:', err);
@@ -375,7 +402,6 @@ function LessonPage() {
             <LessonNavigator
               previousLesson={previousLesson}
               nextLesson={nextLesson}
-              slug={slug}
               onNavigate={handleNavigateLesson}
               isEnrolled={isEnrolled}
             />
@@ -446,6 +472,18 @@ function LessonSectionBlock({
                     <span>{formatMinutes(lesson.duration)}</span>
                     {lesson.isFree && <span className="text-green-600 font-semibold">Miễn phí</span>}
                     {isLocked && <span className="text-gray-400">🔒 Khóa</span>}
+                    {isEnrolled && lesson.progress && (
+                      <>
+                        {lesson.progress.status === 'completed' && (
+                          <span className="text-green-600 font-semibold flex items-center">
+                            ✓ Hoàn thành
+                          </span>
+                        )}
+                        {lesson.progress.status === 'in_progress' && (
+                          <span className="text-blue-600 font-semibold">Đang học</span>
+                        )}
+                      </>
+                    )}
                   </div>
                 </div>
               </button>
@@ -819,13 +857,11 @@ function LessonActions({
 function LessonNavigator({
   previousLesson,
   nextLesson,
-  slug,
   onNavigate,
   isEnrolled,
 }: {
   previousLesson: (LessonListItem & { sectionTitle?: string }) | null;
   nextLesson: (LessonListItem & { sectionTitle?: string }) | null;
-  slug: string;
   onNavigate: (lessonId?: string, locked?: boolean) => void;
   isEnrolled: boolean;
 }) {

@@ -25,7 +25,7 @@ export default function ReviewItem({
   onDelete,
   onVoteOrResponse,
 }: ReviewItemProps) {
-  const { user, isAuthenticated } = useAuth();
+  const { isAuthenticated } = useAuth();
   const [helpfulLoading, setHelpfulLoading] = useState(false);
   const [showResponseForm, setShowResponseForm] = useState(false);
   const [responseText, setResponseText] = useState(review.instructorResponse || '');

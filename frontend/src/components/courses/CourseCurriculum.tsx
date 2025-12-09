@@ -15,6 +15,10 @@ interface Lesson {
   duration?: number;
   isFree: boolean;
   isPublished: boolean;
+  progress?: {
+    status: 'not_started' | 'in_progress' | 'completed';
+    completedAt?: string;
+  } | null;
 }
 
 interface Section {
@@ -143,6 +147,11 @@ export default function CourseCurriculum({
             <h2 className="text-2xl font-bold text-gray-900">Nội dung khóa học</h2>
             <p className="text-sm text-gray-600 mt-1">
               {sections.reduce((total, section) => total + (section.lessons?.length || 0), 0)} bài học
+              {isEnrolled && (
+                <span className="ml-2 text-blue-600 font-medium">
+                  (Tiến độ của bạn được hiển thị bên dưới)
+                </span>
+              )}
             </p>
           </div>
           {!isEnrolled && (
@@ -221,6 +230,20 @@ export default function CourseCurriculum({
                               <span className="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded">
                                 Miễn phí
                               </span>
+                            )}
+                            {isEnrolled && lesson.progress && (
+                              <>
+                                {lesson.progress.status === 'completed' && (
+                                  <span className="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded flex items-center">
+                                    ✓ Hoàn thành
+                                  </span>
+                                )}
+                                {lesson.progress.status === 'in_progress' && (
+                                  <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded">
+                                    Đang học
+                                  </span>
+                                )}
+                              </>
                             )}
                           </div>
                           {lesson.description && (

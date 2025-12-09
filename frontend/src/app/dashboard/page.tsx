@@ -1,7 +1,9 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import ProtectedRoute from '@/components/ProtectedRoute';
+import { api } from '@/lib/api';
 import Link from 'next/link';
 
 export default function DashboardPage() {
@@ -14,6 +16,53 @@ export default function DashboardPage() {
 
 function DashboardContent() {
   const { user, logout } = useAuth();
+  const [stats, setStats] = useState({
+    totalEnrollments: 0,
+    completedCourses: 0,
+    totalTimeSpent: 0,
+  });
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (user?.role === 'student') {
+      loadStats();
+    } else {
+      setLoading(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
+
+  const loadStats = async () => {
+    try {
+      const response = await api.get('/enrollments/my-courses', {
+        params: { limit: 50 },
+      });
+      if (response.data.success) {
+        const enrollments = response.data.enrollments || [];
+        const totalTime = enrollments.reduce((sum: number, e: { totalTimeSpent?: number }) => {
+          return sum + (e.totalTimeSpent || 0);
+        }, 0);
+        const completed = enrollments.filter((e: { status: string }) => e.status === 'completed').length;
+
+        setStats({
+          totalEnrollments: enrollments.length,
+          completedCourses: completed,
+          totalTimeSpent: totalTime,
+        });
+      }
+    } catch (error) {
+      console.error('Failed to load stats:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const formatTime = (minutes: number) => {
+    if (minutes < 60) return `${minutes} phút`;
+    const hours = Math.floor(minutes / 60);
+    const mins = minutes % 60;
+    return mins > 0 ? `${hours}h ${mins}p` : `${hours} giờ`;
+  };
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -70,49 +119,65 @@ function DashboardContent() {
         </div>
 
         {/* Stats Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center">
-              <div className="flex-shrink-0">
-                <div className="flex items-center justify-center h-12 w-12 rounded-md bg-blue-500 text-white text-2xl">
-                  📚
+        {user?.role === 'student' && (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+            <Link
+              href="/my-learning"
+              className="bg-white rounded-lg shadow p-6 hover:shadow-md transition-shadow"
+            >
+              <div className="flex items-center">
+                <div className="flex-shrink-0">
+                  <div className="flex items-center justify-center h-12 w-12 rounded-md bg-blue-500 text-white text-2xl">
+                    📚
+                  </div>
+                </div>
+                <div className="ml-4 flex-1">
+                  <p className="text-sm font-medium text-gray-500">Khóa học đã đăng ký</p>
+                  <p className="text-2xl font-semibold text-gray-900">
+                    {loading ? '...' : stats.totalEnrollments}
+                  </p>
+                </div>
+                <div className="text-gray-400">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
                 </div>
               </div>
-              <div className="ml-4">
-                <p className="text-sm font-medium text-gray-500">Khóa học đã đăng ký</p>
-                <p className="text-2xl font-semibold text-gray-900">0</p>
-              </div>
-            </div>
-          </div>
+            </Link>
 
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center">
-              <div className="flex-shrink-0">
-                <div className="flex items-center justify-center h-12 w-12 rounded-md bg-green-500 text-white text-2xl">
-                  ✅
+            <div className="bg-white rounded-lg shadow p-6">
+              <div className="flex items-center">
+                <div className="flex-shrink-0">
+                  <div className="flex items-center justify-center h-12 w-12 rounded-md bg-green-500 text-white text-2xl">
+                    ✅
+                  </div>
+                </div>
+                <div className="ml-4">
+                  <p className="text-sm font-medium text-gray-500">Khóa học hoàn thành</p>
+                  <p className="text-2xl font-semibold text-gray-900">
+                    {loading ? '...' : stats.completedCourses}
+                  </p>
                 </div>
               </div>
-              <div className="ml-4">
-                <p className="text-sm font-medium text-gray-500">Khóa học hoàn thành</p>
-                <p className="text-2xl font-semibold text-gray-900">0</p>
-              </div>
             </div>
-          </div>
 
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center">
-              <div className="flex-shrink-0">
-                <div className="flex items-center justify-center h-12 w-12 rounded-md bg-purple-500 text-white text-2xl">
-                  ⏱️
+            <div className="bg-white rounded-lg shadow p-6">
+              <div className="flex items-center">
+                <div className="flex-shrink-0">
+                  <div className="flex items-center justify-center h-12 w-12 rounded-md bg-purple-500 text-white text-2xl">
+                    ⏱️
+                  </div>
                 </div>
-              </div>
-              <div className="ml-4">
-                <p className="text-sm font-medium text-gray-500">Giờ học</p>
-                <p className="text-2xl font-semibold text-gray-900">0h</p>
+                <div className="ml-4">
+                  <p className="text-sm font-medium text-gray-500">Thời gian học</p>
+                  <p className="text-2xl font-semibold text-gray-900">
+                    {loading ? '...' : formatTime(stats.totalTimeSpent)}
+                  </p>
+                </div>
               </div>
             </div>
           </div>
-        </div>
+        )}
 
         {/* User Info Card */}
         <div className="bg-white rounded-lg shadow p-6">

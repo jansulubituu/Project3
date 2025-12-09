@@ -5,7 +5,7 @@ import ProtectedRoute from '@/components/ProtectedRoute';
 import Header from '@/components/layout/Header';
 import Footer from '@/components/layout/Footer';
 import { api } from '@/lib/api';
-import { Search, Trash2, Eye, Star, Filter } from 'lucide-react';
+import { Search, Trash2, Eye, Star } from 'lucide-react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { isValidImageUrl } from '@/lib/utils';
@@ -594,4 +594,5 @@ export default function AdminReviews() {
     </ProtectedRoute>
   );
 }
+
 

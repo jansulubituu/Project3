@@ -320,8 +320,16 @@ function InstructorCourseDetailContent() {
             {/* Right: recent enrollments / reviews */}
             <div className="space-y-6">
               <div className="bg-white rounded-lg shadow">
-                <div className="px-5 py-3 border-b">
+                <div className="px-5 py-3 border-b flex items-center justify-between">
                   <h3 className="text-sm font-semibold text-gray-900">Một số học viên ghi danh</h3>
+                  {enrollments.length > 0 && (
+                    <Link
+                      href={`/instructor/courses/${course._id}/students`}
+                      className="text-xs text-blue-600 hover:text-blue-700 font-medium"
+                    >
+                      Xem tất cả →
+                    </Link>
+                  )}
                 </div>
                 <div className="max-h-64 overflow-y-auto divide-y">
                   {enrollments.length === 0 ? (
@@ -340,6 +348,16 @@ function InstructorCourseDetailContent() {
                     ))
                   )}
                 </div>
+                {enrollments.length > 0 && (
+                  <div className="px-5 py-3 border-t">
+                    <Link
+                      href={`/instructor/courses/${course._id}/students`}
+                      className="block w-full text-center px-4 py-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors text-sm font-medium"
+                    >
+                      Quản lý học viên
+                    </Link>
+                  </div>
+                )}
               </div>
 
               <div className="bg-white rounded-lg shadow">

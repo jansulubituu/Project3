@@ -139,20 +139,74 @@ progressSchema.pre('save', function (next) {
 
 // Post-save hook to update enrollment progress
 progressSchema.post('save', async function () {
-  if (this.isModified('status') && this.status === 'completed') {
+  try {
     const Enrollment = mongoose.model('Enrollment');
     const enrollment = await Enrollment.findById(this.enrollment);
     
-    if (enrollment && typeof enrollment.markLessonComplete === 'function') {
-      await enrollment.markLessonComplete(this.lesson);
+    if (!enrollment) {
+      console.warn(`Enrollment not found for progress ${this._id}`);
+      return;
     }
+    
+    let needsSave = false;
+    
+    // Update totalTimeSpent in enrollment - recalculate from all progress records
+    if (this.isModified('timeSpent') || this.isNew) {
+      const Progress = mongoose.model('Progress');
+      const allProgress = await Progress.find({ enrollment: this.enrollment });
+      const totalTime = allProgress.reduce((sum, p) => sum + (p.timeSpent || 0), 0);
+      enrollment.totalTimeSpent = totalTime;
+      needsSave = true;
+    }
+    
+    // Update lastAccessed in enrollment
+    if (this.isModified('lastAccessedAt') || this.isNew) {
+      enrollment.lastAccessed = this.lastAccessedAt;
+      needsSave = true;
+    }
+    
+    // Mark lesson as complete if status is completed
+    // Always check if status is completed, regardless of modification state
+    // This handles cases where progress is created with status='completed' or updated to 'completed'
+    if (this.status === 'completed') {
+      // Check if lesson is already in completedLessons to avoid duplicate
+      const lessonIdStr = this.lesson.toString();
+      const isAlreadyCompleted = enrollment.completedLessons.some(
+        (id: any) => id.toString() === lessonIdStr
+      );
+      
+      if (!isAlreadyCompleted) {
+        console.log(`Marking lesson ${this.lesson} as complete in enrollment ${enrollment._id}`);
+        if (typeof enrollment.markLessonComplete === 'function') {
+          await enrollment.markLessonComplete(this.lesson);
+          // markLessonComplete already calls save(), so we don't need to save again
+          needsSave = false;
+        } else {
+          console.error('markLessonComplete method not found on enrollment');
+          // Fallback: manually add lesson to completedLessons
+          enrollment.completedLessons.push(this.lesson);
+          await enrollment.updateProgress();
+          needsSave = false;
+        }
+      }
+    }
+    
+    // Save enrollment if needed (for timeSpent and lastAccessed updates)
+    if (needsSave) {
+      await enrollment.save();
+    }
+  } catch (error) {
+    console.error('Error in Progress post-save hook:', error);
+    // Don't throw error to prevent breaking the save operation
   }
 });
 
 // Method to mark as completed
 progressSchema.methods.markCompleted = async function () {
+  // Explicitly mark status as modified to ensure post-save hook triggers
   this.status = 'completed';
   this.completedAt = new Date();
+  this.markModified('status'); // Explicitly mark as modified
   await this.save();
 };
 

@@ -88,6 +88,7 @@ function EditLessonContent() {
         setCourseSlug(lesson.course?.slug || null);
 
         const quizQuestions: QuizQuestionForm[] =
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           (lesson.quizQuestions || []).map((q: any) => ({
             question: q.question || '',
             type: q.type || 'multiple_choice',
@@ -98,6 +99,7 @@ function EditLessonContent() {
           })) || [];
 
         const attachments: AttachmentForm[] =
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           (lesson.attachments || []).map((a: any) => ({
             name: a.name || '',
             url: a.url || '',
@@ -142,7 +144,9 @@ function EditLessonContent() {
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
   ) => {
     if (!form) return;
-    const { name, value, type, checked } = e.target;
+    const { name, value, type } = e.target;
+    const checked = (e.target as HTMLInputElement).checked;
+
     if (type === 'checkbox') {
       setForm({ ...form, [name]: checked });
     } else if (name === 'order' || name === 'duration') {
@@ -178,6 +182,7 @@ function EditLessonContent() {
         question.options = [];
       }
     } else {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (question as any)[field] = value;
     }
 
@@ -238,6 +243,7 @@ function EditLessonContent() {
       const num = typeof value === 'number' ? value : Number(value);
       att.size = Number.isNaN(num) || num < 0 ? 0 : num;
     } else {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (att as any)[field] = value;
     }
     updated[index] = att;
@@ -259,6 +265,7 @@ function EditLessonContent() {
       setError(null);
       setSuccess(null);
 
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const payload: any = {
         title: form.title.trim(),
         description: form.description.trim() || undefined,
@@ -359,7 +366,31 @@ function EditLessonContent() {
           </button>
 
           <div className="bg-white rounded-xl shadow p-6">
-            <h1 className="text-2xl font-bold text-gray-900 mb-2">Chỉnh sửa bài học</h1>
+          <div className="flex items-center justify-between mb-2">
+              <h1 className="text-2xl font-bold text-gray-900">Chỉnh sửa bài học</h1>
+              <button
+                type="button"
+                onClick={() => router.push(`/instructor/lessons/${lessonId}/stats`)}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 transition-colors"
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  className="h-4 w-4"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
+                  />
+                </svg>
+                Xem thống kê
+              </button>
+            </div>
+           
             <p className="text-sm text-gray-600 mb-6">
               Chỉ giảng viên sở hữu khóa học hoặc admin mới có quyền chỉnh sửa bài học.
             </p>

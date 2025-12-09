@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import {
   getLessonDetails,
+  getLessonStats,
   updateLesson,
   deleteLesson,
   uploadVideo,
@@ -14,6 +15,9 @@ const router = Router();
 
 // Student / general access
 router.get('/:id', protect, getLessonDetails);
+
+// Instructor/Admin - lesson stats
+router.get('/:id/stats', protect, instructorOrAdmin, getLessonStats);
 
 // Validation middleware
 const updateLessonValidation = [

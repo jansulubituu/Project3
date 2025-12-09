@@ -150,6 +150,7 @@ export const getMyEnrollments = async (req: Request, res: Response) => {
 
     const [enrollments, total] = await Promise.all([
       Enrollment.find(query)
+        .select('progress status enrolledAt completedLessons totalLessons totalTimeSpent lastAccessed completedAt hasReviewed')
         .populate({
           path: 'course',
           select: 'title slug thumbnail level totalLessons enrollmentCount averageRating instructor',
@@ -165,9 +166,21 @@ export const getMyEnrollments = async (req: Request, res: Response) => {
       Enrollment.countDocuments(query),
     ]);
 
+    // Transform enrollments to ensure completedLessons is properly returned
+    const transformedEnrollments = enrollments.map((enrollment: any) => {
+      const enrollmentObj = enrollment.toObject();
+      // Ensure completedLessons is an array and return its length
+      const completedLessonsArray = enrollmentObj.completedLessons || [];
+      return {
+        ...enrollmentObj,
+        completedLessons: Array.isArray(completedLessonsArray) ? completedLessonsArray.length : 0,
+        completedLessonsIds: completedLessonsArray,
+      };
+    });
+
     res.json({
       success: true,
-      enrollments,
+      enrollments: transformedEnrollments,
       pagination: {
         currentPage: parsedPage,
         totalPages: Math.ceil(total / parsedLimit),

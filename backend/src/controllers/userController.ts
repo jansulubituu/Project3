@@ -579,7 +579,8 @@ export const getMyProfile = async (req: Request, res: Response) => {
 
     if (user.role === 'student') {
       const enrollments = await Enrollment.find({ student: user._id })
-        .populate('course', 'title thumbnail price')
+        .select('progress status enrolledAt completedLessons totalLessons course')
+        .populate('course', 'title thumbnail price slug')
         .sort({ enrolledAt: -1 })
         .limit(10);
 
@@ -589,8 +590,18 @@ export const getMyProfile = async (req: Request, res: Response) => {
         status: 'completed',
       });
 
+      // Transform enrollments to include completedLessons count
+      const transformedEnrollments = enrollments.map((enrollment: any) => {
+        const enrollmentObj = enrollment.toObject();
+        const completedLessonsArray = enrollmentObj.completedLessons || [];
+        return {
+          ...enrollmentObj,
+          completedLessons: Array.isArray(completedLessonsArray) ? completedLessonsArray.length : 0,
+        };
+      });
+
       additionalData = {
-        enrollments: enrollments.slice(0, 5), // Recent 5
+        enrollments: transformedEnrollments.slice(0, 5), // Recent 5
         totalEnrollments,
         completedCourses,
       };

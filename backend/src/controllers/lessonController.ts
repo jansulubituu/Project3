@@ -1,6 +1,24 @@
 import { Request, Response } from 'express';
 import { Enrollment, Lesson, Progress, Section } from '../models';
 
+interface LessonStatsQuestion {
+  questionId: string;
+  question: string;
+  correctCount: number;
+  totalAttempts: number;
+  correctRate: number;
+}
+
+interface LessonStatsResponse {
+  totalEnrollments: number;
+  totalStarted: number;
+  totalCompleted: number;
+  completionRate: number;
+  totalQuizAttempts: number;
+  averageQuizScore: number | null;
+  questionStats: LessonStatsQuestion[];
+}
+
 // @desc    Create lesson
 // @route   POST /api/sections/:sectionId/lessons
 // @access  Private/Instructor (own course) or Admin
@@ -113,6 +131,99 @@ export const createLesson = async (req: Request, res: Response) => {
     res.status(500).json({
       success: false,
       message: 'Error creating lesson',
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+};
+
+// @desc    Get lesson statistics (instructor/admin)
+// @route   GET /api/lessons/:id/stats
+// @access  Private/Instructor (own course) or Admin
+export const getLessonStats = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    const lesson = await Lesson.findById(id).populate({
+      path: 'section',
+      populate: { path: 'course', select: 'instructor title' },
+    });
+
+    if (!lesson) {
+      return res.status(404).json({
+        success: false,
+        message: 'Lesson not found',
+      });
+    }
+
+    const course: any = (lesson as any).section?.course;
+    const isAdmin = req.user?.role === 'admin';
+    const isInstructor = req.user && course?.instructor?.toString() === req.user.id;
+
+    if (!isAdmin && !isInstructor) {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized to view lesson statistics',
+      });
+    }
+
+    const [enrollmentsCount, progresses] = await Promise.all([
+      Enrollment.countDocuments({ course: course?._id, status: 'active' }),
+      Progress.find({ lesson: id }).select('status quizScore quizAnswers'),
+    ]);
+
+    const totalStarted = progresses.filter((p) => p.status !== 'not_started').length;
+    const totalCompleted = progresses.filter((p) => p.status === 'completed').length;
+    const completionRate =
+      enrollmentsCount > 0 ? Math.round((totalCompleted / enrollmentsCount) * 100) : 0;
+
+    const quizAttempts = progresses.reduce((sum, p) => sum + (p.quizAnswers?.length ? 1 : 0), 0);
+    const scores = progresses
+      .map((p) => p.quizScore)
+      .filter((s) => typeof s === 'number') as number[];
+    const averageQuizScore =
+      scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : null;
+
+    const questionStats: LessonStatsQuestion[] = [];
+    const quizQuestions = (lesson as any).quizQuestions || [];
+
+    quizQuestions.forEach((q: any, idx: number) => {
+      const totalAttempts = progresses.reduce((count, p) => {
+        const ans = (p.quizAnswers || []).find((a) => a.questionId === String(idx));
+        return ans ? count + 1 : count;
+      }, 0);
+
+      const correctCount = progresses.reduce((count, p) => {
+        const ans = (p.quizAnswers || []).find((a) => a.questionId === String(idx));
+        return ans && ans.isCorrect ? count + 1 : count;
+      }, 0);
+
+      questionStats.push({
+        questionId: String(idx),
+        question: q.question || `Question ${idx + 1}`,
+        correctCount,
+        totalAttempts,
+        correctRate: totalAttempts > 0 ? Math.round((correctCount / totalAttempts) * 100) : 0,
+      });
+    });
+
+    const response: LessonStatsResponse = {
+      totalEnrollments: enrollmentsCount,
+      totalStarted,
+      totalCompleted,
+      completionRate,
+      totalQuizAttempts: quizAttempts,
+      averageQuizScore,
+      questionStats,
+    };
+
+    return res.json({
+      success: true,
+      stats: response,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to load lesson statistics',
       error: error instanceof Error ? error.message : 'Unknown error',
     });
   }
