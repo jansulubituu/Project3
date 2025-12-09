@@ -5,15 +5,20 @@ import ProtectedRoute from '@/components/ProtectedRoute';
 import Header from '@/components/layout/Header';
 import Footer from '@/components/layout/Footer';
 import { api } from '@/lib/api';
-import { Search, Upload, Trash2, Image as ImageIcon, Download } from 'lucide-react';
+import { Search, Upload, Trash2, Image as ImageIcon } from 'lucide-react';
 import Image from 'next/image';
 import Link from 'next/link';
 
 interface UploadedImage {
-  url: string;
-  publicId: string;
+  public_id: string;
+  secure_url: string;
+  width: number;
+  height: number;
+  format: string;
+  bytes: number;
+  created_at: string;
   folder?: string;
-  uploadedAt?: string;
+  tags?: string[];
 }
 
 function AdminImagesContent() {
@@ -22,16 +27,48 @@ function AdminImagesContent() {
   const [searchTerm, setSearchTerm] = useState('');
   const [uploading, setUploading] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
-
-  // Note: This is a simplified version. In production, you'd want to:
-  // 1. Create a backend API to list images from Cloudinary
-  // 2. Store image metadata in database
-  // 3. Implement proper image management
+  const [folderFilter, setFolderFilter] = useState<string>('all');
+  const [page, setPage] = useState(1);
+  const [nextCursor, setNextCursor] = useState<string | undefined>();
+  const [hasMore, setHasMore] = useState(false);
+  const itemsPerPage = 20;
 
   useEffect(() => {
-    // For now, we'll show a message that this feature needs backend support
-    setLoading(false);
-  }, []);
+    fetchImages();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [folderFilter]);
+
+  const fetchImages = async () => {
+    try {
+      setLoading(true);
+      const params: Record<string, string | number> = {
+        maxResults: itemsPerPage,
+      };
+
+      if (folderFilter !== 'all') {
+        params.folder = folderFilter;
+      }
+
+      if (nextCursor && page > 1) {
+        params.nextCursor = nextCursor;
+      }
+
+      const response = await api.get('/uploads/images', { params });
+      if (response.data.success) {
+        if (page === 1) {
+          setImages(response.data.images || []);
+        } else {
+          setImages((prev) => [...prev, ...(response.data.images || [])]);
+        }
+        setNextCursor(response.data.pagination?.nextCursor);
+        setHasMore(response.data.pagination?.hasMore || false);
+      }
+    } catch (error) {
+      console.error('Failed to fetch images:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -52,17 +89,11 @@ function AdminImagesContent() {
       });
 
       if (response.data.success) {
-        // Add to images list
-        setImages((prev) => [
-          {
-            url: response.data.url,
-            publicId: response.data.publicId,
-            folder: 'edulearn/admin-uploads',
-            uploadedAt: new Date().toISOString(),
-          },
-          ...prev,
-        ]);
         alert('Upload ảnh thành công!');
+        // Refresh images list
+        setPage(1);
+        setNextCursor(undefined);
+        await fetchImages();
       }
     } catch (error) {
       console.error('Failed to upload image:', error);
@@ -78,17 +109,38 @@ function AdminImagesContent() {
   };
 
   const handleDelete = async (image: UploadedImage) => {
-    if (!confirm('Bạn có chắc chắn muốn xóa ảnh này?\n\nLưu ý: Chức năng xóa cần backend API hỗ trợ.')) {
+    if (!confirm('Bạn có chắc chắn muốn xóa ảnh này?\n\nHành động này không thể hoàn tác!')) {
       return;
     }
 
-    // Note: This requires a backend API to delete from Cloudinary
-    alert('Chức năng xóa ảnh cần backend API hỗ trợ. Vui lòng liên hệ developer.');
+    try {
+      setActionLoading(image.public_id);
+      await api.delete(`/uploads/images/${encodeURIComponent(image.public_id)}`);
+      setImages((prev) => prev.filter((img) => img.public_id !== image.public_id));
+      alert('Xóa ảnh thành công!');
+    } catch (error) {
+      console.error('Failed to delete image:', error);
+      if (error && typeof error === 'object' && 'response' in error) {
+        const axiosError = error as { response?: { data?: { message?: string } } };
+        alert(axiosError.response?.data?.message || 'Có lỗi xảy ra khi xóa ảnh');
+      } else {
+        alert('Có lỗi xảy ra khi xóa ảnh');
+      }
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const formatFileSize = (bytes: number) => {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
   };
 
   const filteredImages = images.filter((img) =>
-    img.url.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    img.publicId.toLowerCase().includes(searchTerm.toLowerCase())
+    img.secure_url.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    img.public_id.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (img.folder && img.folder.toLowerCase().includes(searchTerm.toLowerCase()))
   );
 
   return (
@@ -126,25 +178,41 @@ function AdminImagesContent() {
             </div>
           </div>
 
-          {/* Info Banner */}
-          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
-            <p className="text-sm text-yellow-800">
-              <strong>Lưu ý:</strong> Chức năng quản lý hình ảnh hiện tại chỉ hỗ trợ upload. Để xem danh sách tất cả
-              ảnh đã upload, cần backend API để lấy danh sách từ Cloudinary hoặc lưu metadata vào database.
-            </p>
-          </div>
-
-          {/* Search */}
+          {/* Filters */}
           <div className="bg-white rounded-lg shadow p-6 mb-6">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-              <input
-                type="text"
-                placeholder="Tìm kiếm theo URL hoặc public ID..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Search */}
+              <div>
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                  <input
+                    type="text"
+                    placeholder="Tìm kiếm theo URL, public ID hoặc folder..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  />
+                </div>
+              </div>
+
+              {/* Folder Filter */}
+              <div>
+                <select
+                  value={folderFilter}
+                  onChange={(e) => {
+                    setFolderFilter(e.target.value);
+                    setPage(1);
+                    setNextCursor(undefined);
+                  }}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                >
+                  <option value="all">Tất cả folders</option>
+                  <option value="edulearn/course-thumbnails">Course Thumbnails</option>
+                  <option value="edulearn/categories">Categories</option>
+                  <option value="edulearn/admin-uploads">Admin Uploads</option>
+                  <option value="edulearn/uploads">General Uploads</option>
+                </select>
+              </div>
             </div>
           </div>
 
@@ -170,14 +238,14 @@ function AdminImagesContent() {
             ) : (
               <div className="p-6">
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                  {filteredImages.map((image, index) => (
+                  {filteredImages.map((image) => (
                     <div
-                      key={image.publicId || index}
+                      key={image.public_id}
                       className="border border-gray-200 rounded-lg overflow-hidden hover:shadow-lg transition-shadow"
                     >
                       <div className="relative aspect-square bg-gray-100">
                         <Image
-                          src={image.url}
+                          src={image.secure_url}
                           alt="Uploaded image"
                           fill
                           className="object-cover"
@@ -187,7 +255,7 @@ function AdminImagesContent() {
                       <div className="p-3 space-y-2">
                         <div className="flex items-center justify-between">
                           <button
-                            onClick={() => handleCopyUrl(image.url)}
+                            onClick={() => handleCopyUrl(image.secure_url)}
                             className="text-xs text-blue-600 hover:underline"
                             title="Copy URL"
                           >
@@ -195,25 +263,48 @@ function AdminImagesContent() {
                           </button>
                           <button
                             onClick={() => handleDelete(image)}
-                            disabled={actionLoading === image.publicId}
+                            disabled={actionLoading === image.public_id}
                             className="p-1 text-red-600 hover:bg-red-50 rounded transition-colors disabled:opacity-50"
                             title="Xóa"
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
                         </div>
-                        <div className="text-xs text-gray-500 truncate" title={image.publicId}>
-                          {image.publicId}
+                        <div className="text-xs text-gray-500 truncate" title={image.public_id}>
+                          {image.public_id}
                         </div>
-                        {image.uploadedAt && (
-                          <div className="text-xs text-gray-400">
-                            {new Date(image.uploadedAt).toLocaleDateString('vi-VN')}
+                        <div className="flex items-center justify-between text-xs text-gray-400">
+                          <span>{image.width} × {image.height}</span>
+                          <span>{formatFileSize(image.bytes)}</span>
+                        </div>
+                        <div className="text-xs text-gray-400">
+                          {new Date(image.created_at).toLocaleDateString('vi-VN')}
+                        </div>
+                        {image.folder && (
+                          <div className="text-xs text-blue-600 truncate" title={image.folder}>
+                            📁 {image.folder}
                           </div>
                         )}
                       </div>
                     </div>
                   ))}
                 </div>
+
+                {/* Load More */}
+                {hasMore && (
+                  <div className="p-6 border-t text-center">
+                    <button
+                      onClick={async () => {
+                        setPage((p) => p + 1);
+                        await fetchImages();
+                      }}
+                      disabled={loading}
+                      className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+                    >
+                      {loading ? 'Đang tải...' : 'Tải thêm'}
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </div>
