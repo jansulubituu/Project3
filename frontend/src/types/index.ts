@@ -106,8 +106,30 @@ export interface Review {
   comment: string;
   helpfulCount: number;
   instructorResponse?: string;
+  respondedAt?: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface ReviewResponse {
+  success: boolean;
+  course: {
+    _id: string;
+    title: string;
+    averageRating: number;
+    totalReviews: number;
+  };
+  ratingDistribution: Array<{
+    _id: number;
+    count: number;
+  }>;
+  pagination: {
+    currentPage: number;
+    totalPages: number;
+    totalItems: number;
+    itemsPerPage: number;
+  };
+  reviews: Review[];
 }
 
 // Payment types

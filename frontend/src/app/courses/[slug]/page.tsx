@@ -65,9 +65,11 @@ function CourseDetailContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slug, isAuthenticated]);
 
-  const fetchCourse = async () => {
+  const fetchCourse = async (silent = false) => {
     try {
-      setLoading(true);
+      if (!silent) {
+        setLoading(true);
+      }
       const response = await api.get(`/courses/${slug}`);
       if (response.data.success) {
         setCourse(response.data.course);
@@ -88,7 +90,9 @@ function CourseDetailContent() {
         setError('Có lỗi xảy ra khi tải khóa học');
       }
     } finally {
-      setLoading(false);
+      if (!silent) {
+        setLoading(false);
+      }
     }
   };
 
@@ -337,7 +341,14 @@ function CourseDetailContent() {
           {activeTab === 'curriculum' && (
             <CourseCurriculum courseId={course._id} courseSlug={course.slug} isEnrolled={isEnrolled} />
           )}
-          {activeTab === 'reviews' && <CourseReviews courseId={course._id} />}
+          {activeTab === 'reviews' && (
+            <CourseReviews
+              courseId={course._id}
+              isEnrolled={isEnrolled}
+              courseInstructorId={course.instructor._id}
+              onReviewUpdate={() => fetchCourse(true)} // Silent update - only refresh course data without showing loading
+            />
+          )}
         </div>
       </main>
 

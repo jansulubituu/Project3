@@ -12,6 +12,7 @@ import {
   getAdminCourses,
   uploadCourseThumbnail,
 } from '../controllers/courseController';
+import { createReview } from '../controllers/reviewController';
 import { protect, optionalAuth } from '../middleware/auth';
 import { instructorOrAdmin, adminOnly } from '../middleware/authorize';
 import { body } from 'express-validator';
@@ -108,6 +109,23 @@ router.get('/', optionalAuth, getAllCourses);
 router.get('/:id', optionalAuth, getCourseById);
 router.get('/:id/curriculum', optionalAuth, getCourseCurriculum);
 router.get('/:id/reviews', getCourseReviews);
+
+// Review routes nested under courses
+const createReviewValidation = [
+  body('rating')
+    .notEmpty()
+    .withMessage('Rating is required')
+    .isInt({ min: 1, max: 5 })
+    .withMessage('Rating must be between 1 and 5'),
+  body('comment')
+    .trim()
+    .notEmpty()
+    .withMessage('Comment is required')
+    .isLength({ min: 10, max: 1000 })
+    .withMessage('Comment must be between 10 and 1000 characters'),
+  validate,
+];
+router.post('/:courseId/reviews', protect, createReviewValidation, createReview);
 
 // Management routes
 router.get('/mine/list', protect, instructorOrAdmin, getMyCourses);

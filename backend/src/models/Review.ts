@@ -22,6 +22,10 @@ export interface IReview extends Document {
   respondedAt?: Date;
   createdAt: Date;
   updatedAt: Date;
+  
+  // Methods
+  addHelpfulVote(userId: mongoose.Types.ObjectId, isHelpful: boolean): Promise<void>;
+  addInstructorResponse(response: string): Promise<void>;
 }
 
 const helpfulVoteSchema = new Schema<IHelpfulVote>(
