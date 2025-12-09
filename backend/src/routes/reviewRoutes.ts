@@ -6,9 +6,10 @@ import {
   markHelpful,
   addInstructorResponse,
   getReviewById,
+  getAllReviews,
 } from '../controllers/reviewController';
 import { protect } from '../middleware/auth';
-import { instructorOrAdmin } from '../middleware/authorize';
+import { instructorOrAdmin, adminOnly } from '../middleware/authorize';
 import { body } from 'express-validator';
 import { validate } from '../middleware/validation';
 
@@ -64,6 +65,9 @@ const addResponseValidation = [
 
 // Public routes
 router.get('/:id', getReviewById);
+
+// Admin only routes
+router.get('/', protect, adminOnly, getAllReviews);
 
 // Protected routes - Student only (for creating/updating/deleting their own reviews)
 router.put('/:id', protect, updateReviewValidation, updateReview);

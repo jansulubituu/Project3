@@ -7,6 +7,7 @@ import { api } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
 import Header from '@/components/layout/Header';
 import Footer from '@/components/layout/Footer';
+import { isValidImageUrl } from '@/lib/utils';
 
 interface Category {
   _id: string;
@@ -323,7 +324,7 @@ export default function LandingPage() {
                     </p>
                     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-0">
                       <div className="flex items-center space-x-2">
-                        {course.instructor.avatar ? (
+                        {course.instructor.avatar && isValidImageUrl(course.instructor.avatar) ? (
                           <Image
                             src={course.instructor.avatar}
                             alt={course.instructor.fullName}

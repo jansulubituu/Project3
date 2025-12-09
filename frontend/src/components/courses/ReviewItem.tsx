@@ -6,6 +6,7 @@ import { api } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { Star, ThumbsUp, MessageSquare, Edit2, Trash2 } from 'lucide-react';
 import { Review } from '@/types';
+import { isValidImageUrl } from '@/lib/utils';
 
 interface ReviewItemProps {
   review: Review;
@@ -137,7 +138,7 @@ export default function ReviewItem({
     <div className="border-b border-gray-200 pb-6 last:border-b-0 last:pb-0">
       <div className="flex items-start space-x-4">
         {/* Avatar */}
-        {studentAvatar ? (
+        {studentAvatar && isValidImageUrl(studentAvatar) ? (
           <Image
             src={studentAvatar}
             alt={studentName}

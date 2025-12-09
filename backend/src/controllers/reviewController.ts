@@ -410,3 +410,70 @@ export const getReviewById = async (req: Request, res: Response) => {
   }
 };
 
+// @desc    Get all reviews (Admin only)
+// @route   GET /api/reviews
+// @access  Private/Admin
+export const getAllReviews = async (req: Request, res: Response) => {
+  try {
+    const {
+      page = 1,
+      limit = 20,
+      courseId,
+      rating,
+      isPublished,
+      search,
+    } = req.query;
+
+    const query: Record<string, unknown> = {};
+
+    // Filter by course
+    if (courseId) {
+      query.course = courseId;
+    }
+
+    // Filter by rating
+    if (rating) {
+      query.rating = Number(rating);
+    }
+
+    // Filter by published status
+    if (isPublished !== undefined) {
+      query.isPublished = isPublished === 'true';
+    }
+
+    // Search by comment
+    if (search) {
+      query.comment = { $regex: search, $options: 'i' };
+    }
+
+    const skip = (Number(page) - 1) * Number(limit);
+
+    const reviews = await Review.find(query)
+      .populate('course', 'title thumbnail slug')
+      .populate('student', 'fullName avatar email')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(Number(limit));
+
+    const total = await Review.countDocuments(query);
+
+    res.json({
+      success: true,
+      reviews,
+      pagination: {
+        currentPage: Number(page),
+        totalPages: Math.ceil(total / Number(limit)),
+        totalItems: total,
+        hasMore: skip + reviews.length < total,
+      },
+    });
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching reviews',
+      error: errorMessage,
+    });
+  }
+};
+

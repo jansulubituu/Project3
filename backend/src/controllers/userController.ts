@@ -3,6 +3,103 @@ import { User, Course, Enrollment, Review, Payment } from '../models';
 import mongoose from 'mongoose';
 import { uploadImageFromBuffer, deleteImage } from '../config/cloudinary';
 
+// @desc    Create user (Admin only)
+// @route   POST /api/users
+// @access  Private/Admin
+export const createUser = async (req: Request, res: Response) => {
+  try {
+    const { email, password, fullName, role, isActive, bio, headline } = req.body;
+
+    // Validate required fields
+    if (!email || !password || !fullName) {
+      return res.status(400).json({
+        success: false,
+        error: 'Email, password, and fullName are required',
+      });
+    }
+
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid email format',
+      });
+    }
+
+    // Validate password length
+    if (password.length < 6) {
+      return res.status(400).json({
+        success: false,
+        error: 'Password must be at least 6 characters',
+      });
+    }
+
+    // Validate role
+    const validRoles = ['student', 'instructor', 'admin'];
+    if (role && !validRoles.includes(role)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid role. Must be student, instructor, or admin',
+      });
+    }
+
+    // Check if user already exists
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
+      return res.status(400).json({
+        success: false,
+        error: 'Email already registered',
+      });
+    }
+
+    // Create user (password will be hashed by pre-save hook)
+    const user = await User.create({
+      email,
+      password,
+      fullName,
+      role: role || 'student',
+      isActive: isActive !== undefined ? isActive : true,
+      isEmailVerified: true, // Admin-created users are automatically verified
+      bio,
+      headline,
+    });
+
+    res.status(201).json({
+      success: true,
+      message: 'User created successfully',
+      user: {
+        id: user._id,
+        email: user.email,
+        fullName: user.fullName,
+        role: user.role,
+        avatar: user.avatar,
+        isActive: user.isActive,
+        isEmailVerified: user.isEmailVerified,
+        createdAt: user.createdAt,
+      },
+    });
+  } catch (error: unknown) {
+    console.error('Create user error:', error);
+    if (error && typeof error === 'object' && 'name' in error && error.name === 'ValidationError') {
+      const validationError = error as mongoose.Error.ValidationError;
+      const errors = Object.values(validationError.errors).map((err) => ({
+        field: err.path,
+        message: err.message,
+      }));
+      return res.status(400).json({
+        success: false,
+        error: 'Validation error',
+        errors,
+      });
+    }
+    res.status(500).json({
+      success: false,
+      error: 'Server error',
+    });
+  }
+};
+
 // @desc    Get all users (Admin only)
 // @route   GET /api/users
 // @access  Private/Admin

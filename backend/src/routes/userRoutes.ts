@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import {
+  createUser,
   getAllUsers,
   getUserById,
   updateUser,
@@ -29,6 +30,7 @@ router.put('/:id', protect, updateUser);
 router.post('/:id/avatar', protect, uploadSingle, uploadAvatar);
 
 // Admin only routes
+router.post('/', protect, adminOnly, createUser);
 router.get('/', protect, adminOnly, getAllUsers);
 router.delete('/:id', protect, adminOnly, deleteUser);
 router.put('/:id/deactivate', protect, adminOnly, deactivateUser);

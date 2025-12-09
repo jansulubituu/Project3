@@ -12,6 +12,7 @@ import CourseOverview from '@/components/courses/CourseOverview';
 import CourseCurriculum from '@/components/courses/CourseCurriculum';
 import CourseReviews from '@/components/courses/CourseReviews';
 import EnrollmentButton from '@/components/courses/EnrollmentButton';
+import { isValidImageUrl } from '@/lib/utils';
 
 interface Course {
   _id: string;
@@ -240,7 +241,7 @@ function CourseDetailContent() {
 
                 {/* Instructor */}
                 <div className="flex items-center space-x-3 mb-6">
-                  {course.instructor.avatar ? (
+                  {course.instructor.avatar && isValidImageUrl(course.instructor.avatar) ? (
                     <Image
                       src={course.instructor.avatar}
                       alt={course.instructor.fullName}

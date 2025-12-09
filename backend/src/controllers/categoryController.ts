@@ -213,7 +213,18 @@ export const getCategoryCourses = async (req: Request, res: Response) => {
 // @access  Private/Admin
 export const createCategory = async (req: Request, res: Response) => {
   try {
-    const { name, description, icon, image, parent, order, isActive } = req.body;
+    const { name, description, icon, image, parent, order, isActive, slug } = req.body;
+
+    // Generate slug from name if not provided
+    let categorySlug = slug;
+    if (!categorySlug && name) {
+      categorySlug = name
+        .toLowerCase()
+        .trim()
+        .replace(/\s+/g, '-')
+        .replace(/[^\w\-]+/g, '')
+        .replace(/\-\-+/g, '-');
+    }
 
     // Check if category with same name exists
     const existingCategory = await Category.findOne({ name });
@@ -222,6 +233,21 @@ export const createCategory = async (req: Request, res: Response) => {
         success: false,
         message: 'Category with this name already exists',
       });
+    }
+
+    // Check if slug already exists
+    if (categorySlug) {
+      const existingSlug = await Category.findOne({ slug: categorySlug });
+      if (existingSlug) {
+        // Append number if slug exists
+        let counter = 1;
+        let newSlug = `${categorySlug}-${counter}`;
+        while (await Category.findOne({ slug: newSlug })) {
+          counter++;
+          newSlug = `${categorySlug}-${counter}`;
+        }
+        categorySlug = newSlug;
+      }
     }
 
     // Validate parent if provided
@@ -237,6 +263,7 @@ export const createCategory = async (req: Request, res: Response) => {
 
     const category = await Category.create({
       name,
+      slug: categorySlug,
       description,
       icon,
       image,

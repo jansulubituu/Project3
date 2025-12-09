@@ -1,6 +1,7 @@
 'use client';
 
 import Image from 'next/image';
+import { isValidImageUrl } from '@/lib/utils';
 
 interface Course {
   _id: string;
@@ -98,7 +99,7 @@ export default function CourseOverview({ course }: CourseOverviewProps) {
         <div className="bg-white rounded-lg shadow p-6">
           <h3 className="text-lg font-semibold text-gray-900 mb-4">Giảng viên</h3>
           <div className="flex items-start space-x-4">
-            {course.instructor.avatar ? (
+            {course.instructor.avatar && isValidImageUrl(course.instructor.avatar) ? (
               <Image
                 src={course.instructor.avatar}
                 alt={course.instructor.fullName}

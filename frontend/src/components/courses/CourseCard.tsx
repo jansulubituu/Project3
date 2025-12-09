@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import Image from 'next/image';
+import { isValidImageUrl } from '@/lib/utils';
 
 interface Course {
   _id: string;
@@ -130,7 +131,7 @@ export default function CourseCard({ course }: CourseCardProps) {
 
         {/* Instructor */}
         <div className="flex items-center space-x-2 mb-3 sm:mb-4">
-          {course.instructor.avatar ? (
+          {course.instructor.avatar && isValidImageUrl(course.instructor.avatar) ? (
             <Image
               src={course.instructor.avatar}
               alt={course.instructor.fullName}

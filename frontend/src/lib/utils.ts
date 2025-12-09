@@ -64,6 +64,20 @@ export function slugify(text: string): string {
     .replace(/\-\-+/g, '-');
 }
 
+/**
+ * Check if an avatar URL is valid for Next.js Image component
+ * Next.js Image requires absolute URLs (http/https) or paths starting with "/"
+ */
+export function isValidImageUrl(url: string | null | undefined): boolean {
+  if (!url) return false;
+  // Check if it's an absolute URL
+  if (url.startsWith('http://') || url.startsWith('https://')) return true;
+  // Check if it starts with "/" (public folder)
+  if (url.startsWith('/')) return true;
+  // Otherwise, it's a relative path which Next.js Image doesn't support
+  return false;
+}
+
 
 
 
