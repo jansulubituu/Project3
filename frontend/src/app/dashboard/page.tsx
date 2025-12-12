@@ -120,19 +120,19 @@ function DashboardContent() {
 
         {/* Stats Grid */}
         {user?.role === 'student' && (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
             <Link
               href="/my-learning"
               className="bg-white rounded-lg shadow p-6 hover:shadow-md transition-shadow"
             >
-              <div className="flex items-center">
-                <div className="flex-shrink-0">
-                  <div className="flex items-center justify-center h-12 w-12 rounded-md bg-blue-500 text-white text-2xl">
-                    📚
-                  </div>
+            <div className="flex items-center">
+              <div className="flex-shrink-0">
+                <div className="flex items-center justify-center h-12 w-12 rounded-md bg-blue-500 text-white text-2xl">
+                  📚
                 </div>
+              </div>
                 <div className="ml-4 flex-1">
-                  <p className="text-sm font-medium text-gray-500">Khóa học đã đăng ký</p>
+                <p className="text-sm font-medium text-gray-500">Khóa học đã đăng ký</p>
                   <p className="text-2xl font-semibold text-gray-900">
                     {loading ? '...' : stats.totalEnrollments}
                   </p>
@@ -145,30 +145,30 @@ function DashboardContent() {
               </div>
             </Link>
 
-            <div className="bg-white rounded-lg shadow p-6">
-              <div className="flex items-center">
-                <div className="flex-shrink-0">
-                  <div className="flex items-center justify-center h-12 w-12 rounded-md bg-green-500 text-white text-2xl">
-                    ✅
-                  </div>
+          <div className="bg-white rounded-lg shadow p-6">
+            <div className="flex items-center">
+              <div className="flex-shrink-0">
+                <div className="flex items-center justify-center h-12 w-12 rounded-md bg-green-500 text-white text-2xl">
+                  ✅
                 </div>
-                <div className="ml-4">
-                  <p className="text-sm font-medium text-gray-500">Khóa học hoàn thành</p>
+              </div>
+              <div className="ml-4">
+                <p className="text-sm font-medium text-gray-500">Khóa học hoàn thành</p>
                   <p className="text-2xl font-semibold text-gray-900">
                     {loading ? '...' : stats.completedCourses}
                   </p>
-                </div>
               </div>
             </div>
+          </div>
 
-            <div className="bg-white rounded-lg shadow p-6">
-              <div className="flex items-center">
-                <div className="flex-shrink-0">
-                  <div className="flex items-center justify-center h-12 w-12 rounded-md bg-purple-500 text-white text-2xl">
-                    ⏱️
-                  </div>
+          <div className="bg-white rounded-lg shadow p-6">
+            <div className="flex items-center">
+              <div className="flex-shrink-0">
+                <div className="flex items-center justify-center h-12 w-12 rounded-md bg-purple-500 text-white text-2xl">
+                  ⏱️
                 </div>
-                <div className="ml-4">
+              </div>
+              <div className="ml-4">
                   <p className="text-sm font-medium text-gray-500">Thời gian học</p>
                   <p className="text-2xl font-semibold text-gray-900">
                     {loading ? '...' : formatTime(stats.totalTimeSpent)}

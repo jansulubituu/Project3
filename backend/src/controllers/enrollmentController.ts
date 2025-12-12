@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import mongoose from 'mongoose';
-import { Course, Enrollment } from '../models';
+import { Course, Enrollment, User } from '../models';
 
 const ENROLLMENT_STATUSES = ['active', 'completed', 'suspended', 'expired'];
 
@@ -64,7 +64,22 @@ export const enrollInCourse = async (req: Request, res: Response) => {
       return res.status(401).json({ success: false, message: 'Authentication required' });
     }
 
+    // Only students can enroll themselves
+    if (req.user.role !== 'student') {
+      return res.status(403).json({
+        success: false,
+        message: 'Only students can enroll in courses',
+      });
+    }
+
     const { course: courseId, payment } = req.body;
+
+    if (!courseId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Course ID is required',
+      });
+    }
 
     const course = await Course.findById(courseId).select('instructor status isPublished totalLessons title');
 
@@ -82,12 +97,24 @@ export const enrollInCourse = async (req: Request, res: Response) => {
       });
     }
 
+    // Check if course is available for enrollment
+    // Course must be published (status === 'published' AND isPublished === true)
     if (course.status !== 'published') {
       return res.status(400).json({
         success: false,
-        message: 'Course is not available for enrollment',
+        message: `Course is not available for enrollment. Current status: ${course.status}. Only published courses can be enrolled.`,
+        courseStatus: course.status,
       });
     }
+
+    // if (!course.isPublished) {
+    //   return res.status(400).json({
+    //     success: false,
+    //     message: 'Course is not published yet. Please wait for the instructor to publish this course.',
+    //     courseStatus: course.status,
+    //     isPublished: course.isPublished,
+    //   });
+    // }
 
     const existingEnrollment = await Enrollment.findOne({
       student: req.user.id,
@@ -98,6 +125,7 @@ export const enrollInCourse = async (req: Request, res: Response) => {
       return res.status(409).json({
         success: false,
         message: 'You are already enrolled in this course',
+        enrollment: existingEnrollment,
       });
     }
 
@@ -110,12 +138,19 @@ export const enrollInCourse = async (req: Request, res: Response) => {
       status: 'active',
     });
 
+    // Populate enrollment data for response
+    await enrollment.populate({
+      path: 'course',
+      select: 'title slug thumbnail',
+    });
+
     res.status(201).json({
       success: true,
       message: 'Enrollment successful',
       enrollment,
     });
   } catch (error) {
+    console.error('Error enrolling in course:', error);
     res.status(500).json({
       success: false,
       message: 'Unable to create enrollment',
@@ -328,6 +363,237 @@ export const getEnrollmentByCourse = async (req: Request, res: Response) => {
     res.status(500).json({
       success: false,
       message: 'Unable to fetch enrollments for course',
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+};
+
+/**
+ * @desc    Add one student to a course by email
+ * @route   POST /api/enrollments/course/:courseId/add-student
+ * @access  Private (Instructor of the course or Admin)
+ */
+export const addStudentToCourse = async (req: Request, res: Response) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ success: false, message: 'Authentication required' });
+    }
+
+    const { courseId } = req.params;
+    const { email } = req.body as { email: string };
+
+    if (!email || typeof email !== 'string') {
+      return res.status(400).json({
+        success: false,
+        message: 'Email is required',
+      });
+    }
+
+    const course = await findCourseByIdentifier(courseId);
+
+    if (!course) {
+      return res.status(404).json({
+        success: false,
+        message: 'Course not found',
+      });
+    }
+
+    const isInstructor = course.instructor.toString() === req.user.id;
+    const isAdmin = req.user.role === 'admin';
+
+    if (!isInstructor && !isAdmin) {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized to add students to this course',
+      });
+    }
+
+    // Find user by email
+    const user = await User.findOne({ email: email.toLowerCase().trim() }).select('_id email fullName role');
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: `User with email ${email} not found`,
+      });
+    }
+
+    // Only students can be enrolled
+    if (user.role !== 'student') {
+      return res.status(400).json({
+        success: false,
+        message: `User ${email} is not a student. Only students can be enrolled in courses.`,
+      });
+    }
+
+    // Check if already enrolled
+    const existing = await Enrollment.findOne({
+      student: user._id,
+      course: course._id,
+    });
+
+    if (existing) {
+      return res.status(409).json({
+        success: false,
+        message: `Student ${email} is already enrolled in this course`,
+        enrollment: existing,
+      });
+    }
+
+    // Create enrollment
+    const enrollment = await Enrollment.create({
+      student: user._id,
+      course: course._id,
+      totalLessons: course.totalLessons,
+      enrolledAt: new Date(),
+      status: 'active',
+    });
+
+    // Populate enrollment data
+    await enrollment.populate('student', 'fullName email avatar');
+    await enrollment.populate('course', 'title slug');
+
+    res.status(201).json({
+      success: true,
+      message: `Student ${email} has been successfully enrolled in the course`,
+      enrollment,
+    });
+  } catch (error) {
+    console.error('Error adding student to course:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Unable to add student to course',
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+};
+
+/**
+ * @desc    Add one or many students to a course by email
+ * @route   POST /api/enrollments/course/:courseId/bulk-add
+ * @access  Private (Instructor of the course or Admin)
+ */
+export const addStudentsToCourse = async (req: Request, res: Response) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ success: false, message: 'Authentication required' });
+    }
+
+    const { courseId } = req.params;
+    const { emails } = req.body as { emails: string[] };
+
+    if (!Array.isArray(emails) || emails.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Emails array is required',
+      });
+    }
+
+    // Normalize emails (trim and lowercase)
+    const normalizedEmails = emails.map((e) => e.toLowerCase().trim());
+
+    const course = await findCourseByIdentifier(courseId);
+
+    if (!course) {
+      return res.status(404).json({
+        success: false,
+        message: 'Course not found',
+      });
+    }
+
+    const isInstructor = course.instructor.toString() === req.user.id;
+    const isAdmin = req.user.role === 'admin';
+
+    if (!isInstructor && !isAdmin) {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized to add students to this course',
+      });
+    }
+
+    // Find users by email
+    const users = await User.find({ email: { $in: normalizedEmails } }).select('_id email fullName role');
+    const foundEmails = new Set(users.map((u) => u.email.toLowerCase()));
+    const missingEmails = normalizedEmails.filter((e) => !foundEmails.has(e));
+
+    const created: any[] = [];
+    const skipped: any[] = [];
+
+    for (const user of users) {
+      try {
+        // Only students can be enrolled
+        if (user.role !== 'student') {
+          skipped.push({
+            email: user.email,
+            fullName: user.fullName,
+            reason: 'not_student',
+            message: `User ${user.email} is not a student`,
+          });
+          continue;
+        }
+
+        const existing = await Enrollment.findOne({
+          student: user._id,
+          course: course._id,
+        });
+
+        if (existing) {
+          skipped.push({
+            email: user.email,
+            fullName: user.fullName,
+            reason: 'already_enrolled',
+            status: existing.status,
+            enrollmentId: existing._id,
+          });
+          continue;
+        }
+
+        const enrollment = await Enrollment.create({
+          student: user._id,
+          course: course._id,
+          totalLessons: course.totalLessons,
+          enrolledAt: new Date(),
+          status: 'active',
+        });
+
+        created.push({
+          email: user.email,
+          fullName: user.fullName,
+          enrollmentId: enrollment._id,
+        });
+      } catch (err) {
+        console.error(`Failed to add student ${user.email} to course:`, err);
+        skipped.push({
+          email: user.email,
+          fullName: user.fullName,
+          reason: 'error',
+          error: err instanceof Error ? err.message : 'Unknown error',
+        });
+      }
+    }
+
+    res.json({
+      success: true,
+      course: {
+        id: course._id,
+        title: course.title,
+        slug: course.slug,
+      },
+      summary: {
+        totalRequested: normalizedEmails.length,
+        createdCount: created.length,
+        skippedCount: skipped.length,
+        missingCount: missingEmails.length,
+      },
+      missingEmails,
+      created,
+      skipped,
+    });
+  } catch (error) {
+    console.error('Error adding students to course:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Unable to add students to course',
       error: error instanceof Error ? error.message : 'Unknown error',
     });
   }

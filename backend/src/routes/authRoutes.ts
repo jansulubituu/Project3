@@ -20,18 +20,28 @@ const router = Router();
 // Validation middleware
 const registerValidation = [
   body('email')
+    .notEmpty()
+    .withMessage('Email is required')
     .isEmail()
-    .withMessage('Please provide a valid email')
-    .normalizeEmail(),
+    .withMessage('Please provide a valid email address')
+    .normalizeEmail()
+    .toLowerCase()
+    .trim(),
   body('password')
+    .notEmpty()
+    .withMessage('Password is required')
     .isLength({ min: 6 })
-    .withMessage('Password must be at least 6 characters'),
+    .withMessage('Password must be at least 6 characters')
+    .matches(/^(?=.*[A-Za-z])(?=.*\d)/)
+    .withMessage('Password must contain at least one letter and one number'),
   body('fullName')
     .trim()
     .notEmpty()
     .withMessage('Full name is required')
     .isLength({ min: 2, max: 100 })
-    .withMessage('Full name must be between 2 and 100 characters'),
+    .withMessage('Full name must be between 2 and 100 characters')
+    .matches(/^[\p{L}\s'-]+$/u)
+    .withMessage('Full name can only contain letters, spaces, hyphens, and apostrophes'),
   body('role')
     .optional()
     .isIn(['student', 'instructor'])

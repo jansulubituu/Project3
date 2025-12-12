@@ -10,22 +10,88 @@ export const register = async (req: Request, res: Response) => {
   try {
     const { email, password, fullName, role } = req.body;
 
-    // Check if user exists
-    const existingUser = await User.findOne({ email });
-    if (existingUser) {
+    // Normalize email (lowercase, trim)
+    const normalizedEmail = email?.toLowerCase().trim();
+
+    // Validate email format (additional check)
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!normalizedEmail || !emailRegex.test(normalizedEmail)) {
       return res.status(400).json({
         success: false,
+        error: 'Please provide a valid email address',
+        field: 'email',
+      });
+    }
+
+    // Validate password strength
+    if (!password || password.length < 6) {
+      return res.status(400).json({
+        success: false,
+        error: 'Password must be at least 6 characters long',
+        field: 'password',
+      });
+    }
+
+    // Optional: Check password strength (at least one letter and one number)
+    const passwordRegex = /^(?=.*[A-Za-z])(?=.*\d)/;
+    if (!passwordRegex.test(password)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Password must contain at least one letter and one number',
+        field: 'password',
+      });
+    }
+
+    // Validate fullName
+    if (!fullName || fullName.trim().length < 2) {
+      return res.status(400).json({
+        success: false,
+        error: 'Full name must be at least 2 characters long',
+        field: 'fullName',
+      });
+    }
+
+    if (fullName.trim().length > 100) {
+      return res.status(400).json({
+        success: false,
+        error: 'Full name cannot exceed 100 characters',
+        field: 'fullName',
+      });
+    }
+
+    // Validate role (only student or instructor allowed for public registration)
+    const validRoles = ['student', 'instructor'];
+    const userRole = role || 'student';
+    if (role && !validRoles.includes(role)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid role. Only student or instructor roles are allowed',
+        field: 'role',
+      });
+    }
+
+    // Check if user exists (case-insensitive)
+    const existingUser = await User.findOne({ 
+      email: normalizedEmail 
+    });
+    
+    if (existingUser) {
+      return res.status(409).json({
+        success: false,
         error: 'Email already registered',
+        field: 'email',
+        message: 'An account with this email already exists. Please use a different email or try logging in.',
       });
     }
 
     // Create user
     const user = await User.create({
-      email,
+      email: normalizedEmail,
       password, // Will be hashed by pre-save hook
-      fullName,
-      role: role || 'student',
+      fullName: fullName.trim(),
+      role: userRole,
       isEmailVerified: false, // Will be verified with OTP
+      isActive: true,
     });
 
     // Generate 6-digit OTP
@@ -33,7 +99,13 @@ export const register = async (req: Request, res: Response) => {
     await user.save();
 
     // Send OTP email
-    await sendOTPEmail(email, fullName, otp);
+    try {
+      await sendOTPEmail(normalizedEmail, fullName.trim(), otp);
+    } catch (emailError) {
+      console.error('Failed to send OTP email:', emailError);
+      // Don't fail registration if email fails, but log it
+      // In production, you might want to queue the email or handle differently
+    }
 
     // Generate token (but user can't access protected routes until verified)
     const token = user.generateAuthToken();
@@ -51,12 +123,42 @@ export const register = async (req: Request, res: Response) => {
         isEmailVerified: user.isEmailVerified,
       },
       requiresVerification: true,
+      // Include OTP in development mode only (remove in production)
+      ...(process.env.NODE_ENV === 'development' && { otp }),
     });
   } catch (error) {
     console.error('Register error:', error);
+    
+    // Handle MongoDB duplicate key error
+    if (error instanceof Error && error.message.includes('duplicate key')) {
+      return res.status(409).json({
+        success: false,
+        error: 'Email already registered',
+        field: 'email',
+        message: 'An account with this email already exists.',
+      });
+    }
+
+    // Handle validation errors from Mongoose
+    if (error instanceof Error && error.name === 'ValidationError') {
+      const mongooseError = error as any;
+      const firstError = mongooseError.errors 
+        ? Object.values(mongooseError.errors)[0] as { message: string; path: string }
+        : null;
+      
+      return res.status(400).json({
+        success: false,
+        error: firstError?.message || 'Validation error',
+        field: firstError?.path,
+      });
+    }
+
     res.status(500).json({
       success: false,
-      error: 'Server error during registration',
+      error: 'Server error during registration. Please try again later.',
+      message: process.env.NODE_ENV === 'development' 
+        ? error instanceof Error ? error.message : 'Unknown error'
+        : undefined,
     });
   }
 };
