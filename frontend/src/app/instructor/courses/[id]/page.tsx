@@ -18,7 +18,7 @@ interface InstructorCourseDetail {
   level?: string;
   price: number;
   discountPrice?: number;
-  status: 'draft' | 'published' | 'archived';
+  status: 'draft' | 'pending' | 'published' | 'rejected' | 'archived';
   enrollmentCount: number;
   averageRating: number;
   totalReviews: number;
@@ -26,6 +26,9 @@ interface InstructorCourseDetail {
   totalDuration?: number;
   createdAt: string;
   publishedAt?: string;
+  rejectionReason?: string;
+  rejectedAt?: string;
+  submittedAt?: string;
   category?: {
     _id: string;
     name: string;
@@ -58,6 +61,7 @@ function InstructorCourseDetailContent() {
   const [reviews, setReviews] = useState<ReviewSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     const loadData = async () => {
@@ -92,6 +96,9 @@ function InstructorCourseDetailContent() {
             totalDuration: c.totalDuration,
             createdAt: c.createdAt,
             publishedAt: c.publishedAt,
+            rejectionReason: c.rejectionReason,
+            rejectedAt: c.rejectedAt,
+            submittedAt: c.submittedAt,
             category: c.category,
           });
         } else {
@@ -142,6 +149,55 @@ function InstructorCourseDetailContent() {
   const formatDate = (value?: string) => {
     if (!value) return '—';
     return new Date(value).toLocaleDateString('vi-VN');
+  };
+
+  const handleSubmitForApproval = async () => {
+    if (!course) return;
+
+    if (!confirm('Bạn có chắc chắn muốn gửi khóa học này để Admin duyệt?')) {
+      return;
+    }
+
+    try {
+      setSubmitting(true);
+      const response = await api.post(`/courses/${course._id}/submit`);
+      if (response.data.success) {
+        alert('Đã gửi khóa học để Admin duyệt thành công!');
+        // Reload course data
+        const courseRes = await api.get(`/courses/${courseId}`);
+        if (courseRes.data?.success) {
+          const c = courseRes.data.course;
+          setCourse({
+            _id: c._id,
+            title: c.title,
+            slug: c.slug,
+            shortDescription: c.shortDescription,
+            description: c.description,
+            thumbnail: c.thumbnail,
+            level: c.level,
+            price: c.price,
+            discountPrice: c.discountPrice,
+            status: c.status,
+            enrollmentCount: c.enrollmentCount,
+            averageRating: c.averageRating,
+            totalReviews: c.totalReviews,
+            totalLessons: c.totalLessons,
+            totalDuration: c.totalDuration,
+            createdAt: c.createdAt,
+            publishedAt: c.publishedAt,
+            rejectionReason: c.rejectionReason,
+            rejectedAt: c.rejectedAt,
+            submittedAt: c.submittedAt,
+            category: c.category,
+          });
+        }
+      }
+    } catch (error: any) {
+      console.error('Failed to submit course:', error);
+      alert(error.response?.data?.message || 'Không thể gửi khóa học để duyệt');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   if (loading) {
@@ -203,6 +259,10 @@ function InstructorCourseDetailContent() {
                   className={
                     course.status === 'published'
                       ? 'text-green-700 font-semibold'
+                      : course.status === 'pending'
+                      ? 'text-blue-700 font-semibold'
+                      : course.status === 'rejected'
+                      ? 'text-red-700 font-semibold'
                       : course.status === 'draft'
                       ? 'text-yellow-700 font-semibold'
                       : 'text-gray-700 font-semibold'
@@ -210,14 +270,36 @@ function InstructorCourseDetailContent() {
                 >
                   {course.status === 'published'
                     ? 'Đã xuất bản'
+                    : course.status === 'pending'
+                    ? 'Chờ Admin duyệt'
+                    : course.status === 'rejected'
+                    ? 'Đã bị từ chối'
                     : course.status === 'draft'
                     ? 'Bản nháp'
                     : 'Đã lưu trữ'}
                 </span>{' '}
-                · Tạo: {formatDate(course.createdAt)} · Publish: {formatDate(course.publishedAt)}
+                · Tạo: {formatDate(course.createdAt)}
+                {course.publishedAt && ` · Publish: ${formatDate(course.publishedAt)}`}
+                {course.submittedAt && ` · Gửi duyệt: ${formatDate(course.submittedAt)}`}
+                {course.rejectedAt && ` · Từ chối: ${formatDate(course.rejectedAt)}`}
               </p>
+              {course.status === 'rejected' && course.rejectionReason && (
+                <div className="mt-2 p-3 bg-red-50 border border-red-200 rounded-lg">
+                  <p className="text-sm font-semibold text-red-800 mb-1">Lý do từ chối:</p>
+                  <p className="text-sm text-red-700">{course.rejectionReason}</p>
+                </div>
+              )}
             </div>
             <div className="flex flex-wrap gap-2">
+              {(course.status === 'draft' || course.status === 'rejected') && (
+                <button
+                  onClick={handleSubmitForApproval}
+                  disabled={submitting}
+                  className="inline-flex items-center px-4 py-2 rounded-lg bg-green-600 text-white text-sm font-medium hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {submitting ? 'Đang gửi...' : course.status === 'rejected' ? 'Gửi lại để duyệt' : 'Gửi để Admin duyệt'}
+                </button>
+              )}
               <Link
                 href={`/courses/${course.slug}`}
                 target="_blank"

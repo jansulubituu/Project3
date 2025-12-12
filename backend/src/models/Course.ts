@@ -20,7 +20,7 @@ export interface ICourse extends Document {
   learningOutcomes: string[];
   targetAudience: string[];
   tags: string[];
-  status: 'draft' | 'published' | 'archived';
+  status: 'draft' | 'pending' | 'published' | 'rejected' | 'archived';
   enrollmentCount: number;
   averageRating: number;
   totalReviews: number;
@@ -31,6 +31,12 @@ export interface ICourse extends Document {
   metaKeywords: string[];
   isPublished: boolean;
   publishedAt?: Date;
+  // Approval workflow fields
+  rejectionReason?: string;
+  rejectedAt?: Date;
+  approvedBy?: mongoose.Types.ObjectId;
+  approvedAt?: Date;
+  submittedAt?: Date;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -135,7 +141,7 @@ const courseSchema = new Schema<ICourse>(
     },
     status: {
       type: String,
-      enum: ['draft', 'published', 'archived'],
+      enum: ['draft', 'pending', 'published', 'rejected', 'archived'],
       default: 'draft',
     },
     
@@ -187,6 +193,25 @@ const courseSchema = new Schema<ICourse>(
       default: false,
     },
     publishedAt: {
+      type: Date,
+    },
+    
+    // Approval workflow
+    rejectionReason: {
+      type: String,
+      maxlength: [500, 'Rejection reason cannot exceed 500 characters'],
+    },
+    rejectedAt: {
+      type: Date,
+    },
+    approvedBy: {
+      type: Schema.Types.ObjectId,
+      ref: 'User',
+    },
+    approvedAt: {
+      type: Date,
+    },
+    submittedAt: {
       type: Date,
     },
   },

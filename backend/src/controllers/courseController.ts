@@ -774,7 +774,190 @@ export const deleteCourse = async (req: Request, res: Response) => {
   }
 };
 
-// @desc    Publish course
+// @desc    Submit course for approval
+// @route   POST /api/courses/:id/submit
+// @access  Private/Instructor (own course)
+export const submitCourse = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    const course = await Course.findById(id);
+
+    if (!course) {
+      return res.status(404).json({
+        success: false,
+        message: 'Course not found',
+      });
+    }
+
+    // Check authorization - only instructor can submit their own course
+    if (course.instructor.toString() !== req.user!.id) {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized to submit this course',
+      });
+    }
+
+    // Validate course can be submitted
+    if (!course.thumbnail) {
+      return res.status(400).json({
+        success: false,
+        message: 'Course must have a thumbnail to be submitted',
+      });
+    }
+
+    if (course.totalLessons === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Course must have at least one lesson to be submitted',
+      });
+    }
+
+    if (course.status === 'published') {
+      return res.status(400).json({
+        success: false,
+        message: 'Course is already published',
+      });
+    }
+
+    // Clear rejection fields if resubmitting
+    const wasRejected = course.status === 'rejected';
+    if (wasRejected) {
+      course.rejectionReason = undefined;
+      course.rejectedAt = undefined;
+    }
+    
+    // Update course status to pending
+    course.status = 'pending';
+    course.submittedAt = new Date();
+    await course.save();
+
+    res.json({
+      success: true,
+      message: 'Course submitted for approval successfully',
+      course,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error submitting course',
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+};
+
+// @desc    Approve course (Admin)
+// @route   PUT /api/courses/:id/approve
+// @access  Private/Admin
+export const approveCourse = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    const course = await Course.findById(id);
+
+    if (!course) {
+      return res.status(404).json({
+        success: false,
+        message: 'Course not found',
+      });
+    }
+
+    // Only pending courses can be approved
+    if (course.status !== 'pending') {
+      return res.status(400).json({
+        success: false,
+        message: `Course status is ${course.status}. Only pending courses can be approved.`,
+      });
+    }
+
+    // Update course to published
+    course.status = 'published';
+    course.isPublished = true;
+    course.publishedAt = new Date();
+    course.approvedBy = req.user!.id as any;
+    course.approvedAt = new Date();
+    // Clear rejection fields
+    course.rejectionReason = undefined;
+    course.rejectedAt = undefined;
+    await course.save();
+
+    res.json({
+      success: true,
+      message: 'Course approved and published successfully',
+      course,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error approving course',
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+};
+
+// @desc    Reject course (Admin)
+// @route   PUT /api/courses/:id/reject
+// @access  Private/Admin
+export const rejectCourse = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { reason } = req.body;
+
+    if (!reason || typeof reason !== 'string' || reason.trim().length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Rejection reason is required',
+      });
+    }
+
+    if (reason.trim().length > 500) {
+      return res.status(400).json({
+        success: false,
+        message: 'Rejection reason cannot exceed 500 characters',
+      });
+    }
+
+    const course = await Course.findById(id);
+
+    if (!course) {
+      return res.status(404).json({
+        success: false,
+        message: 'Course not found',
+      });
+    }
+
+    // Only pending courses can be rejected
+    if (course.status !== 'pending') {
+      return res.status(400).json({
+        success: false,
+        message: `Course status is ${course.status}. Only pending courses can be rejected.`,
+      });
+    }
+
+    // Update course to rejected
+    course.status = 'rejected';
+    course.rejectionReason = reason.trim();
+    course.rejectedAt = new Date();
+    // Clear approval fields
+    course.approvedBy = undefined;
+    course.approvedAt = undefined;
+    await course.save();
+
+    res.json({
+      success: true,
+      message: 'Course rejected successfully',
+      course,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error rejecting course',
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+};
+
+// @desc    Publish course (Legacy - for direct publish without approval)
 // @route   POST /api/courses/:id/publish
 // @access  Private/Instructor (own course) or Admin
 export const publishCourse = async (req: Request, res: Response) => {
@@ -817,6 +1000,11 @@ export const publishCourse = async (req: Request, res: Response) => {
     course.status = 'published';
     course.isPublished = true;
     course.publishedAt = new Date();
+    // If admin publishes, mark as approved
+    if (req.user!.role === 'admin') {
+      course.approvedBy = req.user!.id as any;
+      course.approvedAt = new Date();
+    }
     await course.save();
 
     res.json({

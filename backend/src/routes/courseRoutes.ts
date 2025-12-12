@@ -8,6 +8,9 @@ import {
   updateCourse,
   deleteCourse,
   publishCourse,
+  submitCourse,
+  approveCourse,
+  rejectCourse,
   getMyCourses,
   getAdminCourses,
   uploadCourseThumbnail,
@@ -104,6 +107,16 @@ const updateCourseValidation = [
   validate,
 ];
 
+const rejectCourseValidation = [
+  body('reason')
+    .trim()
+    .notEmpty()
+    .withMessage('Rejection reason is required')
+    .isLength({ min: 10, max: 500 })
+    .withMessage('Rejection reason must be between 10 and 500 characters'),
+  validate,
+];
+
 // Public routes (with optional auth to allow instructor/admin to see drafts)
 router.get('/', optionalAuth, getAllCourses);
 router.get('/:id', optionalAuth, getCourseById);
@@ -137,6 +150,11 @@ router.post('/', protect, instructorOrAdmin, createCourseValidation, createCours
 router.put('/:id', protect, instructorOrAdmin, updateCourseValidation, updateCourse);
 router.delete('/:id', protect, instructorOrAdmin, deleteCourse);
 router.post('/:id/publish', protect, instructorOrAdmin, publishCourse);
+
+// Approval workflow routes
+router.post('/:id/submit', protect, instructorOrAdmin, submitCourse);
+router.put('/:id/approve', protect, adminOnly, approveCourse);
+router.put('/:id/reject', protect, adminOnly, rejectCourseValidation, rejectCourse);
 
 // Section routes nested under courses
 import { createSection, reorderSections } from '../controllers/sectionController';
