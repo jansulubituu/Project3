@@ -1,7 +1,8 @@
 import { Request, Response } from 'express';
 import { User } from '../models';
 import crypto from 'crypto';
-import { sendOTPEmail, sendWelcomeEmail } from '../services/emailService';
+import { sendOTPEmail, sendWelcomeEmail, sendResetPasswordEmail } from '../services/emailService';
+import { AuthRequest } from '../middleware/auth';
 
 // @desc    Register new user
 // @route   POST /api/auth/register
@@ -299,11 +300,22 @@ export const forgotPassword = async (req: Request, res: Response) => {
   try {
     const { email } = req.body;
 
-    const user = await User.findOne({ email });
-    if (!user) {
-      return res.status(404).json({
+    // Normalize email
+    const normalizedEmail = email?.toLowerCase().trim();
+    if (!normalizedEmail) {
+      return res.status(400).json({
         success: false,
-        error: 'No user found with that email',
+        error: 'Please provide a valid email',
+      });
+    }
+
+    const user = await User.findOne({ email: normalizedEmail });
+
+    // To avoid user enumeration, always return success even if user not found
+    if (!user) {
+      return res.json({
+        success: true,
+        message: 'If an account exists for this email, a reset link has been sent.',
       });
     }
 
@@ -311,15 +323,16 @@ export const forgotPassword = async (req: Request, res: Response) => {
     const resetToken = user.generateResetPasswordToken();
     await user.save();
 
-    // TODO: Send email with reset token
-    // For now, return token in response (ONLY FOR DEVELOPMENT!)
-    // In production, this should be sent via email only
-    
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+    const resetLink = `${frontendUrl}/reset-password?token=${resetToken}`;
+
+    // Send email (falls back to console log if SMTP not configured)
+    await sendResetPasswordEmail(user.email, user.fullName, resetLink);
+
     res.json({
       success: true,
-      message: 'Password reset token sent to email',
-      // Remove this in production:
-      resetToken: resetToken, // Only for development testing
+      message: 'If an account exists for this email, a reset link has been sent.',
+      ...(process.env.NODE_ENV === 'development' && { resetToken }), // dev helper
     });
   } catch (error) {
     console.error('Forgot password error:', error);
@@ -332,8 +345,8 @@ export const forgotPassword = async (req: Request, res: Response) => {
 
 // @desc    Reset password
 // @route   POST /api/auth/reset-password/:resetToken
-// @access  Public
-export const resetPassword = async (req: Request, res: Response) => {
+// @access  Public (but checks if logged-in user matches token owner)
+export const resetPassword = async (req: AuthRequest, res: Response) => {
   try {
     const { resetToken } = req.params;
     const { password } = req.body;
@@ -342,6 +355,15 @@ export const resetPassword = async (req: Request, res: Response) => {
       return res.status(400).json({
         success: false,
         error: 'Please provide a new password',
+      });
+    }
+
+    // Validate password strength (at least 6 chars, 1 letter, 1 number)
+    const passwordRegex = /^(?=.*[A-Za-z])(?=.*\d).{6,}$/;
+    if (!passwordRegex.test(password)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Password must be at least 6 characters and include at least one letter and one number',
       });
     }
 
@@ -362,6 +384,19 @@ export const resetPassword = async (req: Request, res: Response) => {
         success: false,
         error: 'Invalid or expired reset token',
       });
+    }
+
+    // Security check: If user is logged in, ensure they're resetting their own password
+    if (req.user) {
+      const loggedInUserId = req.user.id;
+      const tokenOwnerId = user._id.toString();
+
+      if (loggedInUserId !== tokenOwnerId) {
+        return res.status(403).json({
+          success: false,
+          error: 'You cannot reset password for another account while logged in. Please logout first.',
+        });
+      }
     }
 
     // Set new password (will be hashed by pre-save hook)

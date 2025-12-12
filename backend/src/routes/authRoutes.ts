@@ -11,7 +11,7 @@ import {
   verifyOTP,
   resendOTP,
 } from '../controllers/authController';
-import { protect } from '../middleware/auth';
+import { protect, optionalAuth } from '../middleware/auth';
 import { body } from 'express-validator';
 import { validate } from '../middleware/validation';
 
@@ -71,7 +71,9 @@ const forgotPasswordValidation = [
 const resetPasswordValidation = [
   body('password')
     .isLength({ min: 6 })
-    .withMessage('Password must be at least 6 characters'),
+    .withMessage('Password must be at least 6 characters')
+    .matches(/^(?=.*[A-Za-z])(?=.*\d)/)
+    .withMessage('Password must contain at least one letter and one number'),
   validate,
 ];
 
@@ -100,7 +102,8 @@ const verifyOTPValidation = [
 router.post('/register', registerValidation, register);
 router.post('/login', loginValidation, login);
 router.post('/forgot-password', forgotPasswordValidation, forgotPassword);
-router.post('/reset-password/:resetToken', resetPasswordValidation, resetPassword);
+// Use optionalAuth to check if user is logged in (for security check)
+router.post('/reset-password/:resetToken', optionalAuth, resetPasswordValidation, resetPassword);
 router.get('/verify-email/:token', verifyEmail);
 
 // Protected routes

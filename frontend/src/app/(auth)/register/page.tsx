@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import Link from 'next/link';
+import PasswordRequirements from '@/components/auth/PasswordRequirements';
 
 export default function RegisterPage() {
   const [formData, setFormData] = useState({
@@ -35,6 +36,15 @@ export default function RegisterPage() {
 
     if (formData.password.length < 6) {
       setError('Mật khẩu phải có ít nhất 6 ký tự');
+      return;
+    }
+
+    // Check password requirements
+    const hasLetter = /[A-Za-z]/.test(formData.password);
+    const hasNumber = /\d/.test(formData.password);
+    
+    if (!hasLetter || !hasNumber) {
+      setError('Mật khẩu phải có ít nhất 1 chữ cái và 1 số');
       return;
     }
 
@@ -144,9 +154,7 @@ export default function RegisterPage() {
                 className="mt-1 block w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 placeholder="••••••••"
               />
-              <p className="mt-1 text-xs text-gray-500">
-                Tối thiểu 6 ký tự
-              </p>
+              <PasswordRequirements password={formData.password} showAll={true} />
             </div>
 
             {/* Confirm Password */}

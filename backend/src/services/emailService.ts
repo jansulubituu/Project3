@@ -261,6 +261,108 @@ export const sendWelcomeEmail = async (email: string, fullName: string): Promise
 };
 
 /**
+ * Send reset password email
+ */
+export const sendResetPasswordEmail = async (
+  email: string,
+  fullName: string,
+  resetLink: string
+): Promise<boolean> => {
+  const html = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <style>
+        body {
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+          line-height: 1.6;
+          color: #111827;
+          max-width: 600px;
+          margin: 0 auto;
+          padding: 20px;
+          background: #f9fafb;
+        }
+        .card {
+          background: #ffffff;
+          border-radius: 12px;
+          padding: 28px;
+          box-shadow: 0 10px 25px rgba(0,0,0,0.05);
+          border: 1px solid #e5e7eb;
+        }
+        .title {
+          font-size: 22px;
+          font-weight: 700;
+          color: #111827;
+          margin-bottom: 12px;
+        }
+        .subtitle {
+          color: #4b5563;
+          margin-bottom: 20px;
+        }
+        .btn {
+          display: inline-block;
+          padding: 12px 20px;
+          background: #2563eb;
+          color: white;
+          border-radius: 10px;
+          text-decoration: none;
+          font-weight: 600;
+          margin: 16px 0;
+        }
+        .note {
+          font-size: 13px;
+          color: #6b7280;
+          margin-top: 8px;
+        }
+        .footer {
+          margin-top: 28px;
+          color: #9ca3af;
+          font-size: 13px;
+          text-align: center;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="card">
+        <div class="title">Yêu cầu đặt lại mật khẩu</div>
+        <div class="subtitle">
+          Xin chào <strong>${fullName}</strong>,<br/>
+          Chúng tôi nhận được yêu cầu đặt lại mật khẩu cho tài khoản EduLearn của bạn.
+        </div>
+        <a class="btn" href="${resetLink}">Đặt lại mật khẩu</a>
+        <p class="note">
+          Liên kết này có hiệu lực trong 10 phút. Nếu bạn không yêu cầu, hãy bỏ qua email này.
+        </p>
+      </div>
+      <div class="footer">
+        © 2024 EduLearn. Email này được gửi tự động, vui lòng không trả lời.
+      </div>
+    </body>
+    </html>
+  `;
+
+  const text = `
+    Xin chào ${fullName},
+
+    Chúng tôi nhận được yêu cầu đặt lại mật khẩu cho tài khoản EduLearn của bạn.
+    Vui lòng truy cập liên kết sau (hiệu lực 10 phút):
+    ${resetLink}
+
+    Nếu bạn không yêu cầu, hãy bỏ qua email này.
+
+    Trân trọng,
+    EduLearn Team
+  `;
+
+  return await sendEmail({
+    to: email,
+    subject: 'Đặt lại mật khẩu EduLearn',
+    html,
+    text,
+  });
+};
+
+/**
  * Send password reset email
  */
 export const sendPasswordResetEmail = async (
