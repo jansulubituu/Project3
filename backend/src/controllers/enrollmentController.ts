@@ -380,12 +380,13 @@ export const addStudentToCourse = async (req: Request, res: Response) => {
     }
 
     const { courseId } = req.params;
-    const { email } = req.body as { email: string };
+    const { email, studentId } = req.body as { email?: string; studentId?: string };
 
-    if (!email || typeof email !== 'string') {
+    // Either email or studentId must be provided
+    if (!email && !studentId) {
       return res.status(400).json({
         success: false,
-        message: 'Email is required',
+        message: 'Either email or studentId is required',
       });
     }
 
@@ -408,8 +409,26 @@ export const addStudentToCourse = async (req: Request, res: Response) => {
       });
     }
 
-    // Find user by email
-    const user = await User.findOne({ email: email.toLowerCase().trim() }).select('_id email fullName role');
+    // Find user by email or studentId
+    let user;
+    if (studentId) {
+      // Admin can use studentId directly
+      if (!isAdmin) {
+        return res.status(403).json({
+          success: false,
+          message: 'Only admin can use studentId to add students',
+        });
+      }
+      if (!mongoose.Types.ObjectId.isValid(studentId)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid studentId',
+        });
+      }
+      user = await User.findById(studentId).select('_id email fullName role');
+    } else if (email) {
+      user = await User.findOne({ email: email.toLowerCase().trim() }).select('_id email fullName role');
+    }
 
     if (!user) {
       return res.status(404).json({
@@ -469,6 +488,82 @@ export const addStudentToCourse = async (req: Request, res: Response) => {
 };
 
 /**
+ * @desc    Remove a student from a course (delete enrollment)
+ * @route   DELETE /api/enrollments/:enrollmentId
+ * @access  Private (Instructor of the course or Admin)
+ */
+export const removeStudentFromCourse = async (req: Request, res: Response) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ success: false, message: 'Authentication required' });
+    }
+
+    const { enrollmentId } = req.params;
+
+    if (!enrollmentId || !mongoose.Types.ObjectId.isValid(enrollmentId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid enrollment ID',
+      });
+    }
+
+    // Find enrollment with course and student info
+    const enrollment = await Enrollment.findById(enrollmentId)
+      .populate('course', 'instructor title')
+      .populate('student', 'email fullName');
+
+    if (!enrollment) {
+      return res.status(404).json({
+        success: false,
+        message: 'Enrollment not found',
+      });
+    }
+
+    const course = enrollment.course as any;
+    const student = enrollment.student as any;
+
+    // Check authorization
+    const isInstructor = course.instructor.toString() === req.user.id;
+    const isAdmin = req.user.role === 'admin';
+
+    if (!isInstructor && !isAdmin) {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized to remove students from this course',
+      });
+    }
+
+    // Delete enrollment and related progress records
+    // Note: pre/post('deleteOne') hooks will automatically decrement enrollmentCount
+    const Progress = mongoose.model('Progress');
+    await Promise.all([
+      Enrollment.findByIdAndDelete(enrollmentId),
+      Progress.deleteMany({ enrollment: enrollmentId }),
+    ]);
+
+    // The post('deleteOne') hook handles enrollmentCount decrement automatically
+
+    res.json({
+      success: true,
+      message: `Student ${student.email} has been removed from the course`,
+      deletedEnrollment: {
+        id: enrollment._id,
+        studentEmail: student.email,
+        studentName: student.fullName,
+        courseTitle: course.title,
+      },
+    });
+  } catch (error) {
+    console.error('Error removing student from course:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Unable to remove student from course',
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+};
+
+/**
  * @desc    Add one or many students to a course by email
  * @route   POST /api/enrollments/course/:courseId/bulk-add
  * @access  Private (Instructor of the course or Admin)
@@ -480,17 +575,15 @@ export const addStudentsToCourse = async (req: Request, res: Response) => {
     }
 
     const { courseId } = req.params;
-    const { emails } = req.body as { emails: string[] };
+    const { emails, studentIds } = req.body as { emails?: string[]; studentIds?: string[] };
 
-    if (!Array.isArray(emails) || emails.length === 0) {
+    // Either emails or studentIds must be provided
+    if ((!emails || emails.length === 0) && (!studentIds || studentIds.length === 0)) {
       return res.status(400).json({
         success: false,
-        message: 'Emails array is required',
+        message: 'Either emails array or studentIds array is required',
       });
     }
-
-    // Normalize emails (trim and lowercase)
-    const normalizedEmails = emails.map((e) => e.toLowerCase().trim());
 
     const course = await findCourseByIdentifier(courseId);
 
@@ -511,10 +604,43 @@ export const addStudentsToCourse = async (req: Request, res: Response) => {
       });
     }
 
-    // Find users by email
-    const users = await User.find({ email: { $in: normalizedEmails } }).select('_id email fullName role');
+    // Admin can use studentIds, others use emails
+    let users: any[] = [];
+    let normalizedEmails: string[] = [];
+    
+    if (studentIds && studentIds.length > 0) {
+      // Admin can use studentIds directly
+      if (!isAdmin) {
+        return res.status(403).json({
+          success: false,
+          message: 'Only admin can use studentIds to add students',
+        });
+      }
+      // Validate all studentIds are valid ObjectIds
+      const validIds = studentIds.filter((id) => mongoose.Types.ObjectId.isValid(id));
+      if (validIds.length !== studentIds.length) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid studentId(s) found',
+        });
+      }
+      users = await User.find({ _id: { $in: validIds } }).select('_id email fullName role');
+    } else if (emails && emails.length > 0) {
+      // Normalize emails (trim and lowercase)
+      normalizedEmails = emails.map((e) => e.toLowerCase().trim());
+      users = await User.find({ email: { $in: normalizedEmails } }).select('_id email fullName role');
+    }
     const foundEmails = new Set(users.map((u) => u.email.toLowerCase()));
-    const missingEmails = normalizedEmails.filter((e) => !foundEmails.has(e));
+    const missingEmails = normalizedEmails.length > 0 
+      ? normalizedEmails.filter((e) => !foundEmails.has(e))
+      : [];
+    
+    // If using studentIds, check for missing IDs
+    const missingStudentIds: string[] = [];
+    if (studentIds && studentIds.length > 0) {
+      const foundIds = new Set(users.map((u) => u._id.toString()));
+      missingStudentIds.push(...studentIds.filter((id) => !foundIds.has(id)));
+    }
 
     const created: any[] = [];
     const skipped: any[] = [];
@@ -580,12 +706,13 @@ export const addStudentsToCourse = async (req: Request, res: Response) => {
         slug: course.slug,
       },
       summary: {
-        totalRequested: normalizedEmails.length,
+        totalRequested: studentIds && studentIds.length > 0 ? studentIds.length : normalizedEmails.length,
         createdCount: created.length,
         skippedCount: skipped.length,
-        missingCount: missingEmails.length,
+        missingCount: missingEmails.length + missingStudentIds.length,
       },
-      missingEmails,
+      missingEmails: missingEmails.length > 0 ? missingEmails : undefined,
+      missingStudentIds: missingStudentIds.length > 0 ? missingStudentIds : undefined,
       created,
       skipped,
     });

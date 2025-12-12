@@ -151,14 +151,34 @@ enrollmentSchema.post('save', async function () {
   }
 });
 
-// Post-deleteOne hook to decrement course enrollment count
-enrollmentSchema.post('deleteOne', async function () {
-  const Course = mongoose.model('Course');
+// Pre-deleteOne hook to store courseId before deletion
+// This hook runs before deleteOne(), findOneAndDelete(), findByIdAndDelete()
+enrollmentSchema.pre('deleteOne', { document: false, query: true }, async function () {
+  // Store courseId in the query context for post hook
   const doc = await this.model.findOne(this.getFilter());
-  if (doc) {
-    await Course.findByIdAndUpdate(doc.course, {
-      $inc: { enrollmentCount: -1 },
-    });
+  if (doc && doc.course) {
+    (this as any)._courseId = doc.course;
+  }
+});
+
+// Post-deleteOne hook to decrement course enrollment count
+// Note: This hook triggers for deleteOne(), deleteMany(), findOneAndDelete(), findByIdAndDelete()
+enrollmentSchema.post('deleteOne', { document: false, query: true }, async function () {
+  try {
+    const courseId = (this as any)._courseId;
+    if (courseId) {
+      const Course = mongoose.model('Course');
+      await Course.updateOne(
+        { _id: courseId },
+        { 
+          $inc: { enrollmentCount: -1 },
+          $max: { enrollmentCount: 0 }, // Ensure it doesn't go below 0
+        }
+      );
+    }
+  } catch (error) {
+    // Don't throw error in hook to prevent breaking the delete operation
+    console.error('Error in Enrollment post-deleteOne hook:', error);
   }
 });
 
