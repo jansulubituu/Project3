@@ -8,11 +8,12 @@ export interface IPayment extends Document {
   currency: string;
   discountAmount: number;
   finalAmount: number;
-  paymentMethod: 'stripe' | 'vnpay' | 'momo' | 'free';
+  paymentMethod: 'stripe' | 'vnpay' | 'momo' | 'free' | 'sepay';
   paymentIntent?: string;
   stripeCustomerId?: string;
   vnpayTransactionId?: string;
   vnpayOrderInfo?: string;
+  sepayTransactionId?: string;
   status: 'pending' | 'completed' | 'failed' | 'refunded' | 'cancelled';
   paidAt?: Date;
   refundedAt?: Date;
@@ -21,6 +22,9 @@ export interface IPayment extends Document {
   couponCode?: string;
   createdAt: Date;
   updatedAt: Date;
+  markCompleted: (transactionId?: string) => Promise<void>;
+  markFailed: () => Promise<void>;
+  refund: () => Promise<void>;
 }
 
 const paymentSchema = new Schema<IPayment>(
@@ -57,7 +61,7 @@ const paymentSchema = new Schema<IPayment>(
     },
     paymentMethod: {
       type: String,
-      enum: ['stripe', 'vnpay', 'momo', 'free'],
+      enum: ['stripe', 'vnpay', 'momo', 'free', 'sepay'],
       required: [true, 'Payment method is required'],
     },
     
@@ -74,6 +78,9 @@ const paymentSchema = new Schema<IPayment>(
       type: String,
     },
     vnpayOrderInfo: {
+      type: String,
+    },
+    sepayTransactionId: {
       type: String,
     },
     
@@ -108,6 +115,7 @@ paymentSchema.index({ status: 1 });
 paymentSchema.index({ paymentMethod: 1 });
 paymentSchema.index({ user: 1, course: 1 });
 paymentSchema.index({ createdAt: -1 });
+paymentSchema.index({ 'metadata.order_invoice_number': 1 });
 
 // Pre-save hook to calculate final amount
 paymentSchema.pre('save', function (next) {
@@ -130,7 +138,7 @@ paymentSchema.pre('save', function (next) {
 
 // Post-save hook to create enrollment when payment is completed
 paymentSchema.post('save', async function () {
-  if (this.isModified('status') && this.status === 'completed') {
+  if (this.status === 'completed') {
     const Enrollment = mongoose.model('Enrollment');
     
     // Check if enrollment already exists
@@ -140,11 +148,21 @@ paymentSchema.post('save', async function () {
     });
     
     if (!existingEnrollment) {
+      console.info('[Payment] Creating enrollment after completed payment', {
+        paymentId: this._id.toString(),
+        userId: this.user.toString(),
+        courseId: this.course.toString(),
+      });
       await Enrollment.create({
         student: this.user,
         course: this.course,
         payment: this._id,
         enrolledAt: this.paidAt || new Date(),
+      });
+    } else {
+      console.info('[Payment] Enrollment already exists for payment completion', {
+        paymentId: this._id.toString(),
+        enrollmentId: existingEnrollment._id.toString(),
       });
     }
   }
@@ -152,6 +170,12 @@ paymentSchema.post('save', async function () {
 
 // Method to mark as completed
 paymentSchema.methods.markCompleted = async function (transactionId?: string) {
+  console.info('[Payment] markCompleted called', {
+    paymentId: this._id.toString(),
+    currentStatus: this.status,
+    transactionId,
+    paymentMethod: this.paymentMethod,
+  });
   this.status = 'completed';
   this.paidAt = new Date();
   
@@ -160,10 +184,17 @@ paymentSchema.methods.markCompleted = async function (transactionId?: string) {
       this.paymentIntent = transactionId;
     } else if (this.paymentMethod === 'vnpay') {
       this.vnpayTransactionId = transactionId;
+    } else if (this.paymentMethod === 'sepay') {
+      this.sepayTransactionId = transactionId;
     }
   }
   
   await this.save();
+  console.info('[Payment] markCompleted saved', {
+    paymentId: this._id.toString(),
+    status: this.status,
+    paidAt: this.paidAt,
+  });
 };
 
 // Method to mark as failed
