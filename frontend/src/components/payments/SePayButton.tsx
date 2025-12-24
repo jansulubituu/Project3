@@ -60,3 +60,4 @@ const SePayButton = ({ courseId, paymentMethod = 'BANK_TRANSFER', label = 'Thanh
 
 export default SePayButton;
 
+
