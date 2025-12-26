@@ -7,15 +7,21 @@ import Header from '@/components/layout/Header';
 import Footer from '@/components/layout/Footer';
 import Image from 'next/image';
 import Link from 'next/link';
+import CertificateCard from '@/components/certificates/CertificateCard';
 
 interface Enrollment {
   _id: string;
   progress: number;
   status: string;
   enrolledAt: string;
+  completedAt?: string;
   completedLessons: number;
   totalLessons: number;
   totalTimeSpent: number;
+  certificateIssued: boolean;
+  certificateUrl?: string;
+  certificateId?: string;
+  certificateIssuedAt?: string;
   course: {
     _id: string;
     title: string;
@@ -323,6 +329,20 @@ function MyLearningContent() {
                     </span>
                     <span>⏱️ {formatTime(enrollment.totalTimeSpent)}</span>
                   </div>
+
+                  {/* Certificate Card */}
+                  {enrollment.status === 'completed' && enrollment.progress >= 100 && (
+                    <div className="mb-3">
+                      <CertificateCard
+                        enrollmentId={enrollment._id}
+                        courseTitle={enrollment.course.title}
+                        initialCertificateUrl={enrollment.certificateUrl}
+                        initialCertificateId={enrollment.certificateId}
+                        isCompleted={enrollment.status === 'completed'}
+                        progress={enrollment.progress}
+                      />
+                    </div>
+                  )}
 
                   {/* Actions */}
                   <div className="flex space-x-2">

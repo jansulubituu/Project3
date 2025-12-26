@@ -84,17 +84,44 @@ export interface Lesson {
 }
 
 // Enrollment types
+export interface CompletionSnapshot {
+  totalLessons: number;
+  completedLessons: number;
+  completedLessonIds: string[];
+  snapshotDate: string;
+  courseVersion?: string;
+}
+
 export interface Enrollment {
   _id: string;
   student: string | User;
   course: string | Course;
   progress: number;
   completedLessons: string[];
+  totalLessons: number;
   status: 'active' | 'completed' | 'suspended';
   enrolledAt: string;
+  completedAt?: string;
   lastAccessed?: string;
   certificateIssued: boolean;
   certificateUrl?: string;
+  certificateId?: string;
+  certificateIssuedAt?: string;
+  completionSnapshot?: CompletionSnapshot;
+}
+
+// Certificate types
+export interface Certificate {
+  url: string;
+  certificateId: string;
+  issuedAt: string;
+  completionSnapshot?: CompletionSnapshot;
+  hasNewContent: boolean;
+  currentProgress: {
+    totalLessons: number;
+    completedLessons: number;
+    progress: number;
+  };
 }
 
 // Review types
