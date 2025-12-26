@@ -292,3 +292,4 @@ export const getCertificateStatus = async (req: Request, res: Response) => {
     });
   }
 };
+

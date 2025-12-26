@@ -1165,3 +1165,40 @@ export const uploadCourseThumbnail = async (req: Request, res: Response) => {
   }
 };
 
+// @desc    Get platform statistics (Public)
+// @route   GET /api/courses/stats
+// @access  Public
+export const getPlatformStats = async (_req: Request, res: Response) => {
+  try {
+    const [totalCourses, totalInstructors, totalStudents, avgRating] = await Promise.all([
+      Course.countDocuments({ status: 'published' }),
+      User.countDocuments({ role: 'instructor' }),
+      User.countDocuments({ role: 'student' }),
+      Course.aggregate([
+        { $match: { status: 'published', averageRating: { $gt: 0 } } },
+        { $group: { _id: null, avgRating: { $avg: '$averageRating' } } },
+      ]),
+    ]);
+
+    const averageRating = avgRating.length > 0 && avgRating[0].avgRating
+      ? Math.round(avgRating[0].avgRating * 10) / 10
+      : 0;
+
+    res.json({
+      success: true,
+      stats: {
+        totalCourses,
+        totalInstructors,
+        totalStudents,
+        averageRating,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching platform statistics',
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+};
+

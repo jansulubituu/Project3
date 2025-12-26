@@ -14,6 +14,7 @@ import {
   getMyCourses,
   getAdminCourses,
   uploadCourseThumbnail,
+  getPlatformStats,
 } from '../controllers/courseController';
 import { createReview } from '../controllers/reviewController';
 import { protect, optionalAuth } from '../middleware/auth';
@@ -119,6 +120,7 @@ const rejectCourseValidation = [
 
 // Public routes (with optional auth to allow instructor/admin to see drafts)
 router.get('/', optionalAuth, getAllCourses);
+router.get('/stats', getPlatformStats);
 router.get('/:id', optionalAuth, getCourseById);
 router.get('/:id/curriculum', optionalAuth, getCourseCurriculum);
 router.get('/:id/reviews', getCourseReviews);

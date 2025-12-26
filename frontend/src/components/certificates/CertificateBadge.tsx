@@ -62,3 +62,4 @@ export default function CertificateBadge({ enrollmentId, className = '' }: Props
     </a>
   );
 }
+

@@ -15,6 +15,7 @@ import Progress, { IProgress, IQuizAnswer } from './Progress';
 import Review, { IReview, IHelpfulVote } from './Review';
 import Payment, { IPayment } from './Payment';
 import Notification, { INotification } from './Notification';
+import LandingPageConfig, { ILandingPageConfig, IFeature } from './LandingPageConfig';
 
 // Export models
 export {
@@ -28,6 +29,7 @@ export {
   Review,
   Payment,
   Notification,
+  LandingPageConfig,
 };
 
 // Export interfaces
@@ -46,6 +48,8 @@ export type {
   IHelpfulVote,
   IPayment,
   INotification,
+  ILandingPageConfig,
+  IFeature,
 };
 
 // Export default object with all models
@@ -60,5 +64,6 @@ export default {
   Review,
   Payment,
   Notification,
+  LandingPageConfig,
 };
 

@@ -223,6 +223,12 @@ function AdminDashboardContent() {
                 Quản lý hình ảnh
               </Link>
               <Link
+                href="/admin/landing-page"
+                className="px-4 py-3 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors text-center font-medium"
+              >
+                Cấu hình Landing Page
+              </Link>
+              <Link
                 href="/admin/analytics"
                 className="px-4 py-3 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 transition-colors text-center font-medium"
               >

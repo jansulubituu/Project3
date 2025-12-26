@@ -191,3 +191,4 @@ export default function CertificateVerifyPage() {
     </div>
   );
 }
+

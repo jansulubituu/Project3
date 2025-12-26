@@ -44,3 +44,4 @@ router.post(
 router.get('/verify/:certificateId', verifyCertificate);
 
 export default router;
+
