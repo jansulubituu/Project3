@@ -132,7 +132,6 @@ router.post('/debug/:paymentId/test-ipn', protect, async (req, res) => {
     await handleIpn(mockReq, mockRes);
 
     // Check payment status after
-    await payment.refresh();
     const updatedPayment = await Payment.findById(paymentId);
 
     res.json({
