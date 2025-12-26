@@ -307,6 +307,7 @@ enrollmentSchema.pre('deleteOne', { document: false, query: true }, async functi
   // Store courseId in the query context for post hook
   const doc = await this.model.findOne(this.getFilter());
   if (doc && doc.course) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (this as any)._courseId = doc.course;
   }
 });
@@ -315,6 +316,7 @@ enrollmentSchema.pre('deleteOne', { document: false, query: true }, async functi
 // Note: This hook triggers for deleteOne(), deleteMany(), findOneAndDelete(), findByIdAndDelete()
 enrollmentSchema.post('deleteOne', { document: false, query: true }, async function () {
   try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const courseId = (this as any)._courseId;
     if (courseId) {
       const Course = mongoose.model('Course');

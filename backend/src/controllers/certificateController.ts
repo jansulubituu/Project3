@@ -30,9 +30,11 @@ export const getCertificate = async (req: Request, res: Response) => {
     }
 
     // Check ownership
-    const studentId = typeof enrollment.student === 'object' && 'id' in enrollment.student
-      ? (enrollment.student as any)._id.toString()
-      : enrollment.student.toString();
+    const studentId = enrollment.student instanceof mongoose.Types.ObjectId
+      ? enrollment.student.toString()
+      : typeof enrollment.student === 'object' && enrollment.student !== null && '_id' in enrollment.student
+      ? String((enrollment.student as { _id: mongoose.Types.ObjectId })._id)
+      : String(enrollment.student);
 
     if (req.user?.role !== 'admin' && studentId !== req.user?.id) {
       return res.status(403).json({
@@ -185,8 +187,23 @@ export const verifyCertificate = async (req: Request, res: Response) => {
       });
     }
 
-    const student = enrollment.student as any;
-    const course = enrollment.course as any;
+    interface PopulatedStudent {
+      _id: mongoose.Types.ObjectId;
+      fullName: string;
+      email: string;
+    }
+
+    interface PopulatedCourse {
+      _id: mongoose.Types.ObjectId;
+      title: string;
+      instructor?: {
+        _id: mongoose.Types.ObjectId;
+        fullName: string;
+      };
+    }
+
+    const student = enrollment.student as unknown as PopulatedStudent;
+    const course = enrollment.course as unknown as PopulatedCourse;
 
     return res.json({
       success: true,

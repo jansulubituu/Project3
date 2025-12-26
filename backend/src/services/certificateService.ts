@@ -1,6 +1,6 @@
 import PDFDocument from 'pdfkit';
 import crypto from 'crypto';
-import { uploadImageFromBuffer } from '../config/cloudinary';
+import { v2 as cloudinary } from 'cloudinary';
 
 interface CertificateData {
   enrollmentId: string;
@@ -242,14 +242,28 @@ export const uploadCertificateToCloudinary = async (
   certificateId: string
 ): Promise<string> => {
   try {
-    const result = await uploadImageFromBuffer(pdfBuffer, {
-      folder: 'certificates',
-      public_id: certificateId,
-      resource_type: 'raw' as any,
-      format: 'pdf',
-    });
+    return new Promise((resolve, reject) => {
+      const uploadStream = cloudinary.uploader.upload_stream(
+        {
+          folder: 'certificates',
+          public_id: certificateId,
+          resource_type: 'raw',
+          format: 'pdf',
+        },
+        (error, result) => {
+          if (error) {
+            console.error('[Certificate] Cloudinary upload error:', error);
+            reject(new Error('Failed to upload certificate to Cloudinary'));
+          } else if (result) {
+            resolve(result.secure_url);
+          } else {
+            reject(new Error('No result from Cloudinary upload'));
+          }
+        }
+      );
 
-    return result.secure_url;
+      uploadStream.end(pdfBuffer);
+    });
   } catch (error) {
     console.error('[Certificate] Failed to upload to Cloudinary:', error);
     throw new Error('Failed to upload certificate to cloud storage');
