@@ -58,23 +58,22 @@ export const getAllCourses = async (req: Request, res: Response) => {
     }
 
     // Filter by price
+    const priceConditions: any[] = [];
     if (minPrice) {
-      (query as any).$or = [
-        { discountPrice: { $gte: Number(minPrice) } },
-        { price: { $gte: Number(minPrice) } },
-      ];
+      priceConditions.push({
+        $or: [
+          { discountPrice: { $gte: Number(minPrice) } },
+          { price: { $gte: Number(minPrice) } },
+        ],
+      });
     }
     if (maxPrice) {
-      if (query.$or) {
-        (query as any).$and = [
-          { $or: [{ discountPrice: { $lte: Number(maxPrice) } }, { price: { $lte: Number(maxPrice) } }] },
-        ];
-      } else {
-        (query as any).$or = [
+      priceConditions.push({
+        $or: [
           { discountPrice: { $lte: Number(maxPrice) } },
           { price: { $lte: Number(maxPrice) } },
-        ];
-      }
+        ],
+      });
     }
 
     // Filter by rating
@@ -88,12 +87,27 @@ export const getAllCourses = async (req: Request, res: Response) => {
     }
 
     // Search
+    const searchConditions: any[] = [];
     if (search) {
-      query.$or = [
-        { title: { $regex: search, $options: 'i' } },
-        { shortDescription: { $regex: search, $options: 'i' } },
-        { tags: { $in: [new RegExp(search as string, 'i')] } },
-      ];
+      searchConditions.push({
+        $or: [
+          { title: { $regex: search, $options: 'i' } },
+          { shortDescription: { $regex: search, $options: 'i' } },
+          { tags: { $in: [new RegExp(search as string, 'i')] } },
+        ],
+      });
+    }
+
+    // Combine all conditions with $and if needed
+    const andConditions: any[] = [];
+    if (priceConditions.length > 0) {
+      andConditions.push(...priceConditions);
+    }
+    if (searchConditions.length > 0) {
+      andConditions.push(...searchConditions);
+    }
+    if (andConditions.length > 0) {
+      (query as any).$and = andConditions;
     }
 
     // Sort options
@@ -128,6 +142,33 @@ export const getAllCourses = async (req: Request, res: Response) => {
 
     const total = await Course.countDocuments(query);
 
+    // 🎯 CRITICAL: Always recalculate publishedLessonCount to ensure accuracy
+    // Only count published lessons that still exist (not deleted)
+    const Lesson = mongoose.model('Lesson');
+    const transformedCourses = [];
+    
+    for (const course of courses) {
+      // Recalculate published count (only published lessons, not draft or deleted)
+      const publishedCount = await Lesson.countDocuments({
+        course: course._id,
+        isPublished: true,
+      });
+      
+      // Update if different (to avoid unnecessary saves)
+      if (course.publishedLessonCount !== publishedCount) {
+        course.publishedLessonCount = publishedCount;
+        // Save in background (don't await to avoid blocking response)
+        course.save().catch((err) => {
+          console.error(`[getAllCourses] Failed to update publishedLessonCount for course ${course._id}:`, err);
+        });
+      }
+      
+      // 🎯 For public catalog, totalLessons = publishedLessonCount (all users see published only)
+      const courseObj = course.toObject();
+      courseObj.totalLessons = courseObj.publishedLessonCount ?? 0; // ✅ Transform for public view
+      transformedCourses.push(courseObj);
+    }
+
     res.json({
       success: true,
       pagination: {
@@ -136,9 +177,10 @@ export const getAllCourses = async (req: Request, res: Response) => {
         totalItems: total,
         itemsPerPage: Number(limit),
       },
-      courses,
+      courses: transformedCourses,
     });
   } catch (error) {
+    console.error('[getAllCourses] Error:', error);
     res.status(500).json({
       success: false,
       message: 'Error fetching courses',
@@ -314,9 +356,21 @@ export const getCourseById = async (req: Request, res: Response) => {
       isEnrolled = !!enrollment;
     }
 
+    // 🎯 For public view, totalLessons = publishedLessonCount (all users see published only)
+    // For instructors/admins, they can see all lessons via other endpoints
+    const isInstructor = req.user && course.instructor.toString() === req.user.id;
+    const isAdmin = req.user && req.user.role === 'admin';
+    
+    const courseObj = course.toObject();
+    if (!isInstructor && !isAdmin) {
+      // Public view: only show published lessons
+      courseObj.totalLessons = courseObj.publishedLessonCount ?? 0;
+    }
+    // For instructors/admins, keep totalLessons as is (they can see all)
+
     res.json({
       success: true,
-      course,
+      course: courseObj,
       isEnrolled,
     });
   } catch (error) {
@@ -383,7 +437,7 @@ export const getCourseCurriculum = async (req: Request, res: Response) => {
       });
 
     // Get progress for all lessons if user is enrolled
-    let lessonProgressMap: Record<string, { status: string; completedAt?: Date }> = {};
+    const lessonProgressMap: Record<string, { status: string; completedAt?: Date }> = {};
     if (isEnrolled && enrollment && req.user) {
       const progresses = await Progress.find({
         student: req.user.id,
@@ -413,19 +467,25 @@ export const getCourseCurriculum = async (req: Request, res: Response) => {
       }),
     }));
 
+    // 🎯 For students, totalLessons = published lessons only
+    // For instructors/admins, show all lessons (including draft)
+    const totalLessonsForUser = isInstructor || isAdmin 
+      ? course.totalLessons 
+      : (course.publishedLessonCount ?? 0);
+
     res.json({
       success: true,
       course: {
         _id: course._id,
         title: course.title,
         totalDuration: course.totalDuration,
-        totalLessons: course.totalLessons,
+        totalLessons: totalLessonsForUser, // ✅ Published only for students
       },
       isEnrolled,
       enrollment: enrollment ? {
         progress: enrollment.progress,
         completedLessons: enrollment.completedLessons.length,
-        totalLessons: enrollment.totalLessons,
+        totalLessons: enrollment.totalLessons, // ✅ Already published only
       } : null,
       sections: sectionsWithProgress,
     });

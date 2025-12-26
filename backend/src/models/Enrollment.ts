@@ -142,8 +142,9 @@ enrollmentSchema.methods.updateProgress = async function () {
       isPublished: true,
     });
     
-    // Store total (for reference) but use published count for progress
-    this.totalLessons = course.totalLessons;
+    // 🎯 CRITICAL: For students, totalLessons = published lessons only
+    // Students should only see/count published lessons, not draft lessons
+    this.totalLessons = publishedLessonCount;
     
     if (publishedLessonCount > 0) {
       this.progress = Math.round((completedPublishedLessons / publishedLessonCount) * 100);

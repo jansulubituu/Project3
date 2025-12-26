@@ -243,7 +243,7 @@ export const getLessonDetails = async (req: Request, res: Response) => {
       })
       .populate({
         path: 'course',
-        select: 'title slug instructor status isPublished totalLessons',
+        select: 'title slug instructor status isPublished totalLessons publishedLessonCount',
       });
 
     if (!lesson) {
@@ -311,9 +311,15 @@ export const getLessonDetails = async (req: Request, res: Response) => {
       }).select('status lastPosition timeSpent updatedAt');
     }
 
+    // 🎯 For students, course.totalLessons should be publishedLessonCount
+    const lessonObj = lesson.toObject();
+    if (!isInstructor && !isAdmin && lessonObj.course && typeof lessonObj.course === 'object' && 'publishedLessonCount' in lessonObj.course) {
+      (lessonObj.course as any).totalLessons = (lessonObj.course as any).publishedLessonCount;
+    }
+
     res.json({
       success: true,
-      lesson,
+      lesson: lessonObj,
       isEnrolled,
       progress: lessonProgress,
     });

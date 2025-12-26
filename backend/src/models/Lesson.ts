@@ -217,16 +217,59 @@ lessonSchema.post('save', async function () {
   if (section && typeof section.updateStatistics === 'function') {
     await section.updateStatistics();
   }
+  
+  // 🎯 CRITICAL: Update course.publishedLessonCount when isPublished changes
+  // This ensures publishedLessonCount is always accurate
+  if (this.isModified('isPublished') && this.course) {
+    const Course = mongoose.model('Course');
+    const publishedCount = await mongoose.model('Lesson').countDocuments({
+      course: this.course,
+      isPublished: true,
+    });
+    
+    await Course.findByIdAndUpdate(this.course, {
+      publishedLessonCount: publishedCount,
+    });
+    
+    console.info('[Lesson] Updated course.publishedLessonCount', {
+      lessonId: this._id.toString(),
+      courseId: this.course.toString(),
+      isPublished: this.isPublished,
+      publishedCount,
+    });
+  }
 });
 
 // Post-deleteOne hook to update section statistics
 lessonSchema.post('deleteOne', async function () {
   const Section = mongoose.model('Section');
+  const Lesson = mongoose.model('Lesson');
+  const Course = mongoose.model('Course');
   const doc = await this.model.findOne(this.getFilter());
+  
   if (doc) {
     const section = await Section.findById(doc.section);
     if (section && typeof section.updateStatistics === 'function') {
       await section.updateStatistics();
+    }
+    
+    // 🎯 CRITICAL: Update course.publishedLessonCount when lesson is deleted
+    // Only count published lessons that still exist (not deleted)
+    if (doc.course) {
+      const publishedCount = await Lesson.countDocuments({
+        course: doc.course,
+        isPublished: true,
+      });
+      
+      await Course.findByIdAndUpdate(doc.course, {
+        publishedLessonCount: publishedCount,
+      });
+      
+      console.info('[Lesson] Updated course.publishedLessonCount after delete', {
+        lessonId: doc._id.toString(),
+        courseId: doc.course.toString(),
+        publishedCount,
+      });
     }
   }
 });

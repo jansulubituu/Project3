@@ -129,11 +129,19 @@ export const enrollInCourse = async (req: Request, res: Response) => {
       });
     }
 
+    // 🎯 For students, totalLessons = published lessons only
+    // Students should only see published lessons, not draft
+    const Lesson = mongoose.model('Lesson');
+    const publishedLessonCount = await Lesson.countDocuments({
+      course: course._id,
+      isPublished: true,
+    });
+
     const enrollment = await Enrollment.create({
       student: req.user.id,
       course: course._id,
       payment: payment || undefined,
-      totalLessons: course.totalLessons,
+      totalLessons: publishedLessonCount, // ✅ Only published lessons for students
       enrolledAt: new Date(),
       status: 'active',
     });
@@ -206,6 +214,13 @@ export const getMyEnrollments = async (req: Request, res: Response) => {
       const enrollmentObj = enrollment.toObject();
       // Ensure completedLessons is an array and return its length
       const completedLessonsArray = enrollmentObj.completedLessons || [];
+      
+      // 🎯 For students, course.totalLessons should be publishedLessonCount
+      // enrollment.totalLessons is already published only (fixed earlier)
+      if (enrollmentObj.course && enrollmentObj.course.publishedLessonCount !== undefined) {
+        enrollmentObj.course.totalLessons = enrollmentObj.course.publishedLessonCount;
+      }
+      
       return {
         ...enrollmentObj,
         completedLessons: Array.isArray(completedLessonsArray) ? completedLessonsArray.length : 0,
@@ -278,9 +293,15 @@ export const getEnrollmentById = async (req: Request, res: Response) => {
       });
     }
 
+    // 🎯 For students (owners), course.totalLessons should be publishedLessonCount
+    const enrollmentObj = enrollment.toObject();
+    if (isOwner && enrollmentObj.course && typeof enrollmentObj.course === 'object' && 'publishedLessonCount' in enrollmentObj.course) {
+      (enrollmentObj.course as any).totalLessons = (enrollmentObj.course as any).publishedLessonCount;
+    }
+
     res.json({
       success: true,
-      enrollment,
+      enrollment: enrollmentObj,
     });
   } catch (error) {
     res.status(500).json({
@@ -340,7 +361,7 @@ export const getEnrollmentByCourse = async (req: Request, res: Response) => {
     })
       .populate({
         path: 'course',
-        select: 'title slug thumbnail level totalLessons totalDuration instructor',
+        select: 'title slug thumbnail level totalLessons publishedLessonCount totalDuration instructor',
         populate: {
           path: 'instructor',
           select: 'fullName avatar headline',
@@ -355,9 +376,15 @@ export const getEnrollmentByCourse = async (req: Request, res: Response) => {
       });
     }
 
+    // 🎯 For students, course.totalLessons should be publishedLessonCount
+    const enrollmentObj = enrollment.toObject();
+    if (enrollmentObj.course && typeof enrollmentObj.course === 'object' && 'publishedLessonCount' in enrollmentObj.course) {
+      (enrollmentObj.course as any).totalLessons = (enrollmentObj.course as any).publishedLessonCount;
+    }
+
     res.json({
       success: true,
-      enrollment,
+      enrollment: enrollmentObj,
     });
   } catch (error) {
     res.status(500).json({
@@ -459,11 +486,18 @@ export const addStudentToCourse = async (req: Request, res: Response) => {
       });
     }
 
+    // 🎯 For students, totalLessons = published lessons only
+    const Lesson = mongoose.model('Lesson');
+    const publishedLessonCount = await Lesson.countDocuments({
+      course: course._id,
+      isPublished: true,
+    });
+
     // Create enrollment
     const enrollment = await Enrollment.create({
       student: user._id,
       course: course._id,
-      totalLessons: course.totalLessons,
+      totalLessons: publishedLessonCount, // ✅ Only published lessons for students
       enrolledAt: new Date(),
       status: 'active',
     });
