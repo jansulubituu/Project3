@@ -26,6 +26,7 @@ export interface ICourse extends Document {
   totalReviews: number;
   totalDuration: number;
   totalLessons: number;
+  publishedLessonCount: number;
   metaTitle?: string;
   metaDescription?: string;
   metaKeywords: string[];
@@ -168,6 +169,11 @@ const courseSchema = new Schema<ICourse>(
       min: 0,
     },
     totalLessons: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    publishedLessonCount: {
       type: Number,
       default: 0,
       min: 0,

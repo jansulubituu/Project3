@@ -39,6 +39,7 @@ export interface Course {
   totalReviews: number;
   totalDuration: number;
   totalLessons: number;
+  publishedLessonCount: number;
   instructor: User;
   category: Category;
   createdAt: string;
@@ -86,6 +87,7 @@ export interface Lesson {
 // Enrollment types
 export interface CompletionSnapshot {
   totalLessons: number;
+  publishedLessons: number;
   completedLessons: number;
   completedLessonIds: string[];
   snapshotDate: string;

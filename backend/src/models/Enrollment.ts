@@ -2,6 +2,7 @@ import mongoose, { Document, Schema } from 'mongoose';
 
 export interface ICompletionSnapshot {
   totalLessons: number;
+  publishedLessons: number;
   completedLessons: number;
   completedLessonIds: mongoose.Types.ObjectId[];
   snapshotDate: Date;
@@ -35,7 +36,7 @@ export interface IEnrollment extends Document {
   markLessonComplete(lessonId: mongoose.Types.ObjectId): Promise<void>;
   checkCompletion(): Promise<void>;
   generateCertificate(): Promise<void>;
-  hasNewContentSinceCompletion(): boolean;
+  hasNewContentSinceCompletion(): Promise<boolean>;
 }
 
 const enrollmentSchema = new Schema<IEnrollment>(
@@ -88,6 +89,7 @@ const enrollmentSchema = new Schema<IEnrollment>(
     certificateId: String,
     completionSnapshot: {
       totalLessons: Number,
+      publishedLessons: Number,
       completedLessons: Number,
       completedLessonIds: [{
         type: Schema.Types.ObjectId,
@@ -123,16 +125,39 @@ enrollmentSchema.index({ student: 1, course: 1 }, { unique: true });
 // Method to update progress
 enrollmentSchema.methods.updateProgress = async function () {
   const Course = mongoose.model('Course');
+  const Lesson = mongoose.model('Lesson');
   const course = await Course.findById(this.course);
   
   if (course) {
+    // 🎯 CRITICAL: Only count PUBLISHED lessons for progress
+    // Draft/unpublished lessons should NOT affect completion
+    const publishedLessonCount = await Lesson.countDocuments({
+      course: this.course,
+      isPublished: true,
+    });
+    
+    // Count how many published lessons student has completed
+    const completedPublishedLessons = await Lesson.countDocuments({
+      _id: { $in: this.completedLessons },
+      isPublished: true,
+    });
+    
+    // Store total (for reference) but use published count for progress
     this.totalLessons = course.totalLessons;
     
-    if (this.totalLessons > 0) {
-      this.progress = Math.round((this.completedLessons.length / this.totalLessons) * 100);
+    if (publishedLessonCount > 0) {
+      this.progress = Math.round((completedPublishedLessons / publishedLessonCount) * 100);
     } else {
       this.progress = 0;
     }
+    
+    console.info('[Enrollment] Progress updated', {
+      enrollmentId: this._id.toString(),
+      totalLessons: this.totalLessons,
+      publishedLessons: publishedLessonCount,
+      completedPublished: completedPublishedLessons,
+      progress: this.progress,
+    });
     
     await this.save();
     await this.checkCompletion();
@@ -164,8 +189,17 @@ enrollmentSchema.methods.checkCompletion = async function () {
     // 🎯 SAVE COMPLETION SNAPSHOT
     // This snapshot preserves the state at completion time
     // Certificate remains valid even if new lessons are added later
+    
+    // Get published lesson count at completion time
+    const Lesson = mongoose.model('Lesson');
+    const publishedLessonCount = await Lesson.countDocuments({
+      course: this.course,
+      isPublished: true,
+    });
+    
     this.completionSnapshot = {
       totalLessons: this.totalLessons,
+      publishedLessons: publishedLessonCount,
       completedLessons: this.completedLessons.length,
       completedLessonIds: [...this.completedLessons],
       snapshotDate: new Date(),
@@ -177,6 +211,7 @@ enrollmentSchema.methods.checkCompletion = async function () {
     console.info('[Enrollment] Course completed with snapshot', {
       enrollmentId: this._id.toString(),
       totalLessons: this.completionSnapshot.totalLessons,
+      publishedLessons: this.completionSnapshot.publishedLessons,
       completedLessons: this.completionSnapshot.completedLessons,
     });
     
@@ -192,12 +227,19 @@ enrollmentSchema.methods.checkCompletion = async function () {
 };
 
 // Method to check if course has new content since completion
-enrollmentSchema.methods.hasNewContentSinceCompletion = function (): boolean {
+enrollmentSchema.methods.hasNewContentSinceCompletion = async function (): Promise<boolean> {
   if (!this.completionSnapshot) {
     return false;
   }
   
-  return this.totalLessons > this.completionSnapshot.totalLessons;
+  // Check if there are new PUBLISHED lessons since completion
+  const Lesson = mongoose.model('Lesson');
+  const currentPublishedCount = await Lesson.countDocuments({
+    course: this.course,
+    isPublished: true,
+  });
+  
+  return currentPublishedCount > (this.completionSnapshot.publishedLessons || this.completionSnapshot.totalLessons);
 };
 
 // Method to generate certificate
@@ -262,6 +304,7 @@ enrollmentSchema.methods.generateCertificate = async function () {
       completionDate: this.completedAt || new Date(),
       completedLessons: this.completionSnapshot?.completedLessons || this.completedLessons.length,
       totalLessons: this.completionSnapshot?.totalLessons || this.totalLessons,
+      publishedLessons: this.completionSnapshot?.publishedLessons,
     });
 
     // Update enrollment with certificate info

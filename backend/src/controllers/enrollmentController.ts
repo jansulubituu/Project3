@@ -185,10 +185,10 @@ export const getMyEnrollments = async (req: Request, res: Response) => {
 
     const [enrollments, total] = await Promise.all([
       Enrollment.find(query)
-        .select('progress status enrolledAt completedLessons totalLessons totalTimeSpent lastAccessed completedAt hasReviewed')
+        .select('progress status enrolledAt completedLessons totalLessons totalTimeSpent lastAccessed completedAt hasReviewed certificateIssued certificateUrl certificateId certificateIssuedAt completionSnapshot')
         .populate({
           path: 'course',
-          select: 'title slug thumbnail level totalLessons enrollmentCount averageRating instructor',
+          select: 'title slug thumbnail level totalLessons publishedLessonCount enrollmentCount averageRating instructor',
           populate: {
             path: 'instructor',
             select: 'fullName avatar headline',
@@ -244,7 +244,7 @@ export const getEnrollmentById = async (req: Request, res: Response) => {
     const enrollment = await Enrollment.findById(id)
       .populate({
         path: 'course',
-        select: 'title slug thumbnail level totalLessons totalDuration instructor status',
+        select: 'title slug thumbnail level totalLessons publishedLessonCount totalDuration instructor status',
         populate: {
           path: 'instructor',
           select: 'fullName avatar headline email',

@@ -29,6 +29,7 @@ interface Enrollment {
     thumbnail: string;
     level: string;
     totalLessons: number;
+    publishedLessonCount: number;
     enrollmentCount: number;
     averageRating: number;
     instructor: {
@@ -37,6 +38,11 @@ interface Enrollment {
       avatar: string;
       headline?: string;
     };
+  };
+  completionSnapshot?: {
+    totalLessons: number;
+    publishedLessons: number;
+    completedLessons: number;
   };
 }
 
@@ -307,7 +313,7 @@ function MyLearningContent() {
                     <div className="flex items-center justify-between text-sm mb-1">
                       <span className="text-gray-600">Tiến độ</span>
                       <span className="font-medium text-gray-900">
-                        {enrollment.progress}% ({enrollment.completedLessons}/{enrollment.totalLessons || enrollment.course.totalLessons || 0})
+                        {enrollment.progress}% ({enrollment.completedLessons}/{enrollment.course.publishedLessonCount || enrollment.course.totalLessons || 0})
                       </span>
                     </div>
                     <div className="w-full bg-gray-200 rounded-full h-2">
@@ -320,6 +326,11 @@ function MyLearningContent() {
                         style={{ width: `${enrollment.progress}%` }}
                       ></div>
                     </div>
+                    {enrollment.course.publishedLessonCount < enrollment.course.totalLessons && (
+                      <p className="text-xs text-gray-500 mt-1">
+                        {enrollment.course.totalLessons - enrollment.course.publishedLessonCount} bài học đang chuẩn bị
+                      </p>
+                    )}
                   </div>
 
                   {/* Meta Info */}

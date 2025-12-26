@@ -11,6 +11,7 @@ interface CertificateData {
   completionDate: Date;
   completedLessons: number;
   totalLessons: number;
+  publishedLessons?: number;
 }
 
 /**
@@ -131,16 +132,15 @@ export const generateCertificatePDF = async (
         });
 
       // Completion stats
+      const lessonText = data.publishedLessons
+        ? `Completed ${data.completedLessons} of ${data.publishedLessons} published lessons`
+        : `Completed ${data.completedLessons} of ${data.totalLessons} lessons`;
+      
       doc
         .fontSize(14)
         .font('Helvetica')
         .fillColor('#6b7280')
-        .text(
-          `Completed ${data.completedLessons} of ${data.totalLessons} lessons`,
-          0,
-          460,
-          { align: 'center' }
-        );
+        .text(lessonText, 0, 460, { align: 'center' });
 
       // Completion date
       const dateStr = data.completionDate.toLocaleDateString('en-US', {

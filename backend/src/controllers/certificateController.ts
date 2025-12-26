@@ -52,7 +52,7 @@ export const getCertificate = async (req: Request, res: Response) => {
     }
 
     // Check if there's new content since completion
-    const hasNewContent = enrollment.hasNewContentSinceCompletion();
+    const hasNewContent = await enrollment.hasNewContentSinceCompletion();
 
     return res.json({
       success: true,
@@ -265,7 +265,7 @@ export const getCertificateStatus = async (req: Request, res: Response) => {
       });
     }
 
-    const hasNewContent = enrollment.hasNewContentSinceCompletion();
+    const hasNewContent = await enrollment.hasNewContentSinceCompletion();
 
     return res.json({
       success: true,

@@ -82,8 +82,18 @@ sectionSchema.methods.updateStatistics = async function () {
   const course = await Course.findById(this.course);
   if (course) {
     const sections = await mongoose.model('Section').find({ course: this.course });
+    
+    // Count all lessons
     course.totalDuration = sections.reduce((total, section) => total + section.duration, 0);
     course.totalLessons = sections.reduce((total, section) => total + section.lessonCount, 0);
+    
+    // Count only published lessons
+    const publishedLessons = await Lesson.countDocuments({
+      course: this.course,
+      isPublished: true,
+    });
+    course.publishedLessonCount = publishedLessons;
+    
     await course.save();
   }
 };
@@ -104,6 +114,14 @@ sectionSchema.post('deleteOne', async function () {
       const sections = await mongoose.model('Section').find({ course: doc.course });
       course.totalDuration = sections.reduce((total, section) => total + section.duration, 0);
       course.totalLessons = sections.reduce((total, section) => total + section.lessonCount, 0);
+      
+      // Count only published lessons
+      const publishedLessons = await Lesson.countDocuments({
+        course: doc.course,
+        isPublished: true,
+      });
+      course.publishedLessonCount = publishedLessons;
+      
       await course.save();
     }
   }
