@@ -231,8 +231,32 @@ export const handleIpn = async (req: Request, res: Response) => {
         notificationType,
         orderStatus,
         transactionStatus,
+        userId: payment.user.toString(),
+        courseId: payment.course.toString(),
       });
-      await payment.markCompleted(body?.transaction?.transaction_id || orderInvoiceNumber);
+      
+      const transactionId = body?.transaction?.transaction_id || orderInvoiceNumber;
+      await payment.markCompleted(transactionId);
+      
+      // Verify enrollment was created
+      const Enrollment = mongoose.model('Enrollment');
+      const enrollment = await Enrollment.findOne({
+        student: payment.user,
+        course: payment.course,
+      });
+      
+      if (enrollment) {
+        console.info('[SePay IPN] Enrollment verified after payment completion', {
+          paymentId: payment._id.toString(),
+          enrollmentId: enrollment._id.toString(),
+        });
+      } else {
+        console.warn('[SePay IPN] Enrollment not found after payment completion - may need manual check', {
+          paymentId: payment._id.toString(),
+          userId: payment.user.toString(),
+          courseId: payment.course.toString(),
+        });
+      }
     } else {
       console.info('[SePay IPN] Marking payment failed', {
         paymentId: payment._id.toString(),

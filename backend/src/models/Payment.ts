@@ -138,33 +138,60 @@ paymentSchema.pre('save', function (next) {
 
 // Post-save hook to create enrollment when payment is completed
 paymentSchema.post('save', async function () {
-  if (this.status === 'completed') {
-    const Enrollment = mongoose.model('Enrollment');
-    
-    // Check if enrollment already exists
-    const existingEnrollment = await Enrollment.findOne({
-      student: this.user,
-      course: this.course,
-    });
-    
-    if (!existingEnrollment) {
-      console.info('[Payment] Creating enrollment after completed payment', {
+  try {
+    if (this.status === 'completed') {
+      console.info('[Payment] Post-save hook triggered for completed payment', {
         paymentId: this._id.toString(),
         userId: this.user.toString(),
         courseId: this.course.toString(),
+        status: this.status,
       });
-      await Enrollment.create({
+
+      const Enrollment = mongoose.model('Enrollment');
+      
+      // Check if enrollment already exists
+      const existingEnrollment = await Enrollment.findOne({
         student: this.user,
         course: this.course,
-        payment: this._id,
-        enrolledAt: this.paidAt || new Date(),
       });
+      
+      if (!existingEnrollment) {
+        console.info('[Payment] Creating enrollment after completed payment', {
+          paymentId: this._id.toString(),
+          userId: this.user.toString(),
+          courseId: this.course.toString(),
+        });
+        
+        const enrollment = await Enrollment.create({
+          student: this.user,
+          course: this.course,
+          payment: this._id,
+          enrolledAt: this.paidAt || new Date(),
+        });
+        
+        console.info('[Payment] Enrollment created successfully', {
+          paymentId: this._id.toString(),
+          enrollmentId: enrollment._id.toString(),
+        });
+      } else {
+        console.info('[Payment] Enrollment already exists for payment completion', {
+          paymentId: this._id.toString(),
+          enrollmentId: existingEnrollment._id.toString(),
+        });
+      }
     } else {
-      console.info('[Payment] Enrollment already exists for payment completion', {
+      console.debug('[Payment] Post-save hook skipped - status is not completed', {
         paymentId: this._id.toString(),
-        enrollmentId: existingEnrollment._id.toString(),
+        status: this.status,
       });
     }
+  } catch (error) {
+    console.error('[Payment] Error in post-save hook creating enrollment:', {
+      paymentId: this._id.toString(),
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+    });
+    // Don't throw - we don't want to break the payment save
   }
 });
 
