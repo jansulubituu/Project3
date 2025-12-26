@@ -59,6 +59,7 @@ import progressRoutes from './routes/progressRoutes';
 import uploadRoutes from './routes/uploadRoutes';
 import reviewRoutes from './routes/reviewRoutes';
 import paymentRoutes from './routes/paymentRoutes';
+import certificateRoutes from './routes/certificateRoutes';
 
 // API Routes
 app.use('/api/auth', authRoutes);
@@ -72,6 +73,7 @@ app.use('/api/progress', progressRoutes);
 app.use('/api/uploads', uploadRoutes);
 app.use('/api/reviews', reviewRoutes);
 app.use('/api/payments', paymentRoutes);
+app.use('/api/certificates', certificateRoutes);
 // app.use('/api/admin', adminRoutes);
 
 // 404 handler
