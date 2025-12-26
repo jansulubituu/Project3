@@ -75,6 +75,137 @@ router.get('/debug/:paymentId', protect, async (req, res) => {
   }
 });
 
+// Debug endpoint: Test IPN manually (for testing)
+router.post('/debug/:paymentId/test-ipn', protect, async (req, res) => {
+  try {
+    const { paymentId } = req.params;
+    
+    if (!mongoose.Types.ObjectId.isValid(paymentId)) {
+      return res.status(400).json({ success: false, message: 'Invalid payment ID' });
+    }
+
+    const payment = await Payment.findById(paymentId);
+
+    if (!payment) {
+      return res.status(404).json({ success: false, message: 'Payment not found' });
+    }
+
+    // Get order_invoice_number from metadata
+    const metadata = payment.metadata ? Object.fromEntries(payment.metadata) : {};
+    const orderInvoiceNumber = metadata.order_invoice_number || `PAY-${paymentId}`;
+
+    // Simulate IPN callback
+    const ipnBody = {
+      order_invoice_number: orderInvoiceNumber,
+      notification_type: 'ORDER_PAID',
+      order_status: 'CAPTURED',
+      transaction_status: 'APPROVED',
+      order: {
+        order_invoice_number: orderInvoiceNumber,
+        order_status: 'CAPTURED',
+      },
+      transaction: {
+        transaction_id: `TEST-TXN-${Date.now()}`,
+        transaction_status: 'APPROVED',
+      },
+      custom_data: JSON.stringify({
+        paymentId: paymentId,
+        courseId: payment.course.toString(),
+        userId: payment.user.toString(),
+      }),
+    };
+
+    // Call handleIpn internally
+    const mockReq = {
+      body: ipnBody,
+    } as any;
+    
+    const mockRes = {
+      status: (code: number) => ({
+        json: (data: any) => {
+          console.info('[Test IPN] Response:', { code, data });
+          return { code, data };
+        },
+      }),
+    } as any;
+
+    await handleIpn(mockReq, mockRes);
+
+    // Check payment status after
+    await payment.refresh();
+    const updatedPayment = await Payment.findById(paymentId);
+
+    res.json({
+      success: true,
+      message: 'IPN test completed',
+      payment: {
+        id: paymentId,
+        status: updatedPayment?.status,
+        orderInvoiceNumber,
+      },
+      ipnBody,
+    });
+  } catch (error) {
+    console.error('Test IPN error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error testing IPN',
+      error: (error as Error).message,
+    });
+  }
+});
+
+// Debug endpoint: Manually mark payment as completed (for testing)
+router.post('/debug/:paymentId/mark-completed', protect, async (req, res) => {
+  try {
+    const { paymentId } = req.params;
+    
+    if (!mongoose.Types.ObjectId.isValid(paymentId)) {
+      return res.status(400).json({ success: false, message: 'Invalid payment ID' });
+    }
+
+    const payment = await Payment.findById(paymentId);
+
+    if (!payment) {
+      return res.status(404).json({ success: false, message: 'Payment not found' });
+    }
+
+    if (payment.status === 'completed') {
+      return res.json({
+        success: true,
+        message: 'Payment already completed',
+        payment: {
+          id: payment._id,
+          status: payment.status,
+        },
+      });
+    }
+
+    // Mark as completed
+    await payment.markCompleted(`MANUAL-${Date.now()}`);
+
+    // Refresh payment
+    const updatedPayment = await Payment.findById(paymentId);
+
+    res.json({
+      success: true,
+      message: 'Payment marked as completed',
+      payment: {
+        id: paymentId,
+        status: updatedPayment?.status,
+        paidAt: updatedPayment?.paidAt,
+      },
+    });
+  } catch (error) {
+    console.error('Mark payment completed error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error marking payment as completed',
+      error: (error as Error).message,
+    });
+  }
+});
+
 // Debug endpoint: Manually trigger enrollment creation (for testing)
 router.post('/debug/:paymentId/create-enrollment', protect, async (req, res) => {
   try {
@@ -94,6 +225,7 @@ router.post('/debug/:paymentId/create-enrollment', protect, async (req, res) => 
       return res.status(400).json({
         success: false,
         message: 'Payment is not completed. Status: ' + payment.status,
+        hint: 'Use /debug/:paymentId/mark-completed first',
       });
     }
 
