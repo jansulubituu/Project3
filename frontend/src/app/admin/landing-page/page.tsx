@@ -5,7 +5,7 @@ import ProtectedRoute from '@/components/ProtectedRoute';
 import Header from '@/components/layout/Header';
 import Footer from '@/components/layout/Footer';
 import { api } from '@/lib/api';
-import { useAuth } from '@/contexts/AuthContext';
+// import { useAuth } from '@/contexts/AuthContext';
 import Link from 'next/link';
 
 interface LandingPageConfig {
@@ -66,7 +66,6 @@ interface LandingPageConfig {
 }
 
 function LandingPageConfigContent() {
-  const { user } = useAuth();
   const [config, setConfig] = useState<LandingPageConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
