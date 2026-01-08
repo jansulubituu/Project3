@@ -1,0 +1,497 @@
+import { Response } from 'express';
+import mongoose from 'mongoose';
+import { AiGenerationJob, AiPromptTemplate, Exam, Question, Course, ExamTemplate } from '../models';
+import { AuthRequest } from '../middleware/auth';
+
+/**
+ * @desc    Create AI generation job
+ * @route   POST /api/ai/exams/generate
+ * @access  Private/Instructor or Admin
+ */
+export const createGenerationJob = async (req: AuthRequest, res: Response) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required',
+      });
+    }
+
+    const {
+      course,
+      section,
+      inputType,
+      sources,
+      prompt,
+      targetTemplate,
+      targetExam,
+    } = req.body;
+
+    // Verify course exists and user has permission
+    const courseDoc = await Course.findById(course);
+    if (!courseDoc) {
+      return res.status(404).json({
+        success: false,
+        message: 'Course not found',
+      });
+    }
+
+    // Check authorization
+    if (req.user.role !== 'admin' && courseDoc.instructor.toString() !== req.user.id) {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized to generate exams for this course',
+      });
+    }
+
+    // Verify template if provided
+    if (targetTemplate) {
+      const template = await ExamTemplate.findById(targetTemplate);
+      if (!template || template.course.toString() !== course) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid template for this course',
+        });
+      }
+    }
+
+    // Create job
+    const job = await AiGenerationJob.create({
+      course,
+      section: section || null,
+      inputType,
+      sources: sources || [],
+      prompt,
+      targetTemplate: targetTemplate || null,
+      targetExam: targetExam || null,
+      status: 'pending',
+      createdBy: req.user.id,
+      provider: process.env.AI_PROVIDER || 'openai',
+      aiModel: process.env.AI_MODEL || 'gpt-4',
+    });
+
+    // Start processing asynchronously (in production, use a queue system)
+    processAiGenerationJob(job._id.toString()).catch((error) => {
+      console.error('Error processing AI generation job:', error);
+    });
+
+    res.status(201).json({
+      success: true,
+      message: 'AI generation job created',
+      job,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error creating AI generation job',
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+};
+
+/**
+ * @desc    Get generation job status
+ * @route   GET /api/ai/jobs/:jobId
+ * @access  Private/Instructor or Admin
+ */
+export const getGenerationJobStatus = async (req: AuthRequest, res: Response) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required',
+      });
+    }
+
+    const { jobId } = req.params;
+
+    const job = await AiGenerationJob.findById(jobId)
+      .populate({
+        path: 'course',
+        select: 'title slug instructor',
+      })
+      .populate({
+        path: 'resultExamId',
+        select: 'title status',
+      })
+      .populate({
+        path: 'resultQuestionIds',
+        select: 'type difficulty text points',
+      });
+
+    if (!job) {
+      return res.status(404).json({
+        success: false,
+        message: 'Job not found',
+      });
+    }
+
+    const course = job.course as any;
+
+    // Check authorization
+    if (req.user.role !== 'admin' && course.instructor.toString() !== req.user.id) {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized to view this job',
+      });
+    }
+
+    res.json({
+      success: true,
+      job,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching job status',
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+};
+
+/**
+ * @desc    Publish generated exam
+ * @route   POST /api/ai/exams/:examId/publish
+ * @access  Private/Instructor or Admin
+ */
+export const publishGeneratedExam = async (req: AuthRequest, res: Response) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required',
+      });
+    }
+
+    const { examId } = req.params;
+
+    const exam = await Exam.findById(examId).populate('course');
+    if (!exam) {
+      return res.status(404).json({
+        success: false,
+        message: 'Exam not found',
+      });
+    }
+
+    const course = exam.course as any;
+
+    // Check authorization
+    if (req.user.role !== 'admin' && course.instructor.toString() !== req.user.id) {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized to publish this exam',
+      });
+    }
+
+    // Check if exam was generated by AI
+    const job = await AiGenerationJob.findOne({ resultExamId: examId });
+    if (!job) {
+      return res.status(400).json({
+        success: false,
+        message: 'This exam was not generated by AI',
+      });
+    }
+
+    // Publish exam
+    exam.status = 'published';
+    await exam.save();
+
+    res.json({
+      success: true,
+      message: 'Exam published successfully',
+      exam,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error publishing exam',
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+};
+
+/**
+ * @desc    List prompt templates
+ * @route   GET /api/ai/prompt-templates
+ * @access  Private/Instructor or Admin
+ */
+export const listPromptTemplates = async (req: AuthRequest, res: Response) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required',
+      });
+    }
+
+    const templates = await AiPromptTemplate.find({ isActive: true })
+      .populate({
+        path: 'createdBy',
+        select: 'fullName email',
+      })
+      .sort({ createdAt: -1 });
+
+    res.json({
+      success: true,
+      templates,
+      count: templates.length,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error listing prompt templates',
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+};
+
+/**
+ * Async function to process AI generation job
+ * In production, this should be handled by a job queue (Bull, Agenda, etc.)
+ */
+async function processAiGenerationJob(jobId: string) {
+  try {
+    const job = await AiGenerationJob.findById(jobId);
+    if (!job) return;
+
+    job.status = 'processing';
+    await job.save();
+
+    // Extract content from sources
+    let sourceContent = '';
+    const Lesson = mongoose.model('Lesson');
+
+    for (const source of job.sources) {
+      if (source.type === 'lesson' && source.lessonId) {
+        const lesson = await Lesson.findById(source.lessonId);
+        if (lesson) {
+          sourceContent += `\n\nLesson: ${(lesson as any).title}\n`;
+          if ((lesson as any).articleContent) {
+            sourceContent += (lesson as any).articleContent;
+          }
+          if ((lesson as any).description) {
+            sourceContent += '\n' + (lesson as any).description;
+          }
+        }
+      } else if (source.type === 'text' && source.textExcerpt) {
+        sourceContent += '\n\n' + source.textExcerpt;
+      } else if (source.type === 'url' && source.url) {
+        // In production, fetch and parse URL content
+        sourceContent += `\n\nURL: ${source.url}`;
+      }
+    }
+
+    // Build prompt for AI
+    const fullPrompt = buildAiPrompt(job.prompt, sourceContent, job.targetTemplate);
+
+    // Call AI service (placeholder - implement actual AI integration)
+    const aiResponse = await callAiService(fullPrompt, job.provider, job.aiModel);
+
+    // Parse AI response and create questions
+    const questions = parseAiResponse(aiResponse, job.course, job.section, job.createdBy);
+
+    // Create questions in database
+    const createdQuestions = await Question.insertMany(questions);
+    const questionIds = createdQuestions.map((q) => q._id);
+
+    // Create exam from template or use existing
+    let exam: any = null;
+    if (job.targetExam) {
+      exam = await Exam.findById(job.targetExam);
+      if (exam) {
+        // Add questions to existing exam
+        exam.questions = questionIds.map((id, index) => ({
+          question: id,
+          order: index + 1,
+          weight: 1,
+        }));
+        await exam.save();
+      }
+    } else {
+      // Create new exam
+      const template = job.targetTemplate 
+        ? await ExamTemplate.findById(job.targetTemplate)
+        : null;
+
+      const examTitle = template 
+        ? `${template.title} - ${new Date().toLocaleDateString()}`
+        : `AI Generated Exam - ${new Date().toLocaleDateString()}`;
+
+      const slug = examTitle
+        .toLowerCase()
+        .trim()
+        .replace(/\s+/g, '-')
+        .replace(/[^\w\-]+/g, '')
+        .replace(/\-\-+/g, '-') + `-${Date.now()}`;
+
+      exam = await Exam.create({
+        course: job.course,
+        section: job.section,
+        title: examTitle,
+        description: 'AI generated exam',
+        slug,
+        status: 'draft',
+        questions: questionIds.map((id, index) => ({
+          question: id,
+          order: index + 1,
+          weight: 1,
+        })),
+        totalPoints: createdQuestions.reduce((sum, q) => sum + q.points, 0),
+        passingScore: 0,
+        shuffleQuestions: template?.shuffleQuestions ?? false,
+        shuffleAnswers: template?.shuffleAnswers ?? false,
+        durationMinutes: 60,
+        maxAttempts: null,
+        scoringMethod: 'highest',
+        showCorrectAnswers: 'after_submit',
+        showScoreToStudent: true,
+        allowLateSubmission: false,
+        latePenaltyPercent: 0,
+        timeLimitType: 'per_attempt',
+        createdBy: job.createdBy,
+      });
+    }
+
+    // Update job
+    if (exam) {
+      job.status = 'completed';
+      job.resultExamId = exam._id;
+      job.resultQuestionIds = questionIds;
+      job.logs = JSON.stringify({ questionsGenerated: questions.length, examCreated: true });
+      await job.save();
+    } else {
+      throw new Error('Failed to create exam');
+    }
+  } catch (error) {
+    const job = await AiGenerationJob.findById(jobId);
+    if (job) {
+      job.status = 'failed';
+      job.errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      await job.save();
+    }
+    console.error('Error processing AI generation job:', error);
+  }
+}
+
+/**
+ * Build AI prompt from template and source content
+ */
+function buildAiPrompt(
+  userPrompt: string,
+  sourceContent: string,
+  templateId: mongoose.Types.ObjectId | null | undefined
+): string {
+  let prompt = `You are an expert educational content creator. Generate exam questions based on the following material.\n\n`;
+
+  if (sourceContent) {
+    prompt += `SOURCE MATERIAL:\n${sourceContent}\n\n`;
+  }
+
+  if (templateId) {
+    prompt += `Use the following exam template requirements when generating questions.\n`;
+    // Template details would be added here
+  }
+
+  prompt += `USER INSTRUCTIONS:\n${userPrompt}\n\n`;
+
+  prompt += `Generate questions in JSON format with the following structure:
+{
+  "questions": [
+    {
+      "type": "single_choice" | "multiple_choice" | "short_answer",
+      "difficulty": "easy" | "medium" | "hard",
+      "text": "Question text here",
+      "points": 1,
+      "options": [{"id": "a", "text": "Option A", "isCorrect": true}, ...], // for choice types
+      "expectedAnswers": ["answer1", "answer2"], // for short_answer
+      "explanation": "Why this answer is correct"
+    }
+  ]
+}`;
+
+  return prompt;
+}
+
+/**
+ * Call AI service (placeholder - implement actual integration)
+ */
+async function callAiService(
+  _prompt: string,
+  _provider?: string,
+  _model?: string
+): Promise<string> {
+  // Placeholder implementation
+  // In production, integrate with OpenAI, Azure OpenAI, Anthropic, etc.
+
+  if (process.env.AI_PROVIDER === 'openai' && process.env.OPENAI_API_KEY) {
+    // Example OpenAI integration (would need openai package)
+    // const OpenAI = require('openai');
+    // const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+    // const response = await openai.chat.completions.create({
+    //   model: model || 'gpt-4',
+    //   messages: [{ role: 'user', content: prompt }],
+    // });
+    // return response.choices[0].message.content || '';
+  }
+
+  // Fallback: return mock response for development
+  return JSON.stringify({
+    questions: [
+      {
+        type: 'single_choice',
+        difficulty: 'medium',
+        text: 'What is the main topic discussed in the material?',
+        points: 1,
+        options: [
+          { id: 'a', text: 'Option A', isCorrect: true },
+          { id: 'b', text: 'Option B', isCorrect: false },
+          { id: 'c', text: 'Option C', isCorrect: false },
+          { id: 'd', text: 'Option D', isCorrect: false },
+        ],
+        explanation: 'This is a sample AI-generated question.',
+      },
+    ],
+  });
+}
+
+/**
+ * Parse AI response and create question objects
+ */
+function parseAiResponse(
+  aiResponse: string,
+  courseId: mongoose.Types.ObjectId,
+  sectionId: mongoose.Types.ObjectId | null | undefined,
+  ownerId: mongoose.Types.ObjectId
+): any[] {
+  try {
+    const parsed = JSON.parse(aiResponse);
+    const questions = parsed.questions || [];
+
+    return questions.map((q: any) => ({
+      course: courseId,
+      section: sectionId || null,
+      owner: ownerId,
+      type: q.type || 'single_choice',
+      difficulty: q.difficulty || 'medium',
+      text: q.text,
+      images: q.images || [],
+      options: q.options || [],
+      expectedAnswers: q.expectedAnswers || [],
+      caseSensitive: false,
+      maxSelectable: q.type === 'multiple_choice' ? null : 1,
+      points: q.points || 1,
+      negativeMarking: false,
+      negativePoints: 0,
+      tags: q.tags || [],
+      topic: q.topic,
+      cognitiveLevel: q.cognitiveLevel,
+      isActive: true,
+      version: 1,
+      parentQuestion: null,
+      isArchived: false,
+    }));
+  } catch (error) {
+    console.error('Error parsing AI response:', error);
+    return [];
+  }
+}

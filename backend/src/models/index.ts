@@ -16,6 +16,23 @@ import Review, { IReview, IHelpfulVote } from './Review';
 import Payment, { IPayment } from './Payment';
 import Notification, { INotification } from './Notification';
 import LandingPageConfig, { ILandingPageConfig, IFeature } from './LandingPageConfig';
+import Question, {
+  IQuestion,
+  IQuestionImage,
+  IChoiceOption,
+  QuestionType,
+  QuestionDifficulty,
+} from './Question';
+import Exam, { IExam, IExamQuestionRef } from './Exam';
+import ExamAttempt, { IExamAttempt, IExamAnswer } from './ExamAttempt';
+import ExamTemplate, {
+  IExamTemplate,
+  IDifficultyRule,
+  ITopicRule,
+  ITypeRule,
+} from './ExamTemplate';
+import AiGenerationJob, { IAiGenerationJob, IAiSource, AiInputType, AiJobStatus } from './AiGenerationJob';
+import AiPromptTemplate, { IAiPromptTemplate } from './AiPromptTemplate';
 
 // Export models
 export {
@@ -30,6 +47,12 @@ export {
   Payment,
   Notification,
   LandingPageConfig,
+  Question,
+  Exam,
+  ExamAttempt,
+  ExamTemplate,
+  AiGenerationJob,
+  AiPromptTemplate,
 };
 
 // Export interfaces
@@ -50,6 +73,24 @@ export type {
   INotification,
   ILandingPageConfig,
   IFeature,
+  IQuestion,
+  IQuestionImage,
+  IChoiceOption,
+  QuestionType,
+  QuestionDifficulty,
+  IExam,
+  IExamQuestionRef,
+  IExamAttempt,
+  IExamAnswer,
+  IExamTemplate,
+  IDifficultyRule,
+  ITopicRule,
+  ITypeRule,
+  IAiGenerationJob,
+  IAiSource,
+  AiInputType,
+  AiJobStatus,
+  IAiPromptTemplate,
 };
 
 // Export default object with all models
@@ -65,5 +106,11 @@ export default {
   Payment,
   Notification,
   LandingPageConfig,
+  Question,
+  Exam,
+  ExamAttempt,
+  ExamTemplate,
+  AiGenerationJob,
+  AiPromptTemplate,
 };
 

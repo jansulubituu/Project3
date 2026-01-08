@@ -61,6 +61,10 @@ import reviewRoutes from './routes/reviewRoutes';
 import paymentRoutes from './routes/paymentRoutes';
 import certificateRoutes from './routes/certificateRoutes';
 import landingPageRoutes from './routes/landingPageRoutes';
+import examRoutes from './routes/examRoutes';
+import questionRoutes from './routes/questionRoutes';
+import examAttemptRoutes from './routes/examAttemptRoutes';
+import aiExamRoutes from './routes/aiExamRoutes';
 
 // API Routes
 app.use('/api/auth', authRoutes);
@@ -76,6 +80,10 @@ app.use('/api/reviews', reviewRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/certificates', certificateRoutes);
 app.use('/api/landing-page', landingPageRoutes);
+app.use('/api/exams', examRoutes);
+app.use('/api/questions', questionRoutes);
+app.use('/api/exams', examAttemptRoutes); // Note: exam attempts are nested under /api/exams
+app.use('/api/ai', aiExamRoutes);
 // app.use('/api/admin', adminRoutes);
 
 // 404 handler
