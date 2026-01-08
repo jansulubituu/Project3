@@ -830,8 +830,8 @@ function CurriculumManagementContent() {
     if (item.type === 'lesson') {
       router.push(`/instructor/lessons/${item._id}/edit`);
     } else if (item.type === 'exam') {
-      // Navigate to exams page - user can edit from there
-      router.push(`/instructor/courses/${courseId}/exams`);
+      // Navigate to exam edit page
+      router.push(`/instructor/courses/${courseId}/exams/${item._id}/edit`);
     }
   };
 

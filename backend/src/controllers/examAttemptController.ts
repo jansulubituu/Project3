@@ -480,7 +480,11 @@ export const submitExamAttempt = async (req: AuthRequest, res: Response) => {
         q.question.toString() === question._id.toString()
       );
       const weight = questionRef?.weight || 1;
-      const maxScore = question.points * weight;
+      // Use questionPoints if provided, otherwise use question.points
+      const questionPoints = questionRef?.questionPoints !== undefined 
+        ? questionRef.questionPoints 
+        : question.points;
+      const maxScore = questionPoints * weight;
       totalMaxScore += maxScore;
 
       let isCorrect = false;

@@ -103,7 +103,9 @@ export const createExam = async (req: AuthRequest, res: Response) => {
           (qr.question || qr).toString() === q._id.toString()
         );
         const weight = questionRef?.weight || 1;
-        return sum + q.points * weight;
+        // Use questionPoints if provided, otherwise use question.points
+        const points = questionRef?.questionPoints !== undefined ? questionRef.questionPoints : q.points;
+        return sum + points * weight;
       }, 0);
     }
 
@@ -301,7 +303,9 @@ export const updateExam = async (req: AuthRequest, res: Response) => {
           (qr.question || qr).toString() === q._id.toString()
         );
         const weight = questionRef?.weight || 1;
-        return sum + q.points * weight;
+        // Use questionPoints if provided, otherwise use question.points
+        const points = questionRef?.questionPoints !== undefined ? questionRef.questionPoints : q.points;
+        return sum + points * weight;
       }, 0);
       updateData.totalPoints = finalTotalPoints;
     } else if (updateData.totalPoints !== undefined) {

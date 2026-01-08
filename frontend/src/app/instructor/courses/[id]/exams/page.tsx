@@ -31,9 +31,15 @@ interface ExamItem {
   section?: { _id: string; title: string } | null;
 }
 
+interface SectionOption {
+  _id: string;
+  title: string;
+}
+
 interface CreateExamFormState {
   title: string;
   description: string;
+  section: string;
   totalPoints: string;
   passingScore: string;
   durationMinutes: string;
@@ -49,6 +55,7 @@ function InstructorCourseExamsContent() {
 
   const [course, setCourse] = useState<CourseMeta | null>(null);
   const [exams, setExams] = useState<ExamItem[]>([]);
+  const [sections, setSections] = useState<SectionOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -58,6 +65,7 @@ function InstructorCourseExamsContent() {
   const [form, setForm] = useState<CreateExamFormState>({
     title: '',
     description: '',
+    section: '',
     totalPoints: '',
     passingScore: '',
     durationMinutes: '60',
@@ -74,6 +82,7 @@ function InstructorCourseExamsContent() {
   const [editForm, setEditForm] = useState<CreateExamFormState>({
     title: '',
     description: '',
+    section: '',
     totalPoints: '',
     passingScore: '',
     durationMinutes: '60',
@@ -96,9 +105,10 @@ function InstructorCourseExamsContent() {
         setLoading(true);
         setError(null);
 
-        const [courseRes, examsRes] = await Promise.all([
+        const [courseRes, examsRes, curriculumRes] = await Promise.all([
           api.get(`/courses/${courseId}`),
           api.get(`/exams/course/${courseId}`),
+          api.get(`/courses/${courseId}/curriculum`),
         ]);
 
         if (courseRes.data?.success) {
@@ -127,6 +137,15 @@ function InstructorCourseExamsContent() {
             section: e.section || null,
           }));
           setExams(list);
+        }
+
+        // Load sections
+        if (curriculumRes.data?.success && Array.isArray(curriculumRes.data.sections)) {
+          const sectionsList: SectionOption[] = curriculumRes.data.sections.map((s: any) => ({
+            _id: s._id,
+            title: s.title,
+          }));
+          setSections(sectionsList);
         }
       } catch (err) {
         console.error('Failed to load exams:', err);
@@ -178,6 +197,7 @@ function InstructorCourseExamsContent() {
     setForm({
       title: '',
       description: '',
+      section: sections.length > 0 ? sections[0]._id : '',
       totalPoints: '',
       passingScore: '',
       durationMinutes: '60',
@@ -197,8 +217,15 @@ function InstructorCourseExamsContent() {
       setCreating(true);
       setCreateError(null);
 
+      if (!form.section) {
+        setCreateError('Vui lòng chọn section cho bài kiểm tra.');
+        setCreating(false);
+        return;
+      }
+
       const payload: any = {
         course: courseId,
+        section: form.section,
         title: form.title.trim(),
         description: form.description.trim() || undefined,
         status: form.status,
@@ -228,6 +255,15 @@ function InstructorCourseExamsContent() {
           return;
         }
         payload.passingScore = passing;
+      }
+
+      // Validate passingScore <= totalPoints
+      if (payload.totalPoints && payload.passingScore) {
+        if (payload.passingScore > payload.totalPoints) {
+          setCreateError('Điểm đạt không thể lớn hơn tổng điểm.');
+          setCreating(false);
+          return;
+        }
       }
 
       if (form.durationMinutes) {
@@ -280,6 +316,7 @@ function InstructorCourseExamsContent() {
     setEditForm({
       title: exam.title,
       description: '',
+      section: exam.section?._id || (sections.length > 0 ? sections[0]._id : ''),
       totalPoints: exam.totalPoints ? String(exam.totalPoints) : '',
       passingScore: exam.passingScore ? String(exam.passingScore) : '',
       durationMinutes: exam.durationMinutes ? String(exam.durationMinutes) : '60',
@@ -298,7 +335,14 @@ function InstructorCourseExamsContent() {
       setEditing(true);
       setEditError(null);
 
+      if (!editForm.section) {
+        setEditError('Vui lòng chọn section cho bài kiểm tra.');
+        setEditing(false);
+        return;
+      }
+
       const payload: any = {
+        section: editForm.section,
         title: editForm.title.trim(),
         description: editForm.description.trim() || undefined,
         status: editForm.status,
@@ -326,6 +370,15 @@ function InstructorCourseExamsContent() {
           return;
         }
         payload.passingScore = passing;
+      }
+
+      // Validate passingScore <= totalPoints
+      if (payload.totalPoints && payload.passingScore) {
+        if (payload.passingScore > payload.totalPoints) {
+          setEditError('Điểm đạt không thể lớn hơn tổng điểm.');
+          setEditing(false);
+          return;
+        }
       }
       if (editForm.durationMinutes) {
         const duration = Number(editForm.durationMinutes);
@@ -366,15 +419,19 @@ function InstructorCourseExamsContent() {
     }
   };
 
-  const handleArchiveExam = async (examId: string) => {
-    const confirmed = window.confirm('Bạn có chắc muốn lưu trữ bài kiểm tra này?');
+  const handleDeleteExam = async (examId: string) => {
+    const confirmed = window.confirm('Bạn có chắc muốn xóa bài kiểm tra này? Hành động này không thể hoàn tác.');
     if (!confirmed) return;
     try {
-      await api.delete(`/exams/${examId}`);
-      await reloadExams();
-    } catch (err) {
-      console.error('Failed to archive exam:', err);
-      alert('Không thể lưu trữ bài kiểm tra, vui lòng thử lại.');
+      const res = await api.delete(`/exams/${examId}`);
+      if (res.data?.success) {
+        await reloadExams();
+      } else {
+        alert(res.data?.message || 'Không thể xóa bài kiểm tra.');
+      }
+    } catch (err: any) {
+      console.error('Failed to delete exam:', err);
+      alert(err?.response?.data?.message || 'Không thể xóa bài kiểm tra, vui lòng thử lại.');
     }
   };
 
@@ -542,13 +599,12 @@ function InstructorCourseExamsContent() {
                       >
                         Xem như học viên
                       </Link>
-                      <button
-                        type="button"
-                        onClick={() => openEditModal(exam)}
+                      <Link
+                        href={`/instructor/courses/${courseId}/exams/${exam._id}/edit`}
                         className="px-3 py-1.5 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50"
                       >
                         Sửa
-                      </button>
+                      </Link>
                       <button
                         type="button"
                         onClick={() => handleAnalytics(exam._id)}
@@ -558,10 +614,10 @@ function InstructorCourseExamsContent() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => handleArchiveExam(exam._id)}
+                        onClick={() => handleDeleteExam(exam._id)}
                         className="px-3 py-1.5 rounded-md border border-red-200 text-red-600 hover:bg-red-50"
                       >
-                        Lưu trữ
+                        Xóa
                       </button>
                     </div>
                   </div>
@@ -589,7 +645,38 @@ function InstructorCourseExamsContent() {
             <form onSubmit={handleCreateExam} className="px-5 py-4 space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Tiêu đề bài kiểm tra
+                  Section <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={form.section}
+                  onChange={(e) => setForm((s) => ({ ...s, section: e.target.value }))}
+                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  disabled={creating || sections.length === 0}
+                  required
+                >
+                  {sections.length === 0 ? (
+                    <option value="">Chưa có section nào</option>
+                  ) : (
+                    <>
+                      <option value="">-- Chọn section --</option>
+                      {sections.map((section) => (
+                        <option key={section._id} value={section._id}>
+                          {section.title}
+                        </option>
+                      ))}
+                    </>
+                  )}
+                </select>
+                {sections.length === 0 && (
+                  <p className="mt-1 text-xs text-amber-600">
+                    Vui lòng tạo section trước khi tạo exam.
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Tiêu đề bài kiểm tra <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="text"
@@ -750,7 +837,33 @@ function InstructorCourseExamsContent() {
             <form onSubmit={handleUpdateExam} className="px-5 py-4 space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Tiêu đề bài kiểm tra
+                  Section <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={editForm.section}
+                  onChange={(e) => setEditForm((s) => ({ ...s, section: e.target.value }))}
+                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  disabled={editing || sections.length === 0}
+                  required
+                >
+                  {sections.length === 0 ? (
+                    <option value="">Chưa có section nào</option>
+                  ) : (
+                    <>
+                      <option value="">-- Chọn section --</option>
+                      {sections.map((section) => (
+                        <option key={section._id} value={section._id}>
+                          {section.title}
+                        </option>
+                      ))}
+                    </>
+                  )}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Tiêu đề bài kiểm tra <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="text"

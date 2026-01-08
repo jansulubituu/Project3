@@ -11,6 +11,7 @@ export interface IExamQuestionRef {
   weight?: number;
   order?: number;
   type?: QuestionType;
+  questionPoints?: number; // Override points from Question. If provided, use this instead of question.points
 }
 
 export interface IExam extends Document {
@@ -47,6 +48,7 @@ const examQuestionSchema = new Schema<IExamQuestionRef>(
     weight: { type: Number, default: 1, min: 0 },
     order: { type: Number, default: 0, min: 0 },
     type: { type: String, enum: ['single_choice', 'multiple_choice', 'short_answer'], required: false },
+    questionPoints: { type: Number, default: undefined, min: 0 }, // Optional override for question points
   },
   { _id: false }
 );
