@@ -61,7 +61,7 @@ const examSchema = new Schema<IExam>(
     section: {
       type: Schema.Types.ObjectId,
       ref: 'Section',
-      default: null,
+      required: [true, 'Section is required'],
     },
     title: {
       type: String,

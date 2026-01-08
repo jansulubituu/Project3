@@ -23,7 +23,8 @@ const createExamValidation = [
     .isMongoId()
     .withMessage('Invalid course ID'),
   body('section')
-    .optional()
+    .notEmpty()
+    .withMessage('Section is required')
     .isMongoId()
     .withMessage('Invalid section ID'),
   body('title')

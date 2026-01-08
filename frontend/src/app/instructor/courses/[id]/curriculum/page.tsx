@@ -25,7 +25,7 @@ import {
   useSortable,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { GripVertical, Plus, Trash2, FileText, Video, BookOpen, ClipboardList, FolderOpen, GraduationCap } from 'lucide-react';
+import { GripVertical, Plus, Trash2, FileText, Video, BookOpen, ClipboardList, FolderOpen, GraduationCap, Move, Lock } from 'lucide-react';
 
 // ==================== TYPES ====================
 
@@ -57,7 +57,7 @@ interface LessonItem extends BaseItem {
 
 interface ExamItem extends BaseItem {
   type: 'exam';
-  sectionId: string | null; // null = standalone exam
+  sectionId: string; // Exam must be in a section
   description?: string;
   status: 'draft' | 'published' | 'archived';
   totalPoints: number;
@@ -72,7 +72,6 @@ interface NormalizedState {
   lessons: Record<string, LessonItem>;
   exams: Record<string, ExamItem>;
   sectionOrder: string[]; // IDs of sections in order
-  standaloneExamIds: string[]; // Exams not in any section
 }
 
 interface SelectedItem {
@@ -88,12 +87,14 @@ interface SortableItemProps {
   onDelete: (item: CurriculumItem) => void;
   onNavigate?: (item: CurriculumItem) => void;
   isSelected: boolean;
+  dragEnabled?: boolean;
 }
 
-function SortableItem({ item, onSelect, onDelete, onNavigate, isSelected }: SortableItemProps) {
+function SortableItem({ item, onSelect, onDelete, onNavigate, isSelected, dragEnabled = true }: SortableItemProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: item._id,
     data: { type: item.type },
+    disabled: !dragEnabled,
   });
 
   const style = {
@@ -194,17 +195,23 @@ function SortableItem({ item, onSelect, onDelete, onNavigate, isSelected }: Sort
   return (
     <div
       ref={setNodeRef}
-      style={style}
+      style={dragEnabled ? style : undefined}
       className={getItemStyles()}
       onClick={handleClick}
     >
-      <div
-        {...attributes}
-        {...listeners}
-        className="cursor-grab active:cursor-grabbing text-gray-400 hover:text-gray-600 flex-shrink-0"
-      >
-        <GripVertical className="w-4 h-4" />
-      </div>
+      {dragEnabled ? (
+        <div
+          {...attributes}
+          {...listeners}
+          className="cursor-grab active:cursor-grabbing text-gray-400 hover:text-gray-600 flex-shrink-0"
+        >
+          <GripVertical className="w-4 h-4" />
+        </div>
+      ) : (
+        <div className="flex-shrink-0 text-gray-300">
+          <Lock className="w-4 h-4" />
+        </div>
+      )}
       <div className="flex-shrink-0">{getIcon()}</div>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 mb-1">
@@ -277,13 +284,13 @@ function CurriculumManagementContent() {
     lessons: {},
     exams: {},
     sectionOrder: [],
-    standaloneExamIds: [],
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedItem, setSelectedItem] = useState<SelectedItem | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [dragMode, setDragMode] = useState(false); // Chế độ kéo thả
 
   // Drag & Drop sensors
   const sensors = useSensors(
@@ -324,7 +331,6 @@ function CurriculumManagementContent() {
       const lessons: Record<string, LessonItem> = {};
       const examsMap: Record<string, ExamItem> = {};
       const sectionOrder: string[] = [];
-      const standaloneExamIds: string[] = [];
 
       // Process sections
       const sectionsData = curriculumRes.data.sections || [];
@@ -366,29 +372,32 @@ function CurriculumManagementContent() {
         };
       });
 
-      // Process exams
+      // Process exams (only exams with sections)
       exams.forEach((exam: any) => {
         const examId = exam._id;
+        const sectionId = exam.section?._id || exam.section;
+        
+        // Skip exams without section
+        if (!sectionId) {
+          console.warn(`Exam ${examId} has no section, skipping`);
+          return;
+        }
+
         examsMap[examId] = {
           _id: examId,
           type: 'exam',
           title: exam.title,
           description: exam.description,
           order: 0, // Exams don't have order in the same way
-          sectionId: exam.section || null,
+          sectionId: sectionId,
           status: exam.status || 'draft',
           totalPoints: exam.totalPoints || 0,
           durationMinutes: exam.durationMinutes || 60,
         };
 
-        if (exam.section) {
-          // Add to section's examIds
-          const sectionId = exam.section._id || exam.section;
-          if (sections[sectionId]) {
-            sections[sectionId].examIds.push(examId);
-          }
-        } else {
-          standaloneExamIds.push(examId);
+        // Add to section's examIds
+        if (sections[sectionId]) {
+          sections[sectionId].examIds.push(examId);
         }
       });
 
@@ -397,7 +406,6 @@ function CurriculumManagementContent() {
         lessons,
         exams: examsMap,
         sectionOrder,
-        standaloneExamIds,
       });
     } catch (err: any) {
       console.error('Failed to load curriculum:', err);
@@ -421,131 +429,299 @@ function CurriculumManagementContent() {
     const { active, over } = event;
     setActiveId(null);
 
-    if (!over || active.id === over.id) return;
+    if (!over || active.id === over.id) {
+      return;
+    }
 
     const activeId = active.id as string;
     const overId = over.id as string;
     const activeData = active.data.current as { type: ItemType };
     const overData = over.data.current as { type: ItemType };
 
-    if (!activeData || !overData) return;
+    if (!activeData || !overData) {
+      return;
+    }
 
-    // Optimistic update
-    const newState = { ...normalizedState };
+    // Save original state for rollback
+    const originalState = JSON.parse(JSON.stringify(normalizedState));
+
+    // Deep clone state for optimistic update
+    const newState = {
+      sections: { ...normalizedState.sections },
+      lessons: { ...normalizedState.lessons },
+      exams: { ...normalizedState.exams },
+      sectionOrder: [...normalizedState.sectionOrder],
+    };
+
+    // Deep clone sections with their arrays
+    Object.keys(newState.sections).forEach((sectionId) => {
+      const section = normalizedState.sections[sectionId];
+      newState.sections[sectionId] = {
+        ...section,
+        lessonIds: [...section.lessonIds],
+        examIds: [...section.examIds],
+      };
+    });
 
     try {
-      // Handle section reordering
+      // ==================== SECTION REORDERING ====================
       if (activeData.type === 'section' && overData.type === 'section') {
         const oldIndex = newState.sectionOrder.indexOf(activeId);
         const newIndex = newState.sectionOrder.indexOf(overId);
+        
+        if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) {
+          return;
+        }
+
         newState.sectionOrder = arrayMove(newState.sectionOrder, oldIndex, newIndex);
         setNormalizedState(newState);
 
-        // API call
         await api.put(`/courses/${courseId}/sections/reorder`, {
           sectionIds: newState.sectionOrder,
         });
+        return;
       }
 
-      // Handle lesson reordering within section
-      else if (activeData.type === 'lesson' && overData.type === 'lesson') {
+      // ==================== LESSON HANDLING ====================
+      if (activeData.type === 'lesson') {
         const activeLesson = newState.lessons[activeId];
-        const overLesson = newState.lessons[overId];
+        if (!activeLesson) {
+          return;
+        }
 
-        if (activeLesson && overLesson && activeLesson.sectionId === overLesson.sectionId) {
-          const section = newState.sections[activeLesson.sectionId];
-          if (section) {
-            const oldIndex = section.lessonIds.indexOf(activeId);
-            const newIndex = section.lessonIds.indexOf(overId);
-            section.lessonIds = arrayMove(section.lessonIds, oldIndex, newIndex);
-            setNormalizedState(newState);
+        const oldSectionId = activeLesson.sectionId;
+        let newSectionId: string | null = null;
+        let insertIndex: number | null = null;
 
-            // API call
-            await api.put(`/sections/${activeLesson.sectionId}/lessons/reorder`, {
-              lessonIds: section.lessonIds,
-            });
+        // Determine target section and position
+        if (overData.type === 'section') {
+          // Dropping on section header - add to end
+          newSectionId = overId;
+          const targetSection = newState.sections[newSectionId];
+          insertIndex = targetSection ? targetSection.lessonIds.length : null;
+        } else if (overData.type === 'lesson') {
+          // Dropping on another lesson
+          const overLesson = newState.lessons[overId];
+          if (!overLesson) {
+            return;
+          }
+          newSectionId = overLesson.sectionId;
+          
+          // Find insert position
+          const targetSection = newState.sections[newSectionId];
+          if (targetSection) {
+            const overIndex = targetSection.lessonIds.indexOf(overId);
+            if (overIndex === -1) {
+              insertIndex = targetSection.lessonIds.length;
+            } else {
+              const activeIndex = oldSectionId === newSectionId 
+                ? targetSection.lessonIds.indexOf(activeId)
+                : -1;
+              
+              // Calculate correct insert position
+              if (activeIndex === -1) {
+                // Moving from different section
+                insertIndex = overIndex + 1;
+              } else if (activeIndex < overIndex) {
+                // Moving down in same section
+                insertIndex = overIndex;
+              } else {
+                // Moving up in same section
+                insertIndex = overIndex + 1;
+              }
+            }
           }
         }
-      }
 
-      // Handle moving lesson between sections
-      else if (activeData.type === 'lesson' && overData.type === 'section') {
-        const activeLesson = newState.lessons[activeId];
-        const oldSectionId = activeLesson?.sectionId;
-        const newSectionId = overId;
+        if (!newSectionId) {
+          return;
+        }
 
-        if (activeLesson && oldSectionId && newSectionId && oldSectionId !== newSectionId) {
-          // Remove from old section
+        // Remove from old section
+        if (oldSectionId) {
           const oldSection = newState.sections[oldSectionId];
           if (oldSection) {
             oldSection.lessonIds = oldSection.lessonIds.filter((id) => id !== activeId);
+            newState.sections[oldSectionId] = {
+              ...oldSection,
+              lessonIds: [...oldSection.lessonIds],
+            };
           }
-
-          // Add to new section
-          const newSection = newState.sections[newSectionId];
-          if (newSection) {
-            newSection.lessonIds.push(activeId);
-            activeLesson.sectionId = newSectionId;
-          }
-
-          setNormalizedState(newState);
-
-          // API call
-          await api.put(`/lessons/${activeId}`, {
-            section: newSectionId,
-          });
         }
+
+        // Add to new section at correct position
+        const newSection = newState.sections[newSectionId];
+        if (newSection) {
+          const newLessonIds = [...newSection.lessonIds];
+          
+          // Remove activeId if it exists (in case of same-section reorder)
+          const existingIndex = newLessonIds.indexOf(activeId);
+          if (existingIndex !== -1) {
+            newLessonIds.splice(existingIndex, 1);
+          }
+          
+          // Insert at correct position
+          if (insertIndex !== null && insertIndex <= newLessonIds.length) {
+            newLessonIds.splice(insertIndex, 0, activeId);
+          } else {
+            newLessonIds.push(activeId);
+          }
+          
+          newState.sections[newSectionId] = {
+            ...newSection,
+            lessonIds: newLessonIds,
+          };
+          newState.lessons[activeId] = {
+            ...activeLesson,
+            sectionId: newSectionId,
+          };
+        }
+
+        setNormalizedState(newState);
+
+        // API calls
+        try {
+          if (oldSectionId !== newSectionId) {
+            // Moved between sections - update lesson's section
+            await api.put(`/lessons/${activeId}`, {
+              section: newSectionId,
+            });
+          }
+          
+          // Reorder lessons in new section
+          await api.put(`/sections/${newSectionId}/lessons/reorder`, {
+            lessonIds: newState.sections[newSectionId].lessonIds,
+          });
+        } catch (apiError) {
+          // Revert on API error
+          setNormalizedState(originalState);
+          throw apiError;
+        }
+        return;
       }
 
-      // Handle moving exam between sections or to standalone
-      else if (activeData.type === 'exam') {
+      // ==================== EXAM HANDLING ====================
+      if (activeData.type === 'exam') {
         const activeExam = newState.exams[activeId];
-        if (!activeExam) return;
+        if (!activeExam) {
+          return;
+        }
 
         const oldSectionId = activeExam.sectionId;
         let newSectionId: string | null = null;
+        let insertIndex: number | null = null;
 
+        // Determine target location (must be a section)
         if (overData.type === 'section') {
+          // Dropping on section header - add to end
           newSectionId = overId;
-        } else if (overData.type === 'exam' && overData.type === 'exam') {
+          const targetSection = newState.sections[newSectionId];
+          insertIndex = targetSection ? targetSection.examIds.length : null;
+        } else if (overData.type === 'exam') {
+          // Dropping on another exam - use that exam's section
           const overExam = newState.exams[overId];
-          newSectionId = overExam?.sectionId || null;
+          if (!overExam) {
+            return;
+          }
+          newSectionId = overExam.sectionId;
+          
+          if (!newSectionId) {
+            // Exam must have a section
+            alert('Bài kiểm tra phải nằm trong một section. Vui lòng kéo vào một section.');
+            return;
+          }
+
+          // Find insert position in section
+          const targetSection = newState.sections[newSectionId];
+          if (targetSection) {
+            const overIndex = targetSection.examIds.indexOf(overId);
+            if (overIndex === -1) {
+              insertIndex = targetSection.examIds.length;
+            } else {
+              const activeIndex = oldSectionId === newSectionId 
+                ? targetSection.examIds.indexOf(activeId)
+                : -1;
+              
+              if (activeIndex === -1) {
+                // Moving from different section
+                insertIndex = overIndex + 1;
+              } else if (activeIndex < overIndex) {
+                // Moving down in same section
+                insertIndex = overIndex;
+              } else {
+                // Moving up in same section
+                insertIndex = overIndex + 1;
+              }
+            }
+          }
+        } else {
+          // Cannot drop exam outside of section
+          alert('Bài kiểm tra phải nằm trong một section.');
+          return;
         }
 
-        if (oldSectionId !== newSectionId) {
-          // Remove from old section
-          if (oldSectionId) {
-            const oldSection = newState.sections[oldSectionId];
-            if (oldSection) {
-              oldSection.examIds = oldSection.examIds.filter((id) => id !== activeId);
-            }
-          } else {
-            newState.standaloneExamIds = newState.standaloneExamIds.filter((id) => id !== activeId);
+        if (!newSectionId) {
+          return;
+        }
+
+        // Remove from old section
+        if (oldSectionId) {
+          const oldSection = newState.sections[oldSectionId];
+          if (oldSection) {
+            oldSection.examIds = oldSection.examIds.filter((id) => id !== activeId);
+            newState.sections[oldSectionId] = {
+              ...oldSection,
+              examIds: [...oldSection.examIds],
+            };
           }
+        }
 
-          // Add to new section
-          if (newSectionId) {
-            const newSection = newState.sections[newSectionId];
-            if (newSection) {
-              newSection.examIds.push(activeId);
-            }
-          } else {
-            newState.standaloneExamIds.push(activeId);
+        // Add to new section
+        const newSection = newState.sections[newSectionId];
+        if (newSection) {
+          const newExamIds = [...newSection.examIds];
+          
+          // Remove activeId if it exists (in case of same-section reorder)
+          const existingIndex = newExamIds.indexOf(activeId);
+          if (existingIndex !== -1) {
+            newExamIds.splice(existingIndex, 1);
           }
+          
+          // Insert at correct position
+          if (insertIndex !== null && insertIndex <= newExamIds.length) {
+            newExamIds.splice(insertIndex, 0, activeId);
+          } else {
+            newExamIds.push(activeId);
+          }
+          
+          newState.sections[newSectionId] = {
+            ...newSection,
+            examIds: newExamIds,
+          };
+          newState.exams[activeId] = {
+            ...activeExam,
+            sectionId: newSectionId,
+          };
+        }
 
-          activeExam.sectionId = newSectionId;
-          setNormalizedState(newState);
+        setNormalizedState(newState);
 
-          // API call
+        // API call
+        try {
           await api.put(`/exams/${activeId}`, {
             section: newSectionId,
           });
+        } catch (apiError) {
+          // Revert on API error
+          setNormalizedState(originalState);
+          throw apiError;
         }
+        return;
       }
     } catch (err: any) {
       console.error('Failed to reorder:', err);
-      // Revert on error
-      loadCurriculum();
+      // Revert to original state on error
+      setNormalizedState(originalState);
       alert(err.response?.data?.message || 'Không thể sắp xếp lại. Vui lòng thử lại.');
     }
   };
@@ -594,8 +770,11 @@ function CurriculumManagementContent() {
     }
   };
 
-  const handleCreateExam = async (sectionId: string | null = null) => {
-    if (!courseId) return;
+  const handleCreateExam = async (sectionId: string) => {
+    if (!courseId || !sectionId) {
+      alert('Vui lòng chọn section để tạo bài kiểm tra.');
+      return;
+    }
 
     const title = prompt('Nhập tiêu đề bài kiểm tra:');
     if (!title) return;
@@ -658,6 +837,23 @@ function CurriculumManagementContent() {
 
   // ==================== RENDER TREE ====================
 
+  // Get all sortable item IDs (no duplicates)
+  const getAllSortableIds = useCallback(() => {
+    const ids = new Set<string>();
+    // Add sections
+    normalizedState.sectionOrder.forEach((id) => ids.add(id));
+    // Add lessons (only once, from their sections)
+    normalizedState.sectionOrder.forEach((sectionId) => {
+      const section = normalizedState.sections[sectionId];
+      if (section) {
+        section.lessonIds.forEach((id) => ids.add(id));
+        section.examIds.forEach((id) => ids.add(id));
+      }
+    });
+    // Exams are already included in their sections' examIds
+    return Array.from(ids);
+  }, [normalizedState]);
+
   const renderTree = () => {
     const elements: JSX.Element[] = [];
 
@@ -674,6 +870,7 @@ function CurriculumManagementContent() {
             onDelete={handleDelete}
             onNavigate={handleNavigate}
             isSelected={selectedItem?.id === section._id}
+            dragEnabled={dragMode}
           />
           {/* Section children */}
           <div className="ml-8 mt-2 space-y-2 border-l-2 border-gray-200 pl-4">
@@ -691,6 +888,7 @@ function CurriculumManagementContent() {
                       onDelete={handleDelete}
                       onNavigate={handleNavigate}
                       isSelected={selectedItem?.id === lesson._id}
+                      dragEnabled={dragMode}
                     />
                   );
                 })}
@@ -710,6 +908,7 @@ function CurriculumManagementContent() {
                       onDelete={handleDelete}
                       onNavigate={handleNavigate}
                       isSelected={selectedItem?.id === exam._id}
+                      dragEnabled={dragMode}
                     />
                   );
                 })}
@@ -736,37 +935,6 @@ function CurriculumManagementContent() {
         </div>
       );
     });
-
-    // Add standalone exams section
-    if (normalizedState.standaloneExamIds.length > 0) {
-      elements.push(
-        <div key="standalone-exams" className="mt-6 pt-6 border-t-2 border-gray-300">
-          <div className="flex items-center gap-2 mb-3">
-            <GraduationCap className="w-5 h-5 text-orange-600" />
-            <h3 className="text-base font-bold text-gray-900">Bài kiểm tra độc lập</h3>
-            <span className="px-2 py-0.5 rounded text-xs font-semibold bg-orange-100 text-orange-700">
-              {normalizedState.standaloneExamIds.length}
-            </span>
-          </div>
-          <div className="space-y-2">
-            {normalizedState.standaloneExamIds.map((examId) => {
-              const exam = normalizedState.exams[examId];
-              if (!exam) return null;
-              return (
-                <SortableItem
-                  key={exam._id}
-                  item={exam}
-                  onSelect={(item) => setSelectedItem({ type: item.type, id: item._id })}
-                  onDelete={handleDelete}
-                  onNavigate={handleNavigate}
-                  isSelected={selectedItem?.id === exam._id}
-                />
-              );
-            })}
-          </div>
-        </div>
-      );
-    }
 
     return elements;
   };
@@ -828,9 +996,31 @@ function CurriculumManagementContent() {
           <div className="flex items-center justify-between mb-6">
             <div>
               <h1 className="text-2xl font-bold text-gray-900">Quản lý nội dung: {course.title}</h1>
-              <p className="text-sm text-gray-600 mt-1">Kéo thả để sắp xếp, click để chỉnh sửa</p>
+              <p className="text-sm text-gray-600 mt-1">
+                {dragMode ? 'Chế độ kéo thả - Kéo thả để sắp xếp' : 'Click để chỉnh sửa, bật chế độ kéo thả để sắp xếp'}
+              </p>
             </div>
             <div className="flex gap-2">
+              <button
+                onClick={() => setDragMode(!dragMode)}
+                className={`inline-flex items-center px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  dragMode
+                    ? 'bg-green-600 text-white hover:bg-green-700'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                {dragMode ? (
+                  <>
+                    <Lock className="w-4 h-4 mr-2" />
+                    Tắt kéo thả
+                  </>
+                ) : (
+                  <>
+                    <Move className="w-4 h-4 mr-2" />
+                    Bật kéo thả
+                  </>
+                )}
+              </button>
               <button
                 onClick={handleCreateSection}
                 disabled={isSaving}
@@ -838,14 +1028,6 @@ function CurriculumManagementContent() {
               >
                 <Plus className="w-4 h-4 mr-2" />
                 Thêm Section
-              </button>
-              <button
-                onClick={() => handleCreateExam(null)}
-                disabled={isSaving}
-                className="inline-flex items-center px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
-              >
-                <Plus className="w-4 h-4 mr-2" />
-                Thêm Exam
               </button>
               <button
                 onClick={() => router.push(`/instructor/courses/${courseId}`)}
@@ -860,32 +1042,32 @@ function CurriculumManagementContent() {
             {/* Left: Tree View */}
             <div className="lg:col-span-2">
               <div className="bg-white rounded-lg shadow p-4">
-                <DndContext
-                  sensors={sensors}
-                  collisionDetection={closestCenter}
-                  onDragStart={handleDragStart}
-                  onDragEnd={handleDragEnd}
-                >
-                  <SortableContext
-                    items={[
-                      ...normalizedState.sectionOrder,
-                      ...Object.keys(normalizedState.lessons),
-                      ...Object.keys(normalizedState.exams),
-                    ]}
-                    strategy={verticalListSortingStrategy}
+                {dragMode ? (
+                  <DndContext
+                    sensors={sensors}
+                    collisionDetection={closestCenter}
+                    onDragStart={handleDragStart}
+                    onDragEnd={handleDragEnd}
                   >
-                    <div className="space-y-2">{renderTree()}</div>
-                  </SortableContext>
-                  <DragOverlay>
-                    {activeId ? (
-                      <div className="p-3 bg-blue-50 border border-blue-300 rounded-lg opacity-90">
-                        {normalizedState.lessons[activeId]?.title ||
-                          normalizedState.sections[activeId]?.title ||
-                          normalizedState.exams[activeId]?.title}
-                      </div>
-                    ) : null}
-                  </DragOverlay>
-                </DndContext>
+                    <SortableContext
+                      items={getAllSortableIds()}
+                      strategy={verticalListSortingStrategy}
+                    >
+                      <div className="space-y-2">{renderTree()}</div>
+                    </SortableContext>
+                    <DragOverlay>
+                      {activeId ? (
+                        <div className="p-3 bg-blue-50 border border-blue-300 rounded-lg opacity-90 shadow-lg">
+                          {normalizedState.lessons[activeId]?.title ||
+                            normalizedState.sections[activeId]?.title ||
+                            normalizedState.exams[activeId]?.title}
+                        </div>
+                      ) : null}
+                    </DragOverlay>
+                  </DndContext>
+                ) : (
+                  <div className="space-y-2">{renderTree()}</div>
+                )}
               </div>
             </div>
 

@@ -57,15 +57,20 @@ export const createExam = async (req: AuthRequest, res: Response) => {
       });
     }
 
-    // Verify section if provided
-    if (section) {
-      const sectionDoc = await Section.findById(section);
-      if (!sectionDoc || sectionDoc.course.toString() !== course) {
-        return res.status(400).json({
-          success: false,
-          message: 'Invalid section for this course',
-        });
-      }
+    // Verify section (required)
+    if (!section) {
+      return res.status(400).json({
+        success: false,
+        message: 'Section is required',
+      });
+    }
+
+    const sectionDoc = await Section.findById(section);
+    if (!sectionDoc || sectionDoc.course.toString() !== course) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid section for this course',
+      });
     }
 
     // Validate dates
@@ -258,16 +263,21 @@ export const updateExam = async (req: AuthRequest, res: Response) => {
       });
     }
 
-    // Verify section if being updated
+    // Verify section if being updated (must be provided and valid)
     if (updateData.section !== undefined) {
-      if (updateData.section) {
-        const sectionDoc = await Section.findById(updateData.section);
-        if (!sectionDoc || sectionDoc.course.toString() !== course._id.toString()) {
-          return res.status(400).json({
-            success: false,
-            message: 'Invalid section for this course',
-          });
-        }
+      if (!updateData.section) {
+        return res.status(400).json({
+          success: false,
+          message: 'Section is required',
+        });
+      }
+
+      const sectionDoc = await Section.findById(updateData.section);
+      if (!sectionDoc || sectionDoc.course.toString() !== course._id.toString()) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid section for this course',
+        });
       }
     }
 
