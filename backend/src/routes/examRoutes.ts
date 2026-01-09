@@ -9,6 +9,10 @@ import {
   listExamsByCourse,
   updateExam,
 } from '../controllers/examController';
+import {
+  getStudentPerformance,
+  exportAnalytics,
+} from '../controllers/examAnalyticsController';
 import { protect } from '../middleware/auth';
 import { instructorOrAdmin } from '../middleware/authorize';
 import { validate } from '../middleware/validation';
@@ -82,6 +86,18 @@ const createExamValidation = [
     .optional()
     .isFloat({ min: 0, max: 100 })
     .withMessage('Late penalty must be between 0 and 100'),
+  body('shuffleQuestions')
+    .optional()
+    .isBoolean()
+    .withMessage('shuffleQuestions must be a boolean'),
+  body('shuffleAnswers')
+    .optional()
+    .isBoolean()
+    .withMessage('shuffleAnswers must be a boolean'),
+  body('allowLateSubmission')
+    .optional()
+    .isBoolean()
+    .withMessage('allowLateSubmission must be a boolean'),
   body('status')
     .optional()
     .isIn(['draft', 'published', 'archived'])
@@ -135,6 +151,18 @@ const updateExamValidation = [
     .optional()
     .isFloat({ min: 0, max: 100 })
     .withMessage('Late penalty must be between 0 and 100'),
+  body('shuffleQuestions')
+    .optional()
+    .isBoolean()
+    .withMessage('shuffleQuestions must be a boolean'),
+  body('shuffleAnswers')
+    .optional()
+    .isBoolean()
+    .withMessage('shuffleAnswers must be a boolean'),
+  body('allowLateSubmission')
+    .optional()
+    .isBoolean()
+    .withMessage('allowLateSubmission must be a boolean'),
   body('status')
     .optional()
     .isIn(['draft', 'published', 'archived'])
@@ -160,6 +188,8 @@ router.post('/', protect, instructorOrAdmin, createExamValidation, createExam);
 router.get('/course/:courseId', protect, courseIdValidation, listExamsByCourse);
 router.get('/:id', protect, examIdValidation, getExamById);
 router.get('/:id/analytics', protect, instructorOrAdmin, examIdValidation, getExamAnalytics);
+router.get('/:id/analytics/students', protect, instructorOrAdmin, examIdValidation, getStudentPerformance);
+router.get('/:id/analytics/export', protect, instructorOrAdmin, examIdValidation, exportAnalytics);
 router.put('/:id', protect, instructorOrAdmin, updateExamValidation, updateExam);
 router.delete('/:id', protect, instructorOrAdmin, examIdValidation, deleteExam);
 

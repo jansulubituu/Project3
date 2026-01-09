@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 
@@ -43,9 +43,17 @@ interface CreateExamFormState {
   totalPoints: string;
   passingScore: string;
   durationMinutes: string;
+  maxAttempts: string;
   openAt: string;
   closeAt: string;
   status: ExamStatus;
+  // Advanced settings
+  shuffleQuestions: boolean;
+  shuffleAnswers: boolean;
+  scoringMethod: 'highest' | 'latest' | 'average';
+  showCorrectAnswers: 'never' | 'after_submit' | 'after_close';
+  allowLateSubmission: boolean;
+  latePenaltyPercent: string;
 }
 
 function InstructorCourseExamsContent() {
@@ -59,6 +67,18 @@ function InstructorCourseExamsContent() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Search and filter state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [filterSection, setFilterSection] = useState<string>('all');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pagination, setPagination] = useState({
+    currentPage: 1,
+    totalPages: 1,
+    totalItems: 0,
+    itemsPerPage: 10,
+  });
+
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
@@ -69,9 +89,17 @@ function InstructorCourseExamsContent() {
     totalPoints: '',
     passingScore: '',
     durationMinutes: '60',
+    maxAttempts: '',
     openAt: '',
     closeAt: '',
     status: 'draft',
+    // Advanced settings defaults
+    shuffleQuestions: false,
+    shuffleAnswers: false,
+    scoringMethod: 'highest',
+    showCorrectAnswers: 'after_submit',
+    allowLateSubmission: false,
+    latePenaltyPercent: '0',
   });
 
 
@@ -81,6 +109,52 @@ function InstructorCourseExamsContent() {
   const [analyticsError, setAnalyticsError] = useState<string | null>(null);
   const [analyticsData, setAnalyticsData] = useState<any>(null);
 
+  // Load exams function
+  const loadExams = async (page = 1) => {
+    if (!courseId) return;
+    try {
+      setLoading(true);
+      const params = new URLSearchParams();
+      if (searchQuery.trim()) {
+        params.append('search', searchQuery.trim());
+      }
+      if (filterStatus !== 'all') {
+        params.append('status', filterStatus);
+      }
+      if (filterSection !== 'all') {
+        params.append('section', filterSection);
+      }
+      params.append('page', String(page));
+      params.append('limit', '10');
+
+      const examsRes = await api.get(`/exams/course/${courseId}?${params.toString()}`);
+      if (examsRes.data?.success) {
+        const list: ExamItem[] = (examsRes.data.exams || []).map((e: any) => ({
+          _id: e._id,
+          title: e.title,
+          status: e.status,
+          totalPoints: e.totalPoints ?? 0,
+          passingScore: e.passingScore ?? 0,
+          durationMinutes: e.durationMinutes ?? 60,
+          openAt: e.openAt,
+          closeAt: e.closeAt,
+          maxAttempts: e.maxAttempts ?? null,
+          createdAt: e.createdAt,
+          section: e.section || null,
+        }));
+        setExams(list);
+        if (examsRes.data.pagination) {
+          setPagination(examsRes.data.pagination);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load exams:', err);
+      setError('Không thể tải danh sách bài kiểm tra.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (!courseId) return;
 
@@ -89,9 +163,8 @@ function InstructorCourseExamsContent() {
         setLoading(true);
         setError(null);
 
-        const [courseRes, examsRes, curriculumRes] = await Promise.all([
+        const [courseRes, curriculumRes] = await Promise.all([
           api.get(`/courses/${courseId}`),
-          api.get(`/exams/course/${courseId}`),
           api.get(`/courses/${courseId}/curriculum`),
         ]);
 
@@ -106,23 +179,6 @@ function InstructorCourseExamsContent() {
           setError('Không tìm thấy khóa học.');
         }
 
-        if (examsRes.data?.success && Array.isArray(examsRes.data.exams)) {
-          const list: ExamItem[] = examsRes.data.exams.map((e: any) => ({
-            _id: e._id,
-            title: e.title,
-            status: e.status,
-            totalPoints: e.totalPoints ?? 0,
-            passingScore: e.passingScore ?? 0,
-            durationMinutes: e.durationMinutes ?? 60,
-            openAt: e.openAt,
-            closeAt: e.closeAt,
-            maxAttempts: e.maxAttempts ?? null,
-            createdAt: e.createdAt,
-            section: e.section || null,
-          }));
-          setExams(list);
-        }
-
         // Load sections
         if (curriculumRes.data?.success && Array.isArray(curriculumRes.data.sections)) {
           const sectionsList: SectionOption[] = curriculumRes.data.sections.map((s: any) => ({
@@ -131,36 +187,35 @@ function InstructorCourseExamsContent() {
           }));
           setSections(sectionsList);
         }
+
+        // Load exams
+        await loadExams(1);
       } catch (err) {
-        console.error('Failed to load exams:', err);
-        setError('Không thể tải danh sách bài kiểm tra.');
+        console.error('Failed to load data:', err);
+        setError('Không thể tải dữ liệu.');
       } finally {
         setLoading(false);
       }
     };
 
     loadData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [courseId]);
 
-  const reloadExams = async () => {
-    if (!courseId) return;
-    const examsRes = await api.get(`/exams/course/${courseId}`);
-    if (examsRes.data?.success && Array.isArray(examsRes.data.exams)) {
-      const list: ExamItem[] = examsRes.data.exams.map((e: any) => ({
-        _id: e._id,
-        title: e.title,
-        status: e.status,
-        totalPoints: e.totalPoints ?? 0,
-        passingScore: e.passingScore ?? 0,
-        durationMinutes: e.durationMinutes ?? 60,
-        openAt: e.openAt,
-        closeAt: e.closeAt,
-        maxAttempts: e.maxAttempts ?? null,
-        createdAt: e.createdAt,
-        section: e.section || null,
-      }));
-      setExams(list);
+  // Reload exams when filters or search change
+  useEffect(() => {
+    if (courseId) {
+      const timer = setTimeout(() => {
+        setCurrentPage(1);
+        loadExams(1);
+      }, 300); // Debounce search
+      return () => clearTimeout(timer);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchQuery, filterStatus, filterSection]);
+
+  const reloadExams = async () => {
+    await loadExams(currentPage);
   };
 
   const formatDateTime = (value?: string | null) => {
@@ -185,9 +240,17 @@ function InstructorCourseExamsContent() {
       totalPoints: '',
       passingScore: '',
       durationMinutes: '60',
+      maxAttempts: '',
       openAt: '',
       closeAt: '',
       status: 'draft',
+      // Advanced settings defaults
+      shuffleQuestions: false,
+      shuffleAnswers: false,
+      scoringMethod: 'highest',
+      showCorrectAnswers: 'after_submit',
+      allowLateSubmission: false,
+      latePenaltyPercent: '0',
     });
     setCreateError(null);
     setShowCreateModal(true);
@@ -260,11 +323,35 @@ function InstructorCourseExamsContent() {
         payload.durationMinutes = duration;
       }
 
+      if (form.maxAttempts) {
+        const maxAttempts = Number(form.maxAttempts);
+        if (Number.isNaN(maxAttempts) || maxAttempts < 1) {
+          setCreateError('Số lần làm tối thiểu là 1.');
+          setCreating(false);
+          return;
+        }
+        payload.maxAttempts = maxAttempts;
+      }
+
       if (form.openAt) {
         payload.openAt = new Date(form.openAt).toISOString();
       }
       if (form.closeAt) {
         payload.closeAt = new Date(form.closeAt).toISOString();
+      }
+
+      // Advanced settings
+      payload.shuffleQuestions = form.shuffleQuestions;
+      payload.shuffleAnswers = form.shuffleAnswers;
+      payload.scoringMethod = form.scoringMethod;
+      payload.showCorrectAnswers = form.showCorrectAnswers;
+      payload.allowLateSubmission = form.allowLateSubmission;
+      
+      if (form.latePenaltyPercent) {
+        const penalty = Number(form.latePenaltyPercent);
+        if (!Number.isNaN(penalty) && penalty >= 0 && penalty <= 100) {
+          payload.latePenaltyPercent = penalty;
+        }
       }
 
       const res = await api.post('/exams', payload);
@@ -388,12 +475,30 @@ function InstructorCourseExamsContent() {
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
+              <Link
+                href={`/instructor/courses/${courseId}/exams/templates`}
+                className="inline-flex items-center px-4 py-2 rounded-lg bg-gray-600 text-white text-sm font-medium hover:bg-gray-700"
+              >
+                <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                Templates
+              </Link>
+              <Link
+                href={`/instructor/courses/${courseId}/exams/generate`}
+                className="inline-flex items-center px-4 py-2 rounded-lg bg-gradient-to-r from-purple-600 to-blue-600 text-white text-sm font-medium hover:from-purple-700 hover:to-blue-700"
+              >
+                <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
+                </svg>
+                Tạo bằng AI
+              </Link>
               <button
                 type="button"
                 onClick={handleOpenCreateModal}
                 className="inline-flex items-center px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700"
               >
-                + Tạo bài kiểm tra
+                + Tạo thủ công
               </button>
               <button
                 type="button"
@@ -405,20 +510,99 @@ function InstructorCourseExamsContent() {
             </div>
           </div>
 
+          {/* Search and Filter */}
+          <div className="bg-white rounded-lg shadow border border-gray-100 p-4 mb-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* Search */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Tìm kiếm
+                </label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Tìm theo tiêu đề, mô tả..."
+                    className="w-full rounded-md border border-gray-300 px-3 py-2 pl-10 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  <svg
+                    className="absolute left-3 top-2.5 w-5 h-5 text-gray-400"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                </div>
+              </div>
+
+              {/* Filter by Status */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Trạng thái
+                </label>
+                <select
+                  value={filterStatus}
+                  onChange={(e) => setFilterStatus(e.target.value)}
+                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="all">Tất cả</option>
+                  <option value="draft">Bản nháp</option>
+                  <option value="published">Đã xuất bản</option>
+                  <option value="archived">Đã lưu trữ</option>
+                </select>
+              </div>
+
+              {/* Filter by Section */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Section
+                </label>
+                <select
+                  value={filterSection}
+                  onChange={(e) => setFilterSection(e.target.value)}
+                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="all">Tất cả sections</option>
+                  {sections.map((section) => (
+                    <option key={section._id} value={section._id}>
+                      {section.title}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </div>
+
           {/* Exams list */}
           <div className="bg-white rounded-lg shadow border border-gray-100">
             <div className="px-5 py-3 border-b flex items-center justify-between">
               <h2 className="text-sm font-semibold text-gray-900">Danh sách bài kiểm tra</h2>
-              {exams.length > 0 && (
+              {!loading && (
                 <p className="text-xs text-gray-500">
-                  Có <span className="font-semibold">{exams.length}</span> bài kiểm tra.
+                  {pagination.totalItems > 0 ? (
+                    <>
+                      Hiển thị <span className="font-semibold">{exams.length}</span> /{' '}
+                      <span className="font-semibold">{pagination.totalItems}</span> bài kiểm tra
+                    </>
+                  ) : (
+                    'Chưa có bài kiểm tra nào'
+                  )}
                 </p>
               )}
             </div>
 
-            {exams.length === 0 ? (
-              <div className="px-5 py-6 text-sm text-gray-500">
-                Chưa có bài kiểm tra nào cho khóa học này. Hãy tạo bài kiểm tra đầu tiên.
+            {loading ? (
+              <div className="px-5 py-12 text-center">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto" />
+                <p className="mt-2 text-sm text-gray-500">Đang tải...</p>
+              </div>
+            ) : exams.length === 0 ? (
+              <div className="px-5 py-6 text-sm text-gray-500 text-center">
+                {searchQuery || filterStatus !== 'all' || filterSection !== 'all'
+                  ? 'Không tìm thấy bài kiểm tra nào phù hợp với bộ lọc.'
+                  : 'Chưa có bài kiểm tra nào cho khóa học này. Hãy tạo bài kiểm tra đầu tiên.'}
               </div>
             ) : (
               <div className="divide-y">
@@ -481,13 +665,12 @@ function InstructorCourseExamsContent() {
                       >
                         Sửa
                       </Link>
-                      <button
-                        type="button"
-                        onClick={() => handleAnalytics(exam._id)}
-                        className="px-3 py-1.5 rounded-md border border-blue-200 text-blue-700 hover:bg-blue-50"
+                      <Link
+                        href={`/instructor/courses/${courseId}/exams/${exam._id}/analytics`}
+                        className="px-3 py-1.5 rounded-md border border-blue-200 text-blue-700 hover:bg-blue-50 inline-block text-center"
                       >
                         Analytics
-                      </button>
+                      </Link>
                       <button
                         type="button"
                         onClick={() => handleDeleteExam(exam._id)}
@@ -500,25 +683,105 @@ function InstructorCourseExamsContent() {
                 ))}
               </div>
             )}
+
+            {/* Pagination */}
+            {!loading && pagination.totalItems > 0 && (
+              <div className="px-5 py-4 border-t flex flex-col sm:flex-row items-center justify-between gap-4 bg-gray-50">
+                <div className="text-sm text-gray-700">
+                  Hiển thị{' '}
+                  <span className="font-medium">
+                    {(pagination.currentPage - 1) * pagination.itemsPerPage + 1}
+                  </span>{' '}
+                  -{' '}
+                  <span className="font-medium">
+                    {Math.min(pagination.currentPage * pagination.itemsPerPage, pagination.totalItems)}
+                  </span>{' '}
+                  trong tổng số <span className="font-medium">{pagination.totalItems}</span> bài kiểm tra
+                </div>
+                {pagination.totalPages > 1 && (
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => {
+                        const newPage = currentPage - 1;
+                        setCurrentPage(newPage);
+                        loadExams(newPage);
+                      }}
+                      disabled={currentPage === 1}
+                      className="px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      ← Trước
+                    </button>
+                    <div className="flex gap-1">
+                      {Array.from({ length: Math.min(5, pagination.totalPages) }, (_, i) => {
+                        let pageNum: number;
+                        if (pagination.totalPages <= 5) {
+                          pageNum = i + 1;
+                        } else if (currentPage <= 3) {
+                          pageNum = i + 1;
+                        } else if (currentPage >= pagination.totalPages - 2) {
+                          pageNum = pagination.totalPages - 4 + i;
+                        } else {
+                          pageNum = currentPage - 2 + i;
+                        }
+                        return (
+                          <button
+                            key={pageNum}
+                            onClick={() => {
+                              setCurrentPage(pageNum);
+                              loadExams(pageNum);
+                            }}
+                            className={`px-3 py-2 text-sm font-medium rounded-md min-w-[2.5rem] ${
+                              currentPage === pageNum
+                                ? 'bg-blue-600 text-white'
+                                : 'text-gray-700 bg-white border border-gray-300 hover:bg-gray-50'
+                            }`}
+                          >
+                            {pageNum}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <button
+                      onClick={() => {
+                        const newPage = currentPage + 1;
+                        setCurrentPage(newPage);
+                        loadExams(newPage);
+                      }}
+                      disabled={currentPage === pagination.totalPages}
+                      className="px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Sau →
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </main>
 
       {/* Create exam modal */}
       {showCreateModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="bg-white rounded-lg shadow-lg max-w-lg w-full mx-4">
-            <div className="px-5 py-3 border-b flex items-center justify-between">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-lg shadow-lg max-w-2xl w-full max-h-[90vh] flex flex-col">
+            <div className="px-5 py-3 border-b flex items-center justify-between flex-shrink-0">
               <h2 className="text-lg font-semibold text-gray-900">Tạo bài kiểm tra mới</h2>
               <button
                 type="button"
                 onClick={() => !creating && setShowCreateModal(false)}
-                className="text-gray-500 hover:text-gray-700"
+                className="text-gray-500 hover:text-gray-700 text-xl leading-none"
               >
                 ✕
               </button>
             </div>
-            <form onSubmit={handleCreateExam} className="px-5 py-4 space-y-4">
+            <div className="overflow-y-auto flex-1">
+              <form id="create-exam-form" onSubmit={handleCreateExam} className="px-5 py-4 space-y-4">
+                {/* Error message at top */}
+                {createError && (
+                  <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md">
+                    <p className="text-sm text-red-600 font-medium">{createError}</p>
+                  </div>
+                )}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Section <span className="text-red-500">*</span>
@@ -578,7 +841,7 @@ function InstructorCourseExamsContent() {
                 />
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Tổng điểm
@@ -609,7 +872,7 @@ function InstructorCourseExamsContent() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Thời lượng (phút)
+                    Thời lượng (phút) <span className="text-red-500">*</span>
                   </label>
                   <input
                     type="number"
@@ -620,6 +883,23 @@ function InstructorCourseExamsContent() {
                     disabled={creating}
                     required
                   />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Số lần làm tối đa
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={form.maxAttempts}
+                    onChange={(e) => setForm((s) => ({ ...s, maxAttempts: e.target.value }))}
+                    className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="Không giới hạn nếu để trống"
+                    disabled={creating}
+                  />
+                  <p className="mt-1 text-xs text-gray-500">
+                    Để trống nếu không giới hạn số lần làm
+                  </p>
                 </div>
               </div>
 
@@ -668,30 +948,151 @@ function InstructorCourseExamsContent() {
                 </select>
               </div>
 
-              {createError && (
-                <p className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-md px-3 py-2">
-                  {createError}
-                </p>
-              )}
+              {/* Advanced Settings Section */}
+              <div className="border-t pt-4 mt-4">
+                <h3 className="text-sm font-semibold text-gray-900 mb-3">Cài đặt nâng cao</h3>
+                
+                <div className="space-y-4">
+                  {/* Shuffle Options */}
+                  <div className="space-y-2">
+                    <label className="block text-sm font-medium text-gray-700">
+                      Xáo trộn
+                    </label>
+                    <div className="space-y-2">
+                      <label className="flex items-center">
+                        <input
+                          type="checkbox"
+                          checked={form.shuffleQuestions}
+                          onChange={(e) =>
+                            setForm((s) => ({ ...s, shuffleQuestions: e.target.checked }))
+                          }
+                          className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          disabled={creating}
+                        />
+                        <span className="ml-2 text-sm text-gray-700">Xáo trộn thứ tự câu hỏi</span>
+                      </label>
+                      <label className="flex items-center">
+                        <input
+                          type="checkbox"
+                          checked={form.shuffleAnswers}
+                          onChange={(e) =>
+                            setForm((s) => ({ ...s, shuffleAnswers: e.target.checked }))
+                          }
+                          className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          disabled={creating}
+                        />
+                        <span className="ml-2 text-sm text-gray-700">Xáo trộn thứ tự đáp án</span>
+                      </label>
+                    </div>
+                  </div>
 
-              <div className="flex justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => !creating && setShowCreateModal(false)}
-                  className="px-4 py-2 rounded-md border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50"
-                  disabled={creating}
-                >
-                  Hủy
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 rounded-md bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-60"
-                  disabled={creating}
-                >
-                  {creating ? 'Đang tạo...' : 'Tạo bài kiểm tra'}
-                </button>
+                  {/* Scoring Method */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Phương pháp tính điểm
+                    </label>
+                    <select
+                      value={form.scoringMethod}
+                      onChange={(e) =>
+                        setForm((s) => ({
+                          ...s,
+                          scoringMethod: e.target.value as 'highest' | 'latest' | 'average',
+                        }))
+                      }
+                      className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      disabled={creating}
+                    >
+                      <option value="highest">Điểm cao nhất</option>
+                      <option value="latest">Điểm lần làm gần nhất</option>
+                      <option value="average">Điểm trung bình</option>
+                    </select>
+                    <p className="mt-1 text-xs text-gray-500">
+                      Áp dụng khi học viên làm nhiều lần
+                    </p>
+                  </div>
+
+                  {/* Show Correct Answers */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Hiển thị đáp án đúng
+                    </label>
+                    <select
+                      value={form.showCorrectAnswers}
+                      onChange={(e) =>
+                        setForm((s) => ({
+                          ...s,
+                          showCorrectAnswers: e.target.value as 'never' | 'after_submit' | 'after_close',
+                        }))
+                      }
+                      className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      disabled={creating}
+                    >
+                      <option value="never">Không bao giờ</option>
+                      <option value="after_submit">Sau khi nộp bài</option>
+                      <option value="after_close">Sau khi đóng bài kiểm tra</option>
+                    </select>
+                  </div>
+
+                  {/* Late Submission */}
+                  <div className="space-y-2">
+                    <label className="flex items-center">
+                      <input
+                        type="checkbox"
+                        checked={form.allowLateSubmission}
+                        onChange={(e) =>
+                          setForm((s) => ({ ...s, allowLateSubmission: e.target.checked }))
+                        }
+                        className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        disabled={creating}
+                      />
+                      <span className="ml-2 text-sm text-gray-700">Cho phép nộp muộn</span>
+                    </label>
+                    {form.allowLateSubmission && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Phần trăm phạt khi nộp muộn (%)
+                        </label>
+                        <input
+                          type="number"
+                          min={0}
+                          max={100}
+                          value={form.latePenaltyPercent}
+                          onChange={(e) =>
+                            setForm((s) => ({ ...s, latePenaltyPercent: e.target.value }))
+                          }
+                          className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          placeholder="0"
+                          disabled={creating}
+                        />
+                        <p className="mt-1 text-xs text-gray-500">
+                          Phần trăm điểm sẽ bị trừ khi nộp sau thời gian đóng (0-100%)
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
             </form>
+            </div>
+            {/* Fixed footer with buttons */}
+            <div className="px-5 py-3 border-t bg-gray-50 flex justify-end gap-2 flex-shrink-0">
+              <button
+                type="button"
+                onClick={() => !creating && setShowCreateModal(false)}
+                className="px-4 py-2 rounded-md border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                disabled={creating}
+              >
+                Hủy
+              </button>
+              <button
+                type="submit"
+                form="create-exam-form"
+                className="px-4 py-2 rounded-md bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={creating}
+              >
+                {creating ? 'Đang tạo...' : 'Tạo bài kiểm tra'}
+              </button>
+            </div>
           </div>
         </div>
       )}

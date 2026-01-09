@@ -1,5 +1,6 @@
 import { Response } from 'express';
 import mongoose from 'mongoose';
+import OpenAI from 'openai';
 import { AiGenerationJob, AiPromptTemplate, Exam, Question, Course, ExamTemplate } from '../models';
 import { AuthRequest } from '../middleware/auth';
 
@@ -66,8 +67,8 @@ export const createGenerationJob = async (req: AuthRequest, res: Response) => {
       targetExam: targetExam || null,
       status: 'pending',
       createdBy: req.user.id,
-      provider: process.env.AI_PROVIDER || 'openai',
-      aiModel: process.env.AI_MODEL || 'gpt-4',
+      provider: process.env.AI_PROVIDER || 'huggingface', // Default to Hugging Face (free)
+      aiModel: process.env.AI_MODEL || 'MiniMaxAI/MiniMax-M2.1:novita', // Recommended model via router
     });
 
     // Start processing asynchronously (in production, use a queue system)
@@ -211,6 +212,93 @@ export const publishGeneratedExam = async (req: AuthRequest, res: Response) => {
 };
 
 /**
+ * @desc    List available Gemini models
+ * @route   GET /api/ai/models
+ * @access  Private/Instructor or Admin
+ */
+export const listAvailableModels = async (req: AuthRequest, res: Response) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required',
+      });
+    }
+
+    if (!process.env.GOOGLE_API_KEY) {
+      return res.status(400).json({
+        success: false,
+        message: 'GOOGLE_API_KEY not configured',
+      });
+    }
+
+    try {
+      // Use REST API to list models
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1/models?key=${process.env.GOOGLE_API_KEY}`,
+        {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch models: ${response.status} ${response.statusText}`);
+      }
+
+      const data: any = await response.json();
+      
+      // Filter models that support generateContent
+      const availableModels = (data.models || [])
+        .filter((m: any) => m.supportedGenerationMethods?.includes('generateContent'))
+        .map((m: any) => ({
+          name: m.name,
+          displayName: m.displayName,
+          description: m.description,
+          supportedMethods: m.supportedGenerationMethods,
+          inputTokenLimit: m.inputTokenLimit,
+          outputTokenLimit: m.outputTokenLimit,
+        }))
+        .sort((a: any, b: any) => {
+          // Sort by version (2.5 > 2.0 > 1.5)
+          const getVersion = (name: string) => {
+            const match = name.match(/gemini-(\d+)\.(\d+)/);
+            return match ? parseFloat(`${match[1]}.${match[2]}`) : 0;
+          };
+          return getVersion(b.name) - getVersion(a.name);
+        });
+
+      // Find recommended model (prefer 2.0-flash or 2.5-flash)
+      const recommended = availableModels.find((m: any) => 
+        m.name.includes('2.0-flash') || m.name.includes('2.5-flash')
+      )?.name || availableModels[0]?.name;
+
+      res.json({
+        success: true,
+        models: availableModels,
+        count: availableModels.length,
+        recommended: recommended,
+      });
+    } catch (error) {
+      console.error('Error listing Gemini models:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Error fetching available models',
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error listing models',
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+};
+
+/**
  * @desc    List prompt templates
  * @route   GET /api/ai/prompt-templates
  * @access  Private/Instructor or Admin
@@ -260,35 +348,83 @@ async function processAiGenerationJob(jobId: string) {
     // Extract content from sources
     let sourceContent = '';
     const Lesson = mongoose.model('Lesson');
-
+    
+    console.log(`📚 Extracting content from ${job.sources.length} source(s)...`);
+    
     for (const source of job.sources) {
       if (source.type === 'lesson' && source.lessonId) {
         const lesson = await Lesson.findById(source.lessonId);
         if (lesson) {
-          sourceContent += `\n\nLesson: ${(lesson as any).title}\n`;
-          if ((lesson as any).articleContent) {
-            sourceContent += (lesson as any).articleContent;
+          const lessonData = lesson as any;
+          sourceContent += `\n\n=== Lesson: ${lessonData.title} ===\n`;
+          
+          // Add description
+          if (lessonData.description) {
+            sourceContent += `Description: ${lessonData.description}\n`;
           }
-          if ((lesson as any).description) {
-            sourceContent += '\n' + (lesson as any).description;
+          
+          // Add article content (for article type lessons)
+          if (lessonData.articleContent) {
+            sourceContent += `\nContent:\n${lessonData.articleContent}\n`;
           }
+          
+          // Add video transcript if available
+          if (lessonData.videoTranscript) {
+            sourceContent += `\nVideo Transcript:\n${lessonData.videoTranscript}\n`;
+          }
+          
+          // Add quiz questions content if available
+          if (lessonData.quizQuestions && lessonData.quizQuestions.length > 0) {
+            sourceContent += `\nQuiz Questions:\n`;
+            lessonData.quizQuestions.forEach((q: any, idx: number) => {
+              sourceContent += `${idx + 1}. ${q.question}\n`;
+              if (q.options && q.options.length > 0) {
+                sourceContent += `   Options: ${q.options.join(', ')}\n`;
+              }
+              sourceContent += `   Correct Answer: ${q.correctAnswer}\n`;
+              if (q.explanation) {
+                sourceContent += `   Explanation: ${q.explanation}\n`;
+              }
+            });
+          }
+          
+          console.log(`✅ Extracted content from lesson: ${lessonData.title}`);
+        } else {
+          console.warn(`⚠️ Lesson not found: ${source.lessonId}`);
         }
       } else if (source.type === 'text' && source.textExcerpt) {
-        sourceContent += '\n\n' + source.textExcerpt;
+        sourceContent += `\n\n=== Text Content ===\n${source.textExcerpt}\n`;
+        console.log(`✅ Extracted text content (${source.textExcerpt.length} chars)`);
+      } else if (source.type === 'file' && source.fileContent) {
+        sourceContent += `\n\n=== File Content ===\n${source.fileContent}\n`;
+        console.log(`✅ Extracted file content (${source.fileContent.length} chars)`);
       } else if (source.type === 'url' && source.url) {
         // In production, fetch and parse URL content
-        sourceContent += `\n\nURL: ${source.url}`;
+        sourceContent += `\n\n=== URL Content ===\nURL: ${source.url}\n`;
+        console.log(`⚠️ URL content extraction not implemented: ${source.url}`);
       }
+    }
+    
+    // Log extracted content summary
+    if (sourceContent.trim()) {
+      console.log(`📝 Total extracted content: ${sourceContent.length} characters`);
+    } else {
+      console.warn('⚠️ No content extracted from sources!');
     }
 
     // Build prompt for AI
     const fullPrompt = buildAiPrompt(job.prompt, sourceContent, job.targetTemplate);
+    console.log(`📝 Built prompt (${fullPrompt.length} characters)`);
 
-    // Call AI service (placeholder - implement actual AI integration)
+    // Call AI service
+    console.log(`🤖 Calling AI service: ${job.provider} / ${job.aiModel}...`);
     const aiResponse = await callAiService(fullPrompt, job.provider, job.aiModel);
+    console.log(`✅ Received AI response (${aiResponse.length} characters)`);
 
     // Parse AI response and create questions
+    console.log(`📋 Parsing AI response...`);
     const questions = parseAiResponse(aiResponse, job.course, job.section, job.createdBy);
+    console.log(`✅ Parsed ${questions.length} questions`);
 
     // Create questions in database
     const createdQuestions = await Question.insertMany(questions);
@@ -309,11 +445,11 @@ async function processAiGenerationJob(jobId: string) {
       }
     } else {
       // Create new exam
-      const template = job.targetTemplate 
+      const template = job.targetTemplate
         ? await ExamTemplate.findById(job.targetTemplate)
         : null;
 
-      const examTitle = template 
+      const examTitle = template
         ? `${template.title} - ${new Date().toLocaleDateString()}`
         : `AI Generated Exam - ${new Date().toLocaleDateString()}`;
 
@@ -381,33 +517,42 @@ function buildAiPrompt(
   sourceContent: string,
   templateId: mongoose.Types.ObjectId | null | undefined
 ): string {
-  let prompt = `You are an expert educational content creator. Generate exam questions based on the following material.\n\n`;
+  let prompt = `You are an expert educational content creator. Generate exam questions based on the provided material and instructions.
 
-  if (sourceContent) {
-    prompt += `SOURCE MATERIAL:\n${sourceContent}\n\n`;
-  }
-
-  if (templateId) {
-    prompt += `Use the following exam template requirements when generating questions.\n`;
-    // Template details would be added here
-  }
-
-  prompt += `USER INSTRUCTIONS:\n${userPrompt}\n\n`;
-
-  prompt += `Generate questions in JSON format with the following structure:
+OUTPUT FORMAT:
+You must respond with a valid JSON object strictly following this schema:
 {
   "questions": [
     {
       "type": "single_choice" | "multiple_choice" | "short_answer",
       "difficulty": "easy" | "medium" | "hard",
       "text": "Question text here",
-      "points": 1,
-      "options": [{"id": "a", "text": "Option A", "isCorrect": true}, ...], // for choice types
-      "expectedAnswers": ["answer1", "answer2"], // for short_answer
-      "explanation": "Why this answer is correct"
+      "points": number,
+      "options": [{"id": "a", "text": "Option A", "isCorrect": boolean}, ...], // Required for choice types
+      "expectedAnswers": ["answer1", "answer2"], // Required for short_answer
+      "explanation": "Explanation of the correct answer"
     }
   ]
-}`;
+}
+
+IMPORTANT RULES:
+1. Return ONLY the JSON object. No markdown formatting, no code blocks.
+2. Ensure valid JSON syntax.
+3. For 'single_choice', exactly one option must be 'isCorrect': true.
+4. For 'multiple_choice', at least one option must be 'isCorrect': true.
+5. Create high-quality, academic questions.
+\n`;
+
+  if (sourceContent) {
+    prompt += `SOURCE MATERIAL:\n${sourceContent.substring(0, 100000)}\n\n`; // Safety limit
+  }
+
+  if (templateId) {
+    // Template details would be injected here if available
+    prompt += `[Template specific instructions would go here]\n`;
+  }
+
+  prompt += `USER INSTRUCTIONS:\n${userPrompt}\n\n`;
 
   return prompt;
 }
@@ -416,39 +561,222 @@ function buildAiPrompt(
  * Call AI service (placeholder - implement actual integration)
  */
 async function callAiService(
-  _prompt: string,
-  _provider?: string,
-  _model?: string
+  prompt: string,
+  provider?: string,
+  model?: string
 ): Promise<string> {
-  // Placeholder implementation
-  // In production, integrate with OpenAI, Azure OpenAI, Anthropic, etc.
+  const aiProvider = provider || process.env.AI_PROVIDER || 'huggingface'; // Default to Hugging Face (free)
+  const aiModel = model || process.env.AI_MODEL || 'MiniMaxAI/MiniMax-M2.1:novita'; // Recommended model via router
 
-  if (process.env.AI_PROVIDER === 'openai' && process.env.OPENAI_API_KEY) {
-    // Example OpenAI integration (would need openai package)
-    // const OpenAI = require('openai');
-    // const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-    // const response = await openai.chat.completions.create({
-    //   model: model || 'gpt-4',
-    //   messages: [{ role: 'user', content: prompt }],
-    // });
-    // return response.choices[0].message.content || '';
+  console.log(`🤖 Calling AI Service: ${aiProvider} with model ${aiModel}`);
+
+  // Hugging Face via OpenAI-compatible API (Free tier: 1000 RPD)
+  if (aiProvider === 'huggingface' && process.env.HF_API_KEY) {
+    try {
+      const modelName = aiModel || 'MiniMaxAI/MiniMax-M2.1:novita'; // Recommended model via router
+      
+      // Use OpenAI SDK with Hugging Face router endpoint (OpenAI-compatible)
+      const hfClient = new OpenAI({
+        baseURL: 'https://router.huggingface.co/v1',
+        apiKey: process.env.HF_API_KEY,
+      });
+
+      const completion = await hfClient.chat.completions.create({
+        model: modelName,
+        messages: [
+          {
+            role: 'system',
+            content: 'You are a helpful assistant that generates exam questions in JSON format. Always respond with valid JSON only.',
+          },
+          {
+            role: 'user',
+            content: prompt,
+          },
+        ],
+        temperature: 0.7,
+        response_format: { type: 'json_object' }, // Request JSON format
+        max_tokens: 2000,
+      });
+
+      const content = completion.choices[0].message.content;
+      if (!content) {
+        throw new Error('No content returned from Hugging Face');
+      }
+
+      console.log('✅ Hugging Face API success (via OpenAI-compatible router)');
+      return content;
+    } catch (error) {
+      console.error('❌ Hugging Face API Error:', error);
+      
+      // Fallback: Try old inference API if router fails
+      try {
+        console.log('⚠️ Router failed, trying inference API fallback...');
+        const modelName = aiModel || 'MiniMaxAI/MiniMax-M2.1:novita';
+        const apiUrl = `https://api-inference.huggingface.co/models/${modelName}`;
+        
+        const response = await fetch(apiUrl, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${process.env.HF_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            inputs: prompt,
+            parameters: {
+              temperature: 0.7,
+              max_new_tokens: 2000,
+              return_full_text: false,
+            },
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error(`Inference API also failed: ${response.status}`);
+        }
+
+        const data: any = await response.json();
+        let generatedText = '';
+        
+        if (Array.isArray(data) && data.length > 0) {
+          generatedText = data[0].generated_text || data[0].text || '';
+        } else if (data && typeof data === 'object' && data.generated_text) {
+          generatedText = data.generated_text;
+        }
+
+        if (!generatedText) {
+          throw new Error('No content returned from Hugging Face');
+        }
+
+        // Extract JSON from text response
+        let jsonText = generatedText.trim();
+        if (jsonText.startsWith('```json')) {
+          jsonText = jsonText.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+        } else if (jsonText.startsWith('```')) {
+          jsonText = jsonText.replace(/^```\s*/, '').replace(/\s*```$/, '');
+        }
+
+        const jsonMatch = jsonText.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          jsonText = jsonMatch[0];
+        }
+
+        console.log('✅ Hugging Face Inference API success (fallback)');
+        return jsonText;
+      } catch (fallbackError) {
+        throw new Error(`AI Generation failed: ${(error as Error).message}`);
+      }
+    }
   }
 
-  // Fallback: return mock response for development
+  // Google Gemini (Free tier: 1500 RPD, recommended)
+  if (aiProvider === 'gemini' && process.env.GOOGLE_API_KEY) {
+    try {
+      const { GoogleGenerativeAI } = await import('@google/generative-ai');
+      const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY);
+      
+      // Fix model name - use correct Gemini model identifiers
+      // Try to get available models first, or use known working models
+      let modelName = aiModel || 'gemini-1.5-flash';
+      
+      // Map common model names to correct identifiers
+      const modelMap: Record<string, string> = {
+        'gemini-1.5-flash': 'gemini-1.5-flash',
+        'gemini-1.5-flash-latest': 'gemini-1.5-flash', // Remove -latest
+        'gemini-1.5-pro': 'gemini-1.5-pro',
+        'gemini-1.5-pro-latest': 'gemini-1.5-pro',
+        'gemini-2.0-flash': 'gemini-2.0-flash-exp', // Experimental models need -exp
+        'gemini-2.5-flash': 'gemini-2.5-flash-exp',
+        'gemini-pro': 'gemini-pro', // Legacy
+      };
+      
+      // Use mapped name if available, otherwise use as-is
+      modelName = modelMap[modelName] || modelName;
+      
+      // For v1beta API, use models without -latest suffix
+      if (modelName.endsWith('-latest')) {
+        modelName = modelName.replace('-latest', '');
+      }
+      
+      const geminiModel = genAI.getGenerativeModel({ 
+        model: modelName,
+        generationConfig: {
+          temperature: 0.7,
+          responseMimeType: "application/json",
+        }
+      });
+  
+        const result = await geminiModel.generateContent(prompt);
+        const response = await result.response;
+        const text = response.text();
+        
+        if (!text) throw new Error('No content returned from Gemini');
+        console.log('✅ Gemini API success');
+        return text;
+      } catch (error) {
+        console.error('❌ Gemini API Error:', error);
+        throw new Error(`AI Generation failed: ${(error as Error).message}`);
+      }
+    }
+  
+    // OpenAI (keep existing code below)
+
+
+  if (aiProvider === 'openai' && process.env.OPENAI_API_KEY) {
+    try {
+      const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+      const completion = await openai.chat.completions.create({
+        messages: [
+          { role: 'system', content: 'You are a helpful assistant that generates exam questions in JSON format.' },
+          { role: 'user', content: prompt }
+        ],
+        model: aiModel,
+        response_format: { type: 'json_object' },
+        temperature: 0.7,
+      });
+
+      const content = completion.choices[0].message.content;
+      if (!content) throw new Error('No content returned from OpenAI');
+
+      return content;
+    } catch (error) {
+      console.error('OpenAI API Error:', error);
+      throw new Error(`AI Generation failed: ${(error as Error).message}`);
+    }
+  }
+
+  // Fallback: return mock response for development if no key
+  console.warn('⚠️ ========================================');
+  console.warn('⚠️ NO AI API KEY FOUND - Using DEMO MODE');
+  console.warn('⚠️ ========================================');
+  console.warn('💡 To generate REAL questions, get a FREE API key:');
+  console.warn('   🎯 Hugging Face (RECOMMENDED - Free 1000 RPD):');
+  console.warn('      https://huggingface.co/settings/tokens');
+  console.warn('   🎯 Google Gemini (1500 RPD):');
+  console.warn('      https://aistudio.google.com/app/apikey');
+  console.warn('   ⚡ Groq (14,400 RPD):');
+  console.warn('      https://console.groq.com/keys');
+  console.warn('');
+  console.warn('📝 Then add to backend/.env:');
+  console.warn('   HF_API_KEY=your_token_here');
+  console.warn('   AI_PROVIDER=huggingface');
+  console.warn('   AI_MODEL=mistralai/Mistral-7B-Instruct-v0.2');
+  console.warn('⚠️ ========================================');
+  
   return JSON.stringify({
     questions: [
       {
         type: 'single_choice',
-        difficulty: 'medium',
-        text: 'What is the main topic discussed in the material?',
+        difficulty: 'easy',
+        text: '⚠️ DEMO MODE: Configure AI provider to generate real questions. Which provider is recommended?',
         points: 1,
         options: [
-          { id: 'a', text: 'Option A', isCorrect: true },
-          { id: 'b', text: 'Option B', isCorrect: false },
-          { id: 'c', text: 'Option C', isCorrect: false },
-          { id: 'd', text: 'Option D', isCorrect: false },
+          { id: 'a', text: '✅ Hugging Face - Free 1000 requests/day (RECOMMENDED)', isCorrect: true },
+          { id: 'b', text: 'Google Gemini - Free 1500 requests/day', isCorrect: false },
+          { id: 'c', text: 'Groq - Free 14,400 requests/day (Fast)', isCorrect: false },
+          { id: 'd', text: 'OpenAI - Paid (High quality)', isCorrect: false },
         ],
-        explanation: 'This is a sample AI-generated question.',
+        explanation: 'Demo mode: Add HF_API_KEY to backend/.env to generate real questions. Get free token at: https://huggingface.co/settings/tokens',
       },
     ],
   });

@@ -535,9 +535,7 @@ export const getExamAnalytics = async (req: AuthRequest, res: Response) => {
         correctCount,
         difficultyIndex: Math.round(difficultyIndex * 100) / 100,
       });
-    }
-
-    res.json({
+    }    res.json({
       success: true,
       analytics: {
         exam: {

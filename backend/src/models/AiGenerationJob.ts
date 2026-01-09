@@ -9,6 +9,7 @@ export interface IAiSource {
   fileId?: mongoose.Types.ObjectId;
   url?: string;
   textExcerpt?: string;
+  fileContent?: string; // Extracted file content (PDF, DOCX, TXT)
 }
 
 export interface IAiGenerationJob extends Document {
@@ -43,6 +44,7 @@ const aiSourceSchema = new Schema<IAiSource>(
     fileId: { type: Schema.Types.ObjectId },
     url: { type: String },
     textExcerpt: { type: String },
+    fileContent: { type: String }, // Extracted file content
   },
   { _id: false }
 );

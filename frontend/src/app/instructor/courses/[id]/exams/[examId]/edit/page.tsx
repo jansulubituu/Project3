@@ -62,6 +62,13 @@ function ExamEditContent() {
     openAt: '',
     closeAt: '',
     maxAttempts: '',
+    // Advanced settings
+    shuffleQuestions: false,
+    shuffleAnswers: false,
+    scoringMethod: 'highest' as 'highest' | 'latest' | 'average',
+    showCorrectAnswers: 'after_submit' as 'never' | 'after_submit' | 'after_close',
+    allowLateSubmission: false,
+    latePenaltyPercent: '0',
   });
 
   useEffect(() => {
@@ -91,6 +98,13 @@ function ExamEditContent() {
             openAt: e.openAt ? e.openAt.slice(0, 16) : '',
             closeAt: e.closeAt ? e.closeAt.slice(0, 16) : '',
             maxAttempts: e.maxAttempts ? String(e.maxAttempts) : '',
+            // Advanced settings
+            shuffleQuestions: e.shuffleQuestions ?? false,
+            shuffleAnswers: e.shuffleAnswers ?? false,
+            scoringMethod: e.scoringMethod || 'highest',
+            showCorrectAnswers: e.showCorrectAnswers || 'after_submit',
+            allowLateSubmission: e.allowLateSubmission ?? false,
+            latePenaltyPercent: e.latePenaltyPercent ? String(e.latePenaltyPercent) : '0',
           });
         } else {
           setError('Không tìm thấy bài kiểm tra.');
@@ -179,6 +193,20 @@ function ExamEditContent() {
         payload.closeAt = new Date(form.closeAt).toISOString();
       }
 
+      // Advanced settings
+      payload.shuffleQuestions = form.shuffleQuestions;
+      payload.shuffleAnswers = form.shuffleAnswers;
+      payload.scoringMethod = form.scoringMethod;
+      payload.showCorrectAnswers = form.showCorrectAnswers;
+      payload.allowLateSubmission = form.allowLateSubmission;
+      
+      if (form.latePenaltyPercent) {
+        const penalty = Number(form.latePenaltyPercent);
+        if (!Number.isNaN(penalty) && penalty >= 0 && penalty <= 100) {
+          payload.latePenaltyPercent = penalty;
+        }
+      }
+
       const res = await api.put(`/exams/${examId}`, payload);
       if (res.data?.success) {
         router.push(`/instructor/courses/${courseId}/exams`);
@@ -248,6 +276,16 @@ function ExamEditContent() {
               <p className="text-sm text-gray-600 mt-1">{exam.title}</p>
             </div>
             <div className="flex gap-2">
+              <Link
+                href={`/instructor/courses/${courseId}/exams/${examId}/preview`}
+                className="inline-flex items-center px-4 py-2 rounded-lg bg-purple-600 text-white text-sm font-medium hover:bg-purple-700"
+              >
+                <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                </svg>
+                Preview
+              </Link>
               <Link
                 href={`/instructor/courses/${courseId}/exams`}
                 className="inline-flex items-center px-4 py-2 rounded-lg border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50"
@@ -450,6 +488,131 @@ function ExamEditContent() {
                 ) : (
                   <p className="text-sm text-gray-500">Chưa có câu hỏi nào.</p>
                 )}
+              </div>
+
+              {/* Advanced Settings Section */}
+              <div className="pt-4 border-t">
+                <h3 className="text-sm font-semibold text-gray-900 mb-3">Cài đặt nâng cao</h3>
+                
+                <div className="space-y-4">
+                  {/* Shuffle Options */}
+                  <div className="space-y-2">
+                    <label className="block text-sm font-medium text-gray-700">
+                      Xáo trộn
+                    </label>
+                    <div className="space-y-2">
+                      <label className="flex items-center">
+                        <input
+                          type="checkbox"
+                          checked={form.shuffleQuestions}
+                          onChange={(e) =>
+                            setForm((s) => ({ ...s, shuffleQuestions: e.target.checked }))
+                          }
+                          className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          disabled={saving}
+                        />
+                        <span className="ml-2 text-sm text-gray-700">Xáo trộn thứ tự câu hỏi</span>
+                      </label>
+                      <label className="flex items-center">
+                        <input
+                          type="checkbox"
+                          checked={form.shuffleAnswers}
+                          onChange={(e) =>
+                            setForm((s) => ({ ...s, shuffleAnswers: e.target.checked }))
+                          }
+                          className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          disabled={saving}
+                        />
+                        <span className="ml-2 text-sm text-gray-700">Xáo trộn thứ tự đáp án</span>
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Scoring Method */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Phương pháp tính điểm
+                    </label>
+                    <select
+                      value={form.scoringMethod}
+                      onChange={(e) =>
+                        setForm((s) => ({
+                          ...s,
+                          scoringMethod: e.target.value as 'highest' | 'latest' | 'average',
+                        }))
+                      }
+                      className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      disabled={saving}
+                    >
+                      <option value="highest">Điểm cao nhất</option>
+                      <option value="latest">Điểm lần làm gần nhất</option>
+                      <option value="average">Điểm trung bình</option>
+                    </select>
+                    <p className="mt-1 text-xs text-gray-500">
+                      Áp dụng khi học viên làm nhiều lần
+                    </p>
+                  </div>
+
+                  {/* Show Correct Answers */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Hiển thị đáp án đúng
+                    </label>
+                    <select
+                      value={form.showCorrectAnswers}
+                      onChange={(e) =>
+                        setForm((s) => ({
+                          ...s,
+                          showCorrectAnswers: e.target.value as 'never' | 'after_submit' | 'after_close',
+                        }))
+                      }
+                      className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      disabled={saving}
+                    >
+                      <option value="never">Không bao giờ</option>
+                      <option value="after_submit">Sau khi nộp bài</option>
+                      <option value="after_close">Sau khi đóng bài kiểm tra</option>
+                    </select>
+                  </div>
+
+                  {/* Late Submission */}
+                  <div className="space-y-2">
+                    <label className="flex items-center">
+                      <input
+                        type="checkbox"
+                        checked={form.allowLateSubmission}
+                        onChange={(e) =>
+                          setForm((s) => ({ ...s, allowLateSubmission: e.target.checked }))
+                        }
+                        className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        disabled={saving}
+                      />
+                      <span className="ml-2 text-sm text-gray-700">Cho phép nộp muộn</span>
+                    </label>
+                    {form.allowLateSubmission && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Phần trăm phạt khi nộp muộn (%)
+                        </label>
+                        <input
+                          type="number"
+                          min={0}
+                          max={100}
+                          value={form.latePenaltyPercent}
+                          onChange={(e) =>
+                            setForm((s) => ({ ...s, latePenaltyPercent: e.target.value }))
+                          }
+                          className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          placeholder="0"
+                          disabled={saving}
+                        />
+                        <p className="mt-1 text-xs text-gray-500">
+                          Phần trăm điểm sẽ bị trừ khi nộp sau thời gian đóng (0-100%)
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
 
               {saveError && (

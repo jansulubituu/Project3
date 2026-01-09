@@ -4,6 +4,7 @@ import { body, param } from 'express-validator';
 import {
   createGenerationJob,
   getGenerationJobStatus,
+  listAvailableModels,
   listPromptTemplates,
   publishGeneratedExam,
 } from '../controllers/aiExamController';
@@ -79,6 +80,7 @@ const examIdValidation = [
 router.post('/exams/generate', protect, instructorOrAdmin, createJobValidation, createGenerationJob);
 router.get('/jobs/:jobId', protect, instructorOrAdmin, jobIdValidation, getGenerationJobStatus);
 router.post('/exams/:examId/publish', protect, instructorOrAdmin, examIdValidation, publishGeneratedExam);
+router.get('/models', protect, instructorOrAdmin, listAvailableModels);
 router.get('/prompt-templates', protect, instructorOrAdmin, listPromptTemplates);
 
 export default router;

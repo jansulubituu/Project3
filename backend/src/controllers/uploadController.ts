@@ -315,4 +315,3 @@ export const deleteImageHandler = async (req: Request, res: Response) => {
     });
   }
 };
-
