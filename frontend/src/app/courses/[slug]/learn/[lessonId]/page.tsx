@@ -17,6 +17,7 @@ import {
 import ProtectedRoute from '@/components/ProtectedRoute';
 import { useAuth } from '@/contexts/AuthContext';
 import { api } from '@/lib/api';
+import CommentSection from '@/components/lessons/CommentSection';
 
 interface LessonAttachment {
   name: string;
@@ -420,6 +421,11 @@ function LessonPage() {
                   actionMessage={actionMessage}
                   actionError={actionError}
                 />
+
+                {/* Comment Section */}
+                {isEnrolled && lesson.isPublished && (
+                  <CommentSection lessonId={lesson._id} isEnrolled={isEnrolled} />
+                )}
               </>
             )}
 

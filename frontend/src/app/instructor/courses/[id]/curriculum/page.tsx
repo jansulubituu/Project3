@@ -25,7 +25,21 @@ import {
   useSortable,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { GripVertical, Plus, Trash2, FileText, Video, BookOpen, ClipboardList, FolderOpen, GraduationCap, Move, Lock } from 'lucide-react';
+import {
+  GripVertical,
+  Plus,
+  Trash2,
+  FileText,
+  Video,
+  BookOpen,
+  ClipboardList,
+  FolderOpen,
+  GraduationCap,
+  Move,
+  Lock,
+  Sparkles,
+  PenTool,
+} from 'lucide-react';
 
 // ==================== TYPES ====================
 
@@ -291,6 +305,7 @@ function CurriculumManagementContent() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [dragMode, setDragMode] = useState(false); // Chế độ kéo thả
+  const [showExamCreateMenu, setShowExamCreateMenu] = useState<string | null>(null); // sectionId đang mở menu
 
   // Drag & Drop sensors
   const sensors = useSensors(
@@ -770,7 +785,7 @@ function CurriculumManagementContent() {
     }
   };
 
-  const handleCreateExam = async (sectionId: string) => {
+  const handleCreateExamManually = async (sectionId: string) => {
     if (!courseId || !sectionId) {
       alert('Vui lòng chọn section để tạo bài kiểm tra.');
       return;
@@ -795,7 +810,13 @@ function CurriculumManagementContent() {
       alert(err.response?.data?.message || 'Không thể tạo bài kiểm tra.');
     } finally {
       setIsSaving(false);
+      setShowExamCreateMenu(null);
     }
+  };
+
+  const handleCreateExamWithAI = (sectionId: string) => {
+    if (!courseId || !sectionId) return;
+    router.push(`/instructor/courses/${courseId}/exams/generate?section=${sectionId}`);
   };
 
   const handleDelete = async (item: CurriculumItem) => {
@@ -923,13 +944,42 @@ function CurriculumManagementContent() {
                 <Plus className="w-3 h-3" />
                 Thêm Lesson
               </button>
-              <button
-                onClick={() => handleCreateExam(sectionId)}
-                className="inline-flex items-center gap-1 text-xs text-orange-600 hover:text-orange-700 hover:bg-orange-50 px-2 py-1.5 rounded transition-colors font-medium"
-              >
-                <Plus className="w-3 h-3" />
-                Thêm Exam
-              </button>
+              <div className="relative">
+                <button
+                  onClick={() => setShowExamCreateMenu(showExamCreateMenu === sectionId ? null : sectionId)}
+                  className="inline-flex items-center gap-1 text-xs text-orange-600 hover:text-orange-700 hover:bg-orange-50 px-2 py-1.5 rounded transition-colors font-medium"
+                >
+                  <Plus className="w-3 h-3" />
+                  Thêm Exam
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+                {showExamCreateMenu === sectionId && (
+                  <>
+                    <div
+                      className="fixed inset-0 z-10"
+                      onClick={() => setShowExamCreateMenu(null)}
+                    />
+                    <div className="absolute left-0 top-full mt-1 z-20 bg-white border border-gray-200 rounded-lg shadow-lg min-w-[200px] overflow-hidden">
+                      <button
+                        onClick={() => handleCreateExamWithAI(sectionId)}
+                        className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-purple-50 hover:text-purple-700 transition-colors flex items-center gap-2"
+                      >
+                        <Sparkles className="w-4 h-4 text-purple-600" />
+                        <span>Tạo bằng AI</span>
+                      </button>
+                      <button
+                        onClick={() => handleCreateExamManually(sectionId)}
+                        className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-700 transition-colors flex items-center gap-2 border-t border-gray-100"
+                      >
+                        <PenTool className="w-4 h-4 text-blue-600" />
+                        <span>Tạo thủ công</span>
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
             </div>
           </div>
         </div>

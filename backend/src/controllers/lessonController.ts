@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { Enrollment, Lesson, Progress, Section } from '../models';
+import { Enrollment, Lesson, Progress, Section, Comment } from '../models';
 
 interface LessonStatsQuestion {
   questionId: string;
@@ -311,6 +311,20 @@ export const getLessonDetails = async (req: Request, res: Response) => {
       }).select('status lastPosition timeSpent updatedAt');
     }
 
+    // Get comment count (only active top-level comments)
+    let commentCount = 0;
+    try {
+      commentCount = await Comment.countDocuments({
+        lesson: lesson._id,
+        parentComment: { $exists: false },
+        status: 'active',
+      });
+    } catch (err) {
+      console.error('Error counting comments:', err);
+      // If Comment model not available, default to 0
+      commentCount = 0;
+    }
+
     // 🎯 For students, course.totalLessons should be publishedLessonCount
     const lessonObj = lesson.toObject();
     if (!isInstructor && !isAdmin && lessonObj.course && typeof lessonObj.course === 'object' && 'publishedLessonCount' in lessonObj.course) {
@@ -319,7 +333,10 @@ export const getLessonDetails = async (req: Request, res: Response) => {
 
     res.json({
       success: true,
-      lesson: lessonObj,
+      lesson: {
+        ...lessonObj,
+        commentCount,
+      },
       isEnrolled,
       progress: lessonProgress,
     });

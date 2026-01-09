@@ -33,6 +33,7 @@ import ExamTemplate, {
 } from './ExamTemplate';
 import AiGenerationJob, { IAiGenerationJob, IAiSource, AiInputType, AiJobStatus } from './AiGenerationJob';
 import AiPromptTemplate, { IAiPromptTemplate } from './AiPromptTemplate';
+import Comment, { IComment } from './Comment';
 
 // Export models
 export {
@@ -53,6 +54,7 @@ export {
   ExamTemplate,
   AiGenerationJob,
   AiPromptTemplate,
+  Comment,
 };
 
 // Export interfaces
@@ -91,6 +93,7 @@ export type {
   AiInputType,
   AiJobStatus,
   IAiPromptTemplate,
+  IComment,
 };
 
 // Export default object with all models
@@ -112,5 +115,6 @@ export default {
   ExamTemplate,
   AiGenerationJob,
   AiPromptTemplate,
+  Comment,
 };
 

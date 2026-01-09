@@ -66,6 +66,9 @@ import questionRoutes from './routes/questionRoutes';
 import examAttemptRoutes from './routes/examAttemptRoutes';
 import aiExamRoutes from './routes/aiExamRoutes';
 import examTemplateRoutes from './routes/examTemplateRoutes';
+import commentRoutes from './routes/commentRoutes';
+// Import Comment model to ensure it's registered with mongoose
+import './models/Comment';
 
 // API Routes
 app.use('/api/auth', authRoutes);
@@ -86,6 +89,7 @@ app.use('/api/questions', questionRoutes);
 app.use('/api/exams', examAttemptRoutes); // Note: exam attempts are nested under /api/exams
 app.use('/api/ai', aiExamRoutes);
 app.use('/api/courses', examTemplateRoutes); // Exam templates are nested under /api/courses
+app.use('/api/comments', commentRoutes);
 // app.use('/api/admin', adminRoutes);
 
 // 404 handler
