@@ -436,6 +436,58 @@ export const getCourseCurriculum = async (req: Request, res: Response) => {
         options: { sort: { order: 1 } },
       });
 
+    // Get exams for each section
+    const Exam = (await import('../models/Exam')).default;
+    const examsBySection: Record<string, any[]> = {};
+    
+    const examQuery: any = { course: course._id };
+    // Students can only see published exams
+    if (!isInstructor && !isAdmin) {
+      examQuery.status = 'published';
+    }
+    
+    const exams = await Exam.find(examQuery)
+      .populate({
+        path: 'section',
+        select: 'title order _id',
+      })
+      .select('title description section status totalPoints passingScore durationMinutes openAt closeAt maxAttempts')
+      .sort({ createdAt: 1 });
+
+    exams.forEach((exam: any) => {
+      // Handle both populated and non-populated section
+      let sectionId: string | null = null;
+      if (exam.section) {
+        if (typeof exam.section === 'object' && exam.section._id) {
+          // Populated section
+          sectionId = exam.section._id.toString();
+        } else {
+          // ObjectId
+          sectionId = exam.section.toString();
+        }
+      }
+      
+      if (sectionId) {
+        if (!examsBySection[sectionId]) {
+          examsBySection[sectionId] = [];
+        }
+        // Convert to plain object and remove populated section, keep only section ID
+        const examObj = exam.toObject ? exam.toObject() : exam;
+        examsBySection[sectionId].push({
+          _id: examObj._id,
+          title: examObj.title,
+          description: examObj.description,
+          status: examObj.status,
+          totalPoints: examObj.totalPoints,
+          passingScore: examObj.passingScore,
+          durationMinutes: examObj.durationMinutes,
+          openAt: examObj.openAt,
+          closeAt: examObj.closeAt,
+          maxAttempts: examObj.maxAttempts,
+        });
+      }
+    });
+
     // Get progress for all lessons if user is enrolled
     const lessonProgressMap: Record<string, { status: string; completedAt?: Date }> = {};
     if (isEnrolled && enrollment && req.user) {
@@ -452,7 +504,40 @@ export const getCourseCurriculum = async (req: Request, res: Response) => {
       });
     }
 
-    // Add progress status to each lesson
+    // Get exam attempts for enrolled students to check remaining attempts
+    const ExamAttempt = (await import('../models/ExamAttempt')).default;
+    const examAttemptsMap: Record<string, { submitted: number; remaining: number | null }> = {};
+    
+    if (isEnrolled && req.user) {
+      const examIds = exams.map((exam: any) => exam._id);
+      if (examIds.length > 0) {
+        const attempts = await ExamAttempt.find({
+          exam: { $in: examIds },
+          student: req.user.id,
+          status: 'submitted',
+        }).select('exam');
+        
+        examIds.forEach((examId: any) => {
+          const exam = exams.find((e: any) => e._id.toString() === examId.toString());
+          if (exam && exam.maxAttempts) {
+            const submittedCount = attempts.filter((a: any) => 
+              a.exam.toString() === examId.toString()
+            ).length;
+            examAttemptsMap[examId.toString()] = {
+              submitted: submittedCount,
+              remaining: Math.max(0, exam.maxAttempts - submittedCount),
+            };
+          } else {
+            examAttemptsMap[examId.toString()] = {
+              submitted: 0,
+              remaining: null,
+            };
+          }
+        });
+      }
+    }
+
+    // Add progress status to each lesson and include exams with attempt info
     const sectionsWithProgress = sections.map((section: any) => ({
       ...section.toObject(),
       lessons: section.lessons.map((lesson: any) => {
@@ -463,6 +548,14 @@ export const getCourseCurriculum = async (req: Request, res: Response) => {
             status: progress.status,
             completedAt: progress.completedAt,
           } : null,
+        };
+      }),
+      exams: (examsBySection[section._id.toString()] || []).map((exam: any) => {
+        const attemptInfo = examAttemptsMap[exam._id.toString()];
+        return {
+          ...exam,
+          remainingAttempts: attemptInfo?.remaining ?? null,
+          hasRemainingAttempts: attemptInfo ? attemptInfo.remaining === null || attemptInfo.remaining > 0 : true,
         };
       }),
     }));

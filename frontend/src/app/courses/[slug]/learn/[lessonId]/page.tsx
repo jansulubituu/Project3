@@ -25,12 +25,28 @@ interface LessonAttachment {
   size?: number;
 }
 
+interface ExamListItem {
+  _id: string;
+  title: string;
+  description?: string;
+  status: string;
+  totalPoints: number;
+  passingScore: number;
+  durationMinutes: number;
+  openAt?: string | null;
+  closeAt?: string | null;
+  maxAttempts?: number | null;
+  remainingAttempts?: number | null;
+  hasRemainingAttempts?: boolean;
+}
+
 interface LessonSection {
   _id: string;
   title: string;
   description?: string;
   order: number;
   lessons: LessonListItem[];
+  exams?: ExamListItem[];
 }
 
 interface LessonListItem {
@@ -325,6 +341,7 @@ function LessonPage() {
                   currentLessonId={lesson._id}
                   isEnrolled={isEnrolled}
                   onNavigate={handleNavigateLesson}
+                  courseSlug={slug}
                 />
               ))}
             </div>
@@ -417,11 +434,13 @@ function LessonSectionBlock({
   currentLessonId,
   isEnrolled,
   onNavigate,
+  courseSlug,
 }: {
   section: LessonSection;
   currentLessonId: string;
   isEnrolled: boolean;
   onNavigate: (lessonId?: string, locked?: boolean) => void;
+  courseSlug: string;
 }) {
   const [expanded, setExpanded] = useState(true);
 
@@ -489,6 +508,59 @@ function LessonSectionBlock({
               </button>
             );
           })}
+
+          {/* Exams */}
+          {section.exams && section.exams.length > 0 && (
+            <>
+              {section.lessons.length > 0 && <div className="border-t border-gray-200 my-2"></div>}
+              <div className="px-4 py-2">
+                <p className="text-xs font-semibold text-gray-700 mb-2">Bài kiểm tra</p>
+              </div>
+              {section.exams.map((exam) => {
+                const canTake = exam.hasRemainingAttempts !== false;
+                return (
+                  <Link
+                    key={exam._id}
+                    href={`/courses/${courseSlug}/exams/${exam._id}`}
+                    className={`w-full px-4 py-3 flex items-start gap-3 text-left ${
+                      canTake ? 'hover:bg-gray-50' : 'opacity-60 cursor-not-allowed'
+                    }`}
+                    onClick={(e) => {
+                      if (!canTake) {
+                        e.preventDefault();
+                      }
+                    }}
+                  >
+                    <span className={`mt-1 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-white ${
+                      canTake ? 'bg-orange-500' : 'bg-gray-400'
+                    }`}>
+                      📝
+                    </span>
+                    <div className="flex-1">
+                      <p className={`text-sm font-medium ${canTake ? 'text-gray-900' : 'text-gray-500'}`}>
+                        {exam.title}
+                      </p>
+                      <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-500">
+                        <span className="text-orange-600 font-semibold">{exam.totalPoints} điểm</span>
+                        {exam.durationMinutes && <span>{formatMinutes(exam.durationMinutes)}</span>}
+                        {exam.status === 'published' && (
+                          <span className="text-green-600 font-semibold">Đã xuất bản</span>
+                        )}
+                        {!canTake && exam.maxAttempts && (
+                          <span className="text-red-600 font-semibold">Đã hết lần làm bài</span>
+                        )}
+                        {exam.maxAttempts && exam.remainingAttempts !== null && (
+                          <span className="text-gray-600">
+                            Còn {exam.remainingAttempts}/{exam.maxAttempts} lần
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </Link>
+                );
+              })}
+            </>
+          )}
         </div>
       )}
     </div>

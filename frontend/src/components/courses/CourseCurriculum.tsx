@@ -21,6 +21,21 @@ interface Lesson {
   } | null;
 }
 
+interface Exam {
+  _id: string;
+  title: string;
+  description?: string;
+  status: string;
+  totalPoints: number;
+  passingScore: number;
+  durationMinutes: number;
+  openAt?: string | null;
+  closeAt?: string | null;
+  maxAttempts?: number | null;
+  remainingAttempts?: number | null;
+  hasRemainingAttempts?: boolean;
+}
+
 interface Section {
   _id: string;
   title: string;
@@ -29,6 +44,7 @@ interface Section {
   duration?: number;
   lessonCount?: number;
   lessons: Lesson[];
+  exams?: Exam[];
 }
 
 interface CourseCurriculumProps {
@@ -58,10 +74,17 @@ export default function CourseCurriculum({
       setLoading(true);
       const response = await api.get(`/courses/${courseId}/curriculum`);
       if (response.data.success) {
-        setSections(response.data.sections || []);
+        const sectionsData = response.data.sections || [];
+        console.log('Curriculum data:', sectionsData); // Debug log
+        sectionsData.forEach((section: Section) => {
+          if (section.exams && section.exams.length > 0) {
+            console.log(`Section ${section.title} has ${section.exams.length} exams:`, section.exams);
+          }
+        });
+        setSections(sectionsData);
         // Expand first section by default
-        if (response.data.sections && response.data.sections.length > 0) {
-          setExpandedSections(new Set([response.data.sections[0]._id]));
+        if (sectionsData.length > 0) {
+          setExpandedSections(new Set([sectionsData[0]._id]));
         }
       }
     } catch (error) {
@@ -190,6 +213,9 @@ export default function CourseCurriculum({
                   </div>
                   <div className="flex items-center space-x-4 mt-1 text-sm text-gray-600">
                     <span>{section.lessons?.length || 0} bài học</span>
+                    {section.exams && section.exams.length > 0 && (
+                      <span>{section.exams.length} bài kiểm tra</span>
+                    )}
                     {section.duration && <span>{formatDuration(section.duration)}</span>}
                   </div>
                 </div>
@@ -298,6 +324,88 @@ export default function CourseCurriculum({
                           </div>
                         )}
                       </>
+                    )}
+
+                    {/* Exams */}
+                    {section.exams && section.exams.length > 0 && (
+                      <div className="mt-4 pt-4 border-t">
+                        <h4 className="text-sm font-semibold text-gray-700 mb-3">Bài kiểm tra</h4>
+                        <div className="space-y-2">
+                          {section.exams.map((exam) => {
+                            const canTake = exam.hasRemainingAttempts !== false;
+                            return (
+                              <Link
+                                key={exam._id}
+                                href={`/courses/${courseSlug}/exams/${exam._id}`}
+                                className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors text-left group border ${
+                                  canTake
+                                    ? 'border-orange-200 bg-orange-50 hover:bg-white'
+                                    : 'border-gray-200 bg-gray-100 opacity-60 cursor-not-allowed'
+                                }`}
+                                onClick={(e) => {
+                                  if (!canTake) {
+                                    e.preventDefault();
+                                  }
+                                }}
+                              >
+                                <span className="text-lg">📝</span>
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center space-x-2">
+                                    <span className={`font-medium ${canTake ? 'text-gray-900 group-hover:text-blue-600' : 'text-gray-500'}`}>
+                                      {exam.title}
+                                    </span>
+                                    <span className="px-2 py-0.5 bg-orange-100 text-orange-700 text-xs rounded">
+                                      {exam.totalPoints} điểm
+                                    </span>
+                                    {exam.status === 'published' && (
+                                      <span className="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded">
+                                        Đã xuất bản
+                                      </span>
+                                    )}
+                                    {!canTake && exam.maxAttempts && (
+                                      <span className="px-2 py-0.5 bg-red-100 text-red-700 text-xs rounded">
+                                        Đã hết lần làm bài
+                                      </span>
+                                    )}
+                                  </div>
+                                  {exam.description && (
+                                    <p className="text-sm text-gray-600 mt-1 line-clamp-1">
+                                      {exam.description}
+                                    </p>
+                                  )}
+                                  <div className="flex items-center space-x-3 mt-1 text-xs text-gray-500">
+                                    {exam.durationMinutes && (
+                                      <span>⏱️ {formatDuration(exam.durationMinutes)}</span>
+                                    )}
+                                    {exam.maxAttempts && (
+                                      <span>
+                                        {exam.remainingAttempts !== null
+                                          ? `Còn ${exam.remainingAttempts}/${exam.maxAttempts} lần`
+                                          : `Tối đa ${exam.maxAttempts} lần`}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                                {canTake && (
+                                  <svg
+                                    className="w-4 h-4 opacity-0 group-hover:opacity-100 transition-opacity text-gray-400"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    viewBox="0 0 24 24"
+                                  >
+                                    <path
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                      strokeWidth={2}
+                                      d="M9 5l7 7-7 7"
+                                    />
+                                  </svg>
+                                )}
+                              </Link>
+                            );
+                          })}
+                        </div>
+                      </div>
                     )}
                   </div>
                 </div>

@@ -39,7 +39,7 @@ const examAnswerSchema = new Schema<IExamAnswer>(
     answerMultiple: { type: [String], default: undefined },
     answerText: { type: String },
     isCorrect: { type: Boolean },
-    score: { type: Number, min: 0 },
+    score: { type: Number }, // Allow negative scores for negative marking
     maxScore: { type: Number, min: 0 },
   },
   { _id: false }
@@ -91,7 +91,7 @@ const examAttemptSchema = new Schema<IExamAttempt>(
     score: {
       type: Number,
       default: 0,
-      min: 0,
+      // Allow negative scores (for negative marking), but controller ensures final score >= 0
     },
     maxScore: {
       type: Number,
