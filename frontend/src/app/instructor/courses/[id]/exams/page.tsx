@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 
@@ -65,6 +65,7 @@ function InstructorCourseExamsContent() {
   const [exams, setExams] = useState<ExamItem[]>([]);
   const [sections, setSections] = useState<SectionOption[]>([]);
   const [loading, setLoading] = useState(true);
+  const [searchLoading, setSearchLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Search and filter state
@@ -110,10 +111,15 @@ function InstructorCourseExamsContent() {
   const [analyticsData, setAnalyticsData] = useState<any>(null);
 
   // Load exams function
-  const loadExams = async (page = 1) => {
+  const loadExams = async (page = 1, isSearch = false) => {
     if (!courseId) return;
     try {
-      setLoading(true);
+      // Only show full loading on initial load, use searchLoading for search/filter
+      if (isSearch) {
+        setSearchLoading(true);
+      } else {
+        setLoading(true);
+      }
       const params = new URLSearchParams();
       if (searchQuery.trim()) {
         params.append('search', searchQuery.trim());
@@ -145,13 +151,19 @@ function InstructorCourseExamsContent() {
         setExams(list);
         if (examsRes.data.pagination) {
           setPagination(examsRes.data.pagination);
+          // Sync currentPage state with pagination from API
+          setCurrentPage(examsRes.data.pagination.currentPage);
         }
       }
     } catch (err) {
       console.error('Failed to load exams:', err);
       setError('Không thể tải danh sách bài kiểm tra.');
     } finally {
-      setLoading(false);
+      if (isSearch) {
+        setSearchLoading(false);
+      } else {
+        setLoading(false);
+      }
     }
   };
 
@@ -202,12 +214,13 @@ function InstructorCourseExamsContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [courseId]);
 
-  // Reload exams when filters or search change
+  // Reload exams when filters or search change (without page reload)
   useEffect(() => {
-    if (courseId) {
+    if (courseId && !loading) {
+      // Only trigger search if not initial load
       const timer = setTimeout(() => {
         setCurrentPage(1);
-        loadExams(1);
+        loadExams(1, true); // isSearch = true to use searchLoading instead of loading
       }, 300); // Debounce search
       return () => clearTimeout(timer);
     }
@@ -398,25 +411,6 @@ function InstructorCourseExamsContent() {
     }
   };
 
-  const handleAnalytics = async (examId: string) => {
-    try {
-      setShowAnalytics(true);
-      setAnalyticsLoading(true);
-      setAnalyticsError(null);
-      setAnalyticsData(null);
-      const res = await api.get(`/exams/${examId}/analytics`);
-      if (res.data?.success) {
-        setAnalyticsData(res.data.analytics);
-      } else {
-        setAnalyticsError(res.data?.message || 'Không thể tải analytics.');
-      }
-    } catch (err) {
-      console.error('Failed to load analytics:', err);
-      setAnalyticsError('Không thể tải analytics, vui lòng thử lại.');
-    } finally {
-      setAnalyticsLoading(false);
-    }
-  };
 
   if (loading) {
     return (
@@ -526,14 +520,20 @@ function InstructorCourseExamsContent() {
                     placeholder="Tìm theo tiêu đề, mô tả..."
                     className="w-full rounded-md border border-gray-300 px-3 py-2 pl-10 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
-                  <svg
-                    className="absolute left-3 top-2.5 w-5 h-5 text-gray-400"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                  </svg>
+                  {searchLoading ? (
+                    <div className="absolute right-3 top-2.5">
+                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600" />
+                    </div>
+                  ) : (
+                    <svg
+                      className="absolute left-3 top-2.5 w-5 h-5 text-gray-400"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                  )}
                 </div>
               </div>
 
@@ -597,6 +597,11 @@ function InstructorCourseExamsContent() {
               <div className="px-5 py-12 text-center">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto" />
                 <p className="mt-2 text-sm text-gray-500">Đang tải...</p>
+              </div>
+            ) : searchLoading ? (
+              <div className="px-5 py-6 text-center">
+                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mx-auto" />
+                <p className="mt-2 text-xs text-gray-500">Đang tìm kiếm...</p>
               </div>
             ) : exams.length === 0 ? (
               <div className="px-5 py-6 text-sm text-gray-500 text-center">
@@ -704,9 +709,9 @@ function InstructorCourseExamsContent() {
                       onClick={() => {
                         const newPage = currentPage - 1;
                         setCurrentPage(newPage);
-                        loadExams(newPage);
+                        loadExams(newPage, true);
                       }}
-                      disabled={currentPage === 1}
+                      disabled={currentPage === 1 || searchLoading}
                       className="px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       ← Trước
@@ -728,13 +733,14 @@ function InstructorCourseExamsContent() {
                             key={pageNum}
                             onClick={() => {
                               setCurrentPage(pageNum);
-                              loadExams(pageNum);
+                              loadExams(pageNum, true);
                             }}
+                            disabled={searchLoading}
                             className={`px-3 py-2 text-sm font-medium rounded-md min-w-[2.5rem] ${
                               currentPage === pageNum
                                 ? 'bg-blue-600 text-white'
                                 : 'text-gray-700 bg-white border border-gray-300 hover:bg-gray-50'
-                            }`}
+                            } disabled:opacity-50 disabled:cursor-not-allowed`}
                           >
                             {pageNum}
                           </button>
@@ -745,9 +751,9 @@ function InstructorCourseExamsContent() {
                       onClick={() => {
                         const newPage = currentPage + 1;
                         setCurrentPage(newPage);
-                        loadExams(newPage);
+                        loadExams(newPage, true);
                       }}
-                      disabled={currentPage === pagination.totalPages}
+                      disabled={currentPage === pagination.totalPages || searchLoading}
                       className="px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       Sau →

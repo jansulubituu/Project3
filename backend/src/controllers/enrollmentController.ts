@@ -193,7 +193,7 @@ export const getMyEnrollments = async (req: Request, res: Response) => {
 
     const [enrollments, total] = await Promise.all([
       Enrollment.find(query)
-        .select('progress status enrolledAt completedLessons totalLessons totalTimeSpent lastAccessed completedAt hasReviewed certificateIssued certificateUrl certificateId certificateIssuedAt completionSnapshot')
+        .select('progress status enrolledAt completedLessons completedExams requiredExams totalLessons totalTimeSpent lastAccessed completedAt hasReviewed certificateIssued certificateUrl certificateId certificateIssuedAt completionSnapshot')
         .populate({
           path: 'course',
           select: 'title slug thumbnail level totalLessons publishedLessonCount enrollmentCount averageRating instructor',
@@ -209,24 +209,50 @@ export const getMyEnrollments = async (req: Request, res: Response) => {
       Enrollment.countDocuments(query),
     ]);
 
-    // Transform enrollments to ensure completedLessons is properly returned
-    const transformedEnrollments = enrollments.map((enrollment: any) => {
-      const enrollmentObj = enrollment.toObject();
-      // Ensure completedLessons is an array and return its length
-      const completedLessonsArray = enrollmentObj.completedLessons || [];
-      
-      // 🎯 For students, course.totalLessons should be publishedLessonCount
-      // enrollment.totalLessons is already published only (fixed earlier)
-      if (enrollmentObj.course && enrollmentObj.course.publishedLessonCount !== undefined) {
-        enrollmentObj.course.totalLessons = enrollmentObj.course.publishedLessonCount;
-      }
-      
-      return {
-        ...enrollmentObj,
-        completedLessons: Array.isArray(completedLessonsArray) ? completedLessonsArray.length : 0,
-        completedLessonsIds: completedLessonsArray,
-      };
-    });
+    // Transform enrollments to ensure completedLessons and completedExams are properly returned
+    const Exam = (await import('../models/Exam')).default;
+    const transformedEnrollments = await Promise.all(
+      enrollments.map(async (enrollment: any) => {
+        const enrollmentObj = enrollment.toObject();
+        // Ensure completedLessons is an array and return its length
+        const completedLessonsArray = enrollmentObj.completedLessons || [];
+        const completedExamsArray = enrollmentObj.completedExams || [];
+        const requiredExamsArray = enrollmentObj.requiredExams || [];
+        
+        // 🎯 For students, course.totalLessons should be publishedLessonCount
+        // enrollment.totalLessons is already published only (fixed earlier)
+        if (enrollmentObj.course && enrollmentObj.course.publishedLessonCount !== undefined) {
+          enrollmentObj.course.totalLessons = enrollmentObj.course.publishedLessonCount;
+        }
+        
+        // Calculate required exams count
+        // Use requiredExams array length if available, otherwise count published exams
+        let requiredExamsCount = Array.isArray(requiredExamsArray) ? requiredExamsArray.length : 0;
+        if (requiredExamsCount === 0 && enrollmentObj.course) {
+          // Count published exams in course as fallback
+          try {
+            const publishedExamsCount = await Exam.countDocuments({
+              course: enrollmentObj.course._id,
+              status: 'published',
+            });
+            requiredExamsCount = publishedExamsCount;
+          } catch (err) {
+            console.error('Error counting exams:', err);
+            requiredExamsCount = 0;
+          }
+        }
+        
+        return {
+          ...enrollmentObj,
+          completedLessons: Array.isArray(completedLessonsArray) ? completedLessonsArray.length : 0,
+          completedLessonsIds: completedLessonsArray,
+          completedExams: Array.isArray(completedExamsArray) ? completedExamsArray.length : 0,
+          completedExamsIds: completedExamsArray,
+          requiredExams: requiredExamsCount,
+          requiredExamsIds: requiredExamsArray,
+        };
+      })
+    );
 
     res.json({
       success: true,

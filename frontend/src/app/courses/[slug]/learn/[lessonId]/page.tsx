@@ -38,6 +38,13 @@ interface ExamListItem {
   maxAttempts?: number | null;
   remainingAttempts?: number | null;
   hasRemainingAttempts?: boolean;
+  progress?: {
+    status: 'not_started' | 'in_progress' | 'passed' | 'failed';
+    bestScore?: number;
+    latestScore?: number;
+    passed?: boolean;
+    attempts?: number;
+  } | null;
 }
 
 interface LessonSection {
@@ -518,12 +525,23 @@ function LessonSectionBlock({
               </div>
               {section.exams.map((exam) => {
                 const canTake = exam.hasRemainingAttempts !== false;
+                const examProgress = exam.progress;
+                const isPassed = examProgress?.passed === true;
+                const isFailed = examProgress && !examProgress.passed;
+                const hasAttempts = examProgress && (examProgress.attempts || 0) > 0;
+                
                 return (
                   <Link
                     key={exam._id}
                     href={`/courses/${courseSlug}/exams/${exam._id}`}
                     className={`w-full px-4 py-3 flex items-start gap-3 text-left ${
-                      canTake ? 'hover:bg-gray-50' : 'opacity-60 cursor-not-allowed'
+                      canTake 
+                        ? isPassed
+                          ? 'hover:bg-green-50 bg-green-50/50'
+                          : isFailed
+                          ? 'hover:bg-red-50 bg-red-50/50'
+                          : 'hover:bg-gray-50'
+                        : 'opacity-60 cursor-not-allowed'
                     }`}
                     onClick={(e) => {
                       if (!canTake) {
@@ -532,18 +550,53 @@ function LessonSectionBlock({
                     }}
                   >
                     <span className={`mt-1 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-white ${
-                      canTake ? 'bg-orange-500' : 'bg-gray-400'
+                      isPassed
+                        ? 'bg-green-500'
+                        : isFailed
+                        ? 'bg-red-500'
+                        : canTake
+                        ? 'bg-orange-500'
+                        : 'bg-gray-400'
                     }`}>
-                      📝
+                      {isPassed ? '✓' : '📝'}
                     </span>
                     <div className="flex-1">
-                      <p className={`text-sm font-medium ${canTake ? 'text-gray-900' : 'text-gray-500'}`}>
+                      <p className={`text-sm font-medium ${
+                        isPassed
+                          ? 'text-green-700'
+                          : isFailed
+                          ? 'text-red-700'
+                          : canTake
+                          ? 'text-gray-900'
+                          : 'text-gray-500'
+                      }`}>
                         {exam.title}
                       </p>
                       <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-500">
                         <span className="text-orange-600 font-semibold">{exam.totalPoints} điểm</span>
                         {exam.durationMinutes && <span>{formatMinutes(exam.durationMinutes)}</span>}
-                        {exam.status === 'published' && (
+                        {/* Exam Progress Status */}
+                        {isEnrolled && examProgress && (
+                          <>
+                            {isPassed && (
+                              <span className="text-green-600 font-semibold flex items-center">
+                                ✓ Đã đạt ({examProgress.bestScore}/{exam.totalPoints})
+                              </span>
+                            )}
+                            {isFailed && hasAttempts && (
+                              <span className="text-red-600 font-semibold">
+                                ✗ Chưa đạt ({examProgress.bestScore}/{exam.totalPoints})
+                              </span>
+                            )}
+                            {!hasAttempts && examProgress.status === 'not_started' && (
+                              <span className="text-gray-500">Chưa làm</span>
+                            )}
+                            {hasAttempts && !isPassed && !isFailed && (
+                              <span className="text-yellow-600">Đang làm ({examProgress.attempts} lần)</span>
+                            )}
+                          </>
+                        )}
+                        {exam.status === 'published' && !examProgress && (
                           <span className="text-green-600 font-semibold">Đã xuất bản</span>
                         )}
                         {!canTake && exam.maxAttempts && (
@@ -553,6 +606,9 @@ function LessonSectionBlock({
                           <span className="text-gray-600">
                             Còn {exam.remainingAttempts}/{exam.maxAttempts} lần
                           </span>
+                        )}
+                        {examProgress && examProgress.attempts && examProgress.attempts > 0 && (
+                          <span className="text-gray-500">Đã làm: {examProgress.attempts} lần</span>
                         )}
                       </div>
                     </div>

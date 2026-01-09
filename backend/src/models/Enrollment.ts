@@ -17,6 +17,8 @@ export interface IEnrollment extends Document {
   enrolledAt: Date;
   progress: number;
   completedLessons: mongoose.Types.ObjectId[];
+  completedExams?: mongoose.Types.ObjectId[]; // NEW: Track completed exams
+  requiredExams?: mongoose.Types.ObjectId[]; // NEW: Exams required for completion
   totalLessons: number;
   status: 'active' | 'completed' | 'suspended' | 'expired';
   completedAt?: Date;
@@ -34,6 +36,7 @@ export interface IEnrollment extends Document {
   // Methods
   updateProgress(): Promise<void>;
   markLessonComplete(lessonId: mongoose.Types.ObjectId): Promise<void>;
+  markExamComplete(examId: mongoose.Types.ObjectId): Promise<void>;
   checkCompletion(): Promise<void>;
   generateCertificate(): Promise<void>;
   hasNewContentSinceCompletion(): Promise<boolean>;
@@ -68,6 +71,14 @@ const enrollmentSchema = new Schema<IEnrollment>(
     completedLessons: [{
       type: Schema.Types.ObjectId,
       ref: 'Lesson',
+    }],
+    completedExams: [{
+      type: Schema.Types.ObjectId,
+      ref: 'Exam',
+    }],
+    requiredExams: [{
+      type: Schema.Types.ObjectId,
+      ref: 'Exam',
     }],
     totalLessons: {
       type: Number,
@@ -126,6 +137,7 @@ enrollmentSchema.index({ student: 1, course: 1 }, { unique: true });
 enrollmentSchema.methods.updateProgress = async function () {
   const Course = mongoose.model('Course');
   const Lesson = mongoose.model('Lesson');
+  const Exam = mongoose.model('Exam');
   const course = await Course.findById(this.course);
   
   if (course) {
@@ -136,18 +148,33 @@ enrollmentSchema.methods.updateProgress = async function () {
       isPublished: true,
     });
     
+    // Count required exams (exams with status='published' in course)
+    const requiredExams = await Exam.find({
+      course: this.course,
+      status: 'published',
+    });
+    const totalRequiredExams = requiredExams.length;
+    
     // Count how many published lessons student has completed
     const completedPublishedLessons = await Lesson.countDocuments({
       _id: { $in: this.completedLessons },
       isPublished: true,
     });
     
+    // Count completed exams
+    const completedExamsCount = (this.completedExams || []).length;
+    
+    // Calculate progress: (completedLessons + completedExams) / (totalLessons + totalRequiredExams)
+    const totalItems = publishedLessonCount + totalRequiredExams;
+    const completedItems = completedPublishedLessons + completedExamsCount;
+    
     // 🎯 CRITICAL: For students, totalLessons = published lessons only
     // Students should only see/count published lessons, not draft lessons
     this.totalLessons = publishedLessonCount;
+    this.requiredExams = requiredExams.map(e => e._id);
     
-    if (publishedLessonCount > 0) {
-      this.progress = Math.round((completedPublishedLessons / publishedLessonCount) * 100);
+    if (totalItems > 0) {
+      this.progress = Math.round((completedItems / totalItems) * 100);
     } else {
       this.progress = 0;
     }
@@ -157,6 +184,8 @@ enrollmentSchema.methods.updateProgress = async function () {
       totalLessons: this.totalLessons,
       publishedLessons: publishedLessonCount,
       completedPublished: completedPublishedLessons,
+      totalRequiredExams,
+      completedExams: completedExamsCount,
       progress: this.progress,
     });
     
@@ -176,6 +205,27 @@ enrollmentSchema.methods.markLessonComplete = async function (
   
   if (!isAlreadyCompleted) {
     this.completedLessons.push(lessonId);
+    this.lastAccessed = new Date();
+    await this.updateProgress();
+  }
+};
+
+// Method to mark exam as complete
+enrollmentSchema.methods.markExamComplete = async function (
+  examId: mongoose.Types.ObjectId
+) {
+  // Initialize completedExams if not exists
+  if (!this.completedExams) {
+    this.completedExams = [];
+  }
+  
+  // Check if exam already completed
+  const isAlreadyCompleted = this.completedExams.some(
+    (id: mongoose.Types.ObjectId) => id.toString() === examId.toString()
+  );
+  
+  if (!isAlreadyCompleted) {
+    this.completedExams.push(examId);
     this.lastAccessed = new Date();
     await this.updateProgress();
   }

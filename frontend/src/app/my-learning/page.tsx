@@ -9,6 +9,21 @@ import Image from 'next/image';
 import Link from 'next/link';
 import CertificateCard from '@/components/certificates/CertificateCard';
 
+interface ExamProgress {
+  _id: string;
+  exam: {
+    _id: string;
+    title: string;
+    totalPoints: number;
+    passingScore: number;
+  };
+  status: 'not_started' | 'in_progress' | 'passed' | 'failed';
+  examBestScore?: number;
+  examLatestScore?: number;
+  examPassed?: boolean;
+  examAttempts?: number;
+}
+
 interface Enrollment {
   _id: string;
   progress: number;
@@ -16,6 +31,8 @@ interface Enrollment {
   enrolledAt: string;
   completedAt?: string;
   completedLessons: number;
+  completedExams?: number;
+  requiredExams?: number;
   totalLessons: number;
   totalTimeSpent: number;
   certificateIssued: boolean;
@@ -56,6 +73,7 @@ export default function MyLearningPage() {
 
 function MyLearningContent() {
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
+  const [examProgressMap, setExamProgressMap] = useState<Record<string, ExamProgress[]>>({});
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'active' | 'completed'>('all');
   const [error, setError] = useState('');
@@ -83,6 +101,21 @@ function MyLearningContent() {
         const enrollmentsData = response.data.enrollments || [];
         console.log('Enrollments data:', enrollmentsData);
         setEnrollments(enrollmentsData);
+        
+        // Load exam progress for each enrollment
+        const progressMap: Record<string, ExamProgress[]> = {};
+        for (const enrollment of enrollmentsData) {
+          try {
+            const progressResponse = await api.get(`/progress/course/${enrollment.course._id}`);
+            if (progressResponse.data.success && progressResponse.data.examProgress) {
+              progressMap[enrollment._id] = progressResponse.data.examProgress;
+            }
+          } catch (err) {
+            console.error(`Failed to load exam progress for course ${enrollment.course._id}:`, err);
+          }
+        }
+        setExamProgressMap(progressMap);
+        
         if (enrollmentsData.length === 0) {
           setError('');
         }
@@ -313,7 +346,7 @@ function MyLearningContent() {
                     <div className="flex items-center justify-between text-sm mb-1">
                       <span className="text-gray-600">Tiến độ</span>
                       <span className="font-medium text-gray-900">
-                        {enrollment.progress}% ({enrollment.completedLessons}/{enrollment.course.publishedLessonCount || enrollment.course.totalLessons || 0})
+                        {enrollment.progress}%
                       </span>
                     </div>
                     <div className="w-full bg-gray-200 rounded-full h-2">
@@ -326,12 +359,65 @@ function MyLearningContent() {
                         style={{ width: `${enrollment.progress}%` }}
                       ></div>
                     </div>
+                    <div className="mt-1 text-xs text-gray-600 space-y-0.5">
+                      <div>
+                        Bài học: {enrollment.completedLessons}/{enrollment.course.publishedLessonCount || enrollment.course.totalLessons || 0}
+                      </div>
+                      {enrollment.requiredExams !== undefined && enrollment.requiredExams > 0 && (
+                        <div>
+                          Bài kiểm tra: {enrollment.completedExams || 0}/{enrollment.requiredExams}
+                        </div>
+                      )}
+                    </div>
                     {enrollment.course.publishedLessonCount < enrollment.course.totalLessons && (
                       <p className="text-xs text-gray-500 mt-1">
                         {enrollment.course.totalLessons - enrollment.course.publishedLessonCount} bài học đang chuẩn bị
                       </p>
                     )}
                   </div>
+
+                  {/* Exam Progress */}
+                  {examProgressMap[enrollment._id] && examProgressMap[enrollment._id].length > 0 && (
+                    <div className="mb-3 p-3 bg-orange-50 rounded-lg border border-orange-200">
+                      <p className="text-xs font-semibold text-orange-900 mb-2">Bài kiểm tra</p>
+                      <div className="space-y-2">
+                        {examProgressMap[enrollment._id].slice(0, 2).map((examProgress) => {
+                          const exam = examProgress.exam;
+                          const isPassed = examProgress.examPassed === true;
+                          return (
+                            <div
+                              key={examProgress._id}
+                              className="flex items-center justify-between text-xs"
+                            >
+                              <span className="text-gray-700 truncate flex-1 mr-2">
+                                {exam.title}
+                              </span>
+                              <div className="flex items-center space-x-1">
+                                {isPassed ? (
+                                  <span className="px-2 py-0.5 bg-green-100 text-green-700 rounded text-xs font-medium">
+                                    ✓ {examProgress.examBestScore}/{exam.totalPoints}
+                                  </span>
+                                ) : examProgress.examAttempts && examProgress.examAttempts > 0 ? (
+                                  <span className="px-2 py-0.5 bg-red-100 text-red-700 rounded text-xs font-medium">
+                                    ✗ {examProgress.examBestScore}/{exam.totalPoints}
+                                  </span>
+                                ) : (
+                                  <span className="px-2 py-0.5 bg-gray-100 text-gray-600 rounded text-xs">
+                                    Chưa làm
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                        {examProgressMap[enrollment._id].length > 2 && (
+                          <p className="text-xs text-gray-500 text-center pt-1">
+                            +{examProgressMap[enrollment._id].length - 2} bài kiểm tra khác
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  )}
 
                   {/* Meta Info */}
                   <div className="flex items-center justify-between text-xs text-gray-500 mb-3">

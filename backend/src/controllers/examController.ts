@@ -411,7 +411,7 @@ export const deleteExam = async (req: AuthRequest, res: Response) => {
 export const listExamsByCourse = async (req: AuthRequest, res: Response) => {
   try {
     const { courseId } = req.params;
-    const { status, section } = req.query;
+    const { status, section, search, page = 1, limit = 10 } = req.query;
 
     const course = await Course.findById(courseId);
     if (!course) {
@@ -435,17 +435,38 @@ export const listExamsByCourse = async (req: AuthRequest, res: Response) => {
       query.status = 'published';
     }
 
-    const exams = await Exam.find(query)
-      .populate({
-        path: 'section',
-        select: 'title order',
-      })
-      .sort({ createdAt: -1 });
+    // Search functionality
+    if (search && typeof search === 'string' && search.trim()) {
+      query.$or = [
+        { title: { $regex: search.trim(), $options: 'i' } },
+        { description: { $regex: search.trim(), $options: 'i' } },
+      ];
+    }
+
+    // Pagination
+    const skip = (Number(page) - 1) * Number(limit);
+    const [exams, total] = await Promise.all([
+      Exam.find(query)
+        .populate({
+          path: 'section',
+          select: 'title order',
+        })
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(Number(limit)),
+      Exam.countDocuments(query),
+    ]);
 
     res.json({
       success: true,
       exams,
       count: exams.length,
+      pagination: {
+        currentPage: Number(page),
+        totalPages: Math.ceil(total / Number(limit)),
+        totalItems: total,
+        itemsPerPage: Number(limit),
+      },
     });
   } catch (error) {
     res.status(500).json({

@@ -34,6 +34,13 @@ interface Exam {
   maxAttempts?: number | null;
   remainingAttempts?: number | null;
   hasRemainingAttempts?: boolean;
+  progress?: {
+    status: 'not_started' | 'in_progress' | 'passed' | 'failed';
+    bestScore?: number;
+    latestScore?: number;
+    passed?: boolean;
+    attempts?: number;
+  } | null;
 }
 
 interface Section {
@@ -63,6 +70,12 @@ export default function CourseCurriculum({
   const [sections, setSections] = useState<Section[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
+  const [unlockModal, setUnlockModal] = useState<{
+    show: boolean;
+    examTitle?: string;
+    examId?: string;
+    message?: string;
+  }>({ show: false });
 
   useEffect(() => {
     fetchCurriculum();
@@ -129,7 +142,7 @@ export default function CourseCurriculum({
     }
   };
 
-  const handleLessonClick = (lesson: Lesson) => {
+  const handleLessonClick = async (lesson: Lesson) => {
     if (!isEnrolled && !lesson.isFree) {
       if (!isAuthenticated) {
         router.push(`/login?redirect=/courses/${courseSlug}`);
@@ -139,6 +152,34 @@ export default function CourseCurriculum({
       }
       return;
     }
+
+    // Check unlock status if enrolled
+    if (isEnrolled) {
+      try {
+        const unlockResponse = await api.get('/progress/unlock-check', {
+          params: {
+            courseId,
+            lessonId: lesson._id,
+          },
+        });
+
+        if (unlockResponse.data.success && !unlockResponse.data.unlocked) {
+          if (unlockResponse.data.reason === 'exam_required') {
+            setUnlockModal({
+              show: true,
+              examTitle: unlockResponse.data.examTitle,
+              examId: unlockResponse.data.blockingExam,
+              message: unlockResponse.data.message,
+            });
+            return;
+          }
+        }
+      } catch (error) {
+        console.error('Failed to check unlock status:', error);
+        // Continue anyway if check fails
+      }
+    }
+
     router.push(`/courses/${courseSlug}/learn/${lesson._id}`);
   };
 
@@ -333,13 +374,22 @@ export default function CourseCurriculum({
                         <div className="space-y-2">
                           {section.exams.map((exam) => {
                             const canTake = exam.hasRemainingAttempts !== false;
+                            const examProgress = exam.progress;
+                            const isPassed = examProgress?.passed === true;
+                            const isFailed = examProgress && !examProgress.passed;
+                            const hasAttempts = examProgress && (examProgress.attempts || 0) > 0;
+                            
                             return (
                               <Link
                                 key={exam._id}
                                 href={`/courses/${courseSlug}/exams/${exam._id}`}
                                 className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors text-left group border ${
                                   canTake
-                                    ? 'border-orange-200 bg-orange-50 hover:bg-white'
+                                    ? isPassed
+                                      ? 'border-green-200 bg-green-50 hover:bg-white'
+                                      : isFailed
+                                      ? 'border-red-200 bg-red-50 hover:bg-white'
+                                      : 'border-orange-200 bg-orange-50 hover:bg-white'
                                     : 'border-gray-200 bg-gray-100 opacity-60 cursor-not-allowed'
                                 }`}
                                 onClick={(e) => {
@@ -350,14 +400,39 @@ export default function CourseCurriculum({
                               >
                                 <span className="text-lg">📝</span>
                                 <div className="flex-1 min-w-0">
-                                  <div className="flex items-center space-x-2">
+                                  <div className="flex items-center space-x-2 flex-wrap">
                                     <span className={`font-medium ${canTake ? 'text-gray-900 group-hover:text-blue-600' : 'text-gray-500'}`}>
                                       {exam.title}
                                     </span>
                                     <span className="px-2 py-0.5 bg-orange-100 text-orange-700 text-xs rounded">
                                       {exam.totalPoints} điểm
                                     </span>
-                                    {exam.status === 'published' && (
+                                    {/* Exam Progress Status */}
+                                    {isEnrolled && examProgress && (
+                                      <>
+                                        {isPassed && (
+                                          <span className="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded flex items-center">
+                                            ✓ Đã đạt ({examProgress.bestScore}/{exam.totalPoints})
+                                          </span>
+                                        )}
+                                        {isFailed && hasAttempts && (
+                                          <span className="px-2 py-0.5 bg-red-100 text-red-700 text-xs rounded">
+                                            ✗ Chưa đạt ({examProgress.bestScore}/{exam.totalPoints})
+                                          </span>
+                                        )}
+                                        {!hasAttempts && examProgress.status === 'not_started' && (
+                                          <span className="px-2 py-0.5 bg-gray-100 text-gray-600 text-xs rounded">
+                                            Chưa làm
+                                          </span>
+                                        )}
+                                        {hasAttempts && !isPassed && !isFailed && (
+                                          <span className="px-2 py-0.5 bg-yellow-100 text-yellow-700 text-xs rounded">
+                                            Đang làm ({examProgress.attempts} lần)
+                                          </span>
+                                        )}
+                                      </>
+                                    )}
+                                    {exam.status === 'published' && !examProgress && (
                                       <span className="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded">
                                         Đã xuất bản
                                       </span>
@@ -383,6 +458,9 @@ export default function CourseCurriculum({
                                           ? `Còn ${exam.remainingAttempts}/${exam.maxAttempts} lần`
                                           : `Tối đa ${exam.maxAttempts} lần`}
                                       </span>
+                                    )}
+                                    {examProgress && examProgress.attempts && examProgress.attempts > 0 && (
+                                      <span>Đã làm: {examProgress.attempts} lần</span>
                                     )}
                                   </div>
                                 </div>
@@ -428,6 +506,58 @@ export default function CourseCurriculum({
             >
               Đăng ký khóa học
             </Link>
+          </div>
+        </div>
+      )}
+
+      {/* Unlock Modal */}
+      {unlockModal.show && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-900">Bài kiểm tra bắt buộc</h3>
+              <button
+                onClick={() => setUnlockModal({ show: false })}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="mb-6">
+              <div className="flex items-center space-x-3 mb-4">
+                <div className="flex-shrink-0 w-12 h-12 bg-orange-100 rounded-full flex items-center justify-center">
+                  <svg className="w-6 h-6 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                  </svg>
+                </div>
+                <div className="flex-1">
+                  <p className="text-sm text-gray-600 mb-1">
+                    {unlockModal.message || `Bạn cần vượt qua bài kiểm tra "${unlockModal.examTitle}" để tiếp tục học.`}
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="flex space-x-3">
+              <button
+                onClick={() => setUnlockModal({ show: false })}
+                className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                Đóng
+              </button>
+              {unlockModal.examId && (
+                <button
+                  onClick={() => {
+                    setUnlockModal({ show: false });
+                    router.push(`/courses/${courseSlug}/exams/${unlockModal.examId}`);
+                  }}
+                  className="flex-1 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors"
+                >
+                  Làm bài kiểm tra
+                </button>
+              )}
+            </div>
           </div>
         </div>
       )}

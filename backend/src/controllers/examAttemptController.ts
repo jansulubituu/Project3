@@ -1,5 +1,5 @@
 import { Response } from 'express';
-import { Exam, ExamAttempt, Question, Enrollment } from '../models';
+import { Exam, ExamAttempt, Question, Enrollment, Progress } from '../models';
 import { AuthRequest } from '../middleware/auth';
 
 /**
@@ -701,6 +701,81 @@ export const submitExamAttempt = async (req: AuthRequest, res: Response) => {
     attempt.submittedAt = now;
     attempt.status = 'submitted';
     await attempt.save();
+
+    // Update or create Progress for exam
+    try {
+      const enrollment = await Enrollment.findOne({
+        student: req.user.id,
+        course: exam.course,
+        status: 'active',
+      });
+
+      if (enrollment) {
+        let examProgress = await Progress.findOne({
+          student: req.user.id,
+          exam: exam._id,
+          type: 'exam',
+        });
+
+        if (!examProgress) {
+          examProgress = new Progress({
+            enrollment: enrollment._id,
+            student: req.user.id,
+            exam: exam._id,
+            course: exam.course,
+            type: 'exam',
+            status: passed ? 'passed' : 'failed',
+            examAttempts: 1,
+            examBestScore: finalScore,
+            examLatestScore: finalScore,
+            examPassed: passed,
+            examLastAttemptAt: now,
+            timeSpent: 0,
+            lastPosition: 0,
+            watchedDuration: 0,
+          });
+        } else {
+          examProgress.examAttempts = (examProgress.examAttempts || 0) + 1;
+          examProgress.examLatestScore = finalScore;
+          examProgress.examLastAttemptAt = now;
+
+          // Update best score based on exam.scoringMethod
+          if (exam.scoringMethod === 'highest') {
+            examProgress.examBestScore = Math.max(
+              examProgress.examBestScore || 0,
+              finalScore
+            );
+          } else if (exam.scoringMethod === 'latest') {
+            examProgress.examBestScore = finalScore;
+          } else if (exam.scoringMethod === 'average') {
+            // Calculate average from all submitted attempts
+            const allAttempts = await ExamAttempt.find({
+              exam: exam._id,
+              student: req.user.id,
+              status: 'submitted',
+            });
+            const avgScore = allAttempts.length > 0
+              ? allAttempts.reduce((sum, a) => sum + a.score, 0) / allAttempts.length
+              : finalScore;
+            examProgress.examBestScore = Math.round(avgScore * 100) / 100;
+          }
+
+          // Update passed status based on best score
+          examProgress.examPassed = (examProgress.examBestScore || 0) >= exam.passingScore;
+          examProgress.status = examProgress.examPassed ? 'passed' : 'failed';
+        }
+
+        await examProgress.save();
+
+        // Update enrollment if exam passed
+        if (examProgress.examPassed && typeof enrollment.markExamComplete === 'function') {
+          await enrollment.markExamComplete(exam._id);
+        }
+      }
+    } catch (progressError) {
+      // Log error but don't fail the submission
+      console.error('Error updating exam progress:', progressError);
+    }
 
     res.json({
       success: true,

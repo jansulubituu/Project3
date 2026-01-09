@@ -490,17 +490,28 @@ export const getCourseCurriculum = async (req: Request, res: Response) => {
 
     // Get progress for all lessons if user is enrolled
     const lessonProgressMap: Record<string, { status: string; completedAt?: Date }> = {};
+    const examProgressMap: Record<string, any> = {};
     if (isEnrolled && enrollment && req.user) {
       const progresses = await Progress.find({
         student: req.user.id,
         course: course._id,
-      }).select('lesson status completedAt');
+      }).select('lesson exam type status completedAt examBestScore examLatestScore examPassed examAttempts');
       
       progresses.forEach((p: any) => {
-        lessonProgressMap[p.lesson.toString()] = {
-          status: p.status,
-          completedAt: p.completedAt,
-        };
+        if (p.type === 'lesson' && p.lesson) {
+          lessonProgressMap[p.lesson.toString()] = {
+            status: p.status,
+            completedAt: p.completedAt,
+          };
+        } else if (p.type === 'exam' && p.exam) {
+          examProgressMap[p.exam.toString()] = {
+            status: p.status,
+            bestScore: p.examBestScore,
+            latestScore: p.examLatestScore,
+            passed: p.examPassed,
+            attempts: p.examAttempts,
+          };
+        }
       });
     }
 
@@ -552,10 +563,18 @@ export const getCourseCurriculum = async (req: Request, res: Response) => {
       }),
       exams: (examsBySection[section._id.toString()] || []).map((exam: any) => {
         const attemptInfo = examAttemptsMap[exam._id.toString()];
+        const progress = examProgressMap[exam._id.toString()];
         return {
           ...exam,
           remainingAttempts: attemptInfo?.remaining ?? null,
           hasRemainingAttempts: attemptInfo ? attemptInfo.remaining === null || attemptInfo.remaining > 0 : true,
+          progress: progress ? {
+            status: progress.status,
+            bestScore: progress.bestScore,
+            latestScore: progress.latestScore,
+            passed: progress.passed,
+            attempts: progress.attempts,
+          } : null,
         };
       }),
     }));

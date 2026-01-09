@@ -10,9 +10,11 @@ export interface IProgress extends Document {
   _id: mongoose.Types.ObjectId;
   enrollment: mongoose.Types.ObjectId;
   student: mongoose.Types.ObjectId;
-  lesson: mongoose.Types.ObjectId;
+  lesson?: mongoose.Types.ObjectId; // Optional - for lesson progress
+  exam?: mongoose.Types.ObjectId; // Optional - for exam progress
   course: mongoose.Types.ObjectId;
-  status: 'not_started' | 'in_progress' | 'completed';
+  type: 'lesson' | 'exam'; // Distinguish progress type
+  status: 'not_started' | 'in_progress' | 'completed' | 'passed' | 'failed';
   lastPosition: number;
   watchedDuration: number;
   quizAttempts?: number;
@@ -22,6 +24,12 @@ export interface IProgress extends Document {
   startedAt?: Date;
   completedAt?: Date;
   lastAccessedAt: Date;
+  // Exam-specific fields
+  examAttempts?: number;
+  examBestScore?: number;
+  examLatestScore?: number;
+  examPassed?: boolean;
+  examLastAttemptAt?: Date;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -59,16 +67,26 @@ const progressSchema = new Schema<IProgress>(
     lesson: {
       type: Schema.Types.ObjectId,
       ref: 'Lesson',
-      required: [true, 'Lesson is required'],
+      required: function() { return this.type === 'lesson'; },
+    },
+    exam: {
+      type: Schema.Types.ObjectId,
+      ref: 'Exam',
+      required: function() { return this.type === 'exam'; },
     },
     course: {
       type: Schema.Types.ObjectId,
       ref: 'Course',
       required: [true, 'Course is required'],
     },
+    type: {
+      type: String,
+      enum: ['lesson', 'exam'],
+      required: [true, 'Progress type is required'],
+    },
     status: {
       type: String,
-      enum: ['not_started', 'in_progress', 'completed'],
+      enum: ['not_started', 'in_progress', 'completed', 'passed', 'failed'],
       default: 'not_started',
     },
     lastPosition: {
@@ -103,6 +121,25 @@ const progressSchema = new Schema<IProgress>(
       type: Date,
       default: Date.now,
     },
+    // Exam-specific fields (only for type='exam')
+    examAttempts: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    examBestScore: {
+      type: Number,
+      min: 0,
+    },
+    examLatestScore: {
+      type: Number,
+      min: 0,
+    },
+    examPassed: {
+      type: Boolean,
+      default: false,
+    },
+    examLastAttemptAt: Date,
   },
   {
     timestamps: true,
@@ -113,10 +150,13 @@ const progressSchema = new Schema<IProgress>(
 
 // Indexes
 progressSchema.index({ enrollment: 1 });
+progressSchema.index({ enrollment: 1, type: 1 });
 progressSchema.index({ student: 1 });
 progressSchema.index({ lesson: 1 });
+progressSchema.index({ exam: 1 });
 progressSchema.index({ course: 1 });
-progressSchema.index({ student: 1, lesson: 1 }, { unique: true });
+progressSchema.index({ student: 1, lesson: 1 }, { unique: true, sparse: true });
+progressSchema.index({ student: 1, exam: 1 }, { unique: true, sparse: true });
 progressSchema.index({ enrollment: 1, status: 1 });
 
 // Pre-save hook to set startedAt
@@ -165,28 +205,56 @@ progressSchema.post('save', async function () {
       needsSave = true;
     }
     
-    // Mark lesson as complete if status is completed
-    // Always check if status is completed, regardless of modification state
-    // This handles cases where progress is created with status='completed' or updated to 'completed'
-    if (this.status === 'completed') {
+    // Mark lesson as complete if status is completed (for lesson type)
+    if (this.type === 'lesson' && this.status === 'completed') {
       // Check if lesson is already in completedLessons to avoid duplicate
-      const lessonIdStr = this.lesson.toString();
-      const isAlreadyCompleted = enrollment.completedLessons.some(
-        (id: any) => id.toString() === lessonIdStr
-      );
-      
-      if (!isAlreadyCompleted) {
-        console.log(`Marking lesson ${this.lesson} as complete in enrollment ${enrollment._id}`);
-        if (typeof enrollment.markLessonComplete === 'function') {
-          await enrollment.markLessonComplete(this.lesson);
-          // markLessonComplete already calls save(), so we don't need to save again
-          needsSave = false;
-        } else {
-          console.error('markLessonComplete method not found on enrollment');
-          // Fallback: manually add lesson to completedLessons
-          enrollment.completedLessons.push(this.lesson);
-          await enrollment.updateProgress();
-          needsSave = false;
+      const lessonIdStr = this.lesson?.toString();
+      if (lessonIdStr) {
+        const isAlreadyCompleted = enrollment.completedLessons.some(
+          (id: any) => id.toString() === lessonIdStr
+        );
+        
+        if (!isAlreadyCompleted) {
+          console.log(`Marking lesson ${this.lesson} as complete in enrollment ${enrollment._id}`);
+          if (typeof enrollment.markLessonComplete === 'function') {
+            await enrollment.markLessonComplete(this.lesson);
+            // markLessonComplete already calls save(), so we don't need to save again
+            needsSave = false;
+          } else {
+            console.error('markLessonComplete method not found on enrollment');
+            // Fallback: manually add lesson to completedLessons
+            enrollment.completedLessons.push(this.lesson);
+            await enrollment.updateProgress();
+            needsSave = false;
+          }
+        }
+      }
+    }
+    
+    // Mark exam as complete if passed (for exam type)
+    if (this.type === 'exam' && this.examPassed) {
+      const examIdStr = this.exam?.toString();
+      if (examIdStr) {
+        const isAlreadyCompleted = enrollment.completedExams?.some(
+          (id: any) => id.toString() === examIdStr
+        ) || false;
+        
+        if (!isAlreadyCompleted) {
+          console.log(`Marking exam ${this.exam} as complete in enrollment ${enrollment._id}`);
+          if (typeof enrollment.markExamComplete === 'function') {
+            await enrollment.markExamComplete(this.exam);
+            // markExamComplete already calls save(), so we don't need to save again
+            needsSave = false;
+          } else {
+            console.error('markExamComplete method not found on enrollment');
+            // Fallback: manually add exam to completedExams
+            if (!enrollment.completedExams) {
+              enrollment.completedExams = [];
+            }
+            enrollment.completedExams.push(this.exam);
+            await enrollment.updateProgress();
+            needsSave = false;
+          }
         }
       }
     }

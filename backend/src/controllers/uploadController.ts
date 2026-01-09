@@ -120,9 +120,7 @@ export const uploadFileHandler = async (req: Request, res: Response) => {
         success: false,
         message: `File size must be <= ${maxSizeMb}MB`,
       });
-    }
-
-    const folder = (req.query.folder as string) || 'edulearn/lesson-files';
+    }    const folder = (req.query.folder as string) || 'edulearn/lesson-files';
 
     const result = await uploadRawFromBuffer(req.file.buffer, folder);
 
