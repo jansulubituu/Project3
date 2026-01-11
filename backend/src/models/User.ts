@@ -33,7 +33,7 @@ export interface IUser extends Document {
   
   // Methods
   comparePassword(candidatePassword: string): Promise<boolean>;
-  generateAuthToken(): string;
+  generateAuthToken(rememberMe?: boolean): string;
   generateResetPasswordToken(): string;
   generateEmailVerificationToken(): string;
   generateEmailOTP(): string;
@@ -141,7 +141,7 @@ userSchema.methods.comparePassword = async function (
 };
 
 // Generate JWT token
-userSchema.methods.generateAuthToken = function (): string {
+userSchema.methods.generateAuthToken = function (rememberMe?: boolean): string {
   const payload = {
     id: this._id,
     email: this.email,
@@ -150,8 +150,13 @@ userSchema.methods.generateAuthToken = function (): string {
   
   const secret: Secret = process.env.JWT_SECRET || 'your-secret-key';
   
+  // Use different expiration based on rememberMe
+  const expiresIn = rememberMe
+    ? process.env.JWT_EXPIRE_REMEMBER || '30d' // 30 days for remember me
+    : process.env.JWT_EXPIRE || '7d'; // 7 days for normal login
+  
   return jwt.sign(payload, secret, { 
-    expiresIn: process.env.JWT_EXPIRE || '7d' 
+    expiresIn 
   } as jwt.SignOptions);
 };
 

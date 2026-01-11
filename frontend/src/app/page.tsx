@@ -110,7 +110,7 @@ interface LandingPageConfig {
 }
 
 export default function LandingPage() {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth();
   const [categories, setCategories] = useState<Category[]>([]);
   const [featuredCourses, setFeaturedCourses] = useState<Course[]>([]);
   const [stats, setStats] = useState<PlatformStats>({
@@ -349,10 +349,10 @@ export default function LandingPage() {
                       Khám phá khóa học
                     </Link>
                     <Link
-                      href="/dashboard"
+                      href={user?.role === 'admin' ? '/admin/dashboard' : user?.role === 'instructor' ? '/instructor/dashboard' : '/my-learning'}
                       className="px-8 sm:px-10 py-4 sm:py-5 bg-blue-500/90 backdrop-blur-sm text-white rounded-xl font-bold text-base sm:text-lg hover:bg-blue-400 transition-all duration-300 border-2 border-white/50 shadow-xl hover:scale-105 text-center"
                     >
-                      Vào Dashboard
+                      {user?.role === 'student' ? 'Học tập của tôi' : 'Vào Dashboard'}
                     </Link>
                   </>
                 ) : (

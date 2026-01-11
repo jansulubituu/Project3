@@ -13,13 +13,16 @@ export const api = axios.create({
 // Request interceptor - Add token to requests
 api.interceptors.request.use(
   (config) => {
-    // Get token from localStorage
+    // Get token from localStorage or sessionStorage
     if (typeof window !== 'undefined') {
-      const token = localStorage.getItem('token');
+      const rememberMe = localStorage.getItem('rememberMe') === 'true';
+      const token = rememberMe 
+        ? localStorage.getItem('token')
+        : sessionStorage.getItem('token') || localStorage.getItem('token'); // Fallback for backward compatibility
+      
       if (token) {
         config.headers.Authorization = `Bearer ${token}`;
       }
-     
     }
     return config;
   },
@@ -33,9 +36,11 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      // Unauthorized - clear token and redirect to login
+      // Unauthorized - clear token from both storages and redirect to login
       if (typeof window !== 'undefined') {
         localStorage.removeItem('token');
+        sessionStorage.removeItem('token');
+        localStorage.removeItem('rememberMe');
         // window.location.href = '/login';
       }
     }

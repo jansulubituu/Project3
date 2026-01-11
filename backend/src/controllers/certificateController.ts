@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { Enrollment, Course } from '../models';
+import { Enrollment } from '../models';
 import mongoose from 'mongoose';
 import { createNotification } from '../services/notificationService';
 

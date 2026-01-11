@@ -74,60 +74,40 @@ export default function MobileMenu({ isOpen, onClose }: MobileMenuProps) {
           {/* Navigation */}
           <nav className="flex-1 overflow-y-auto py-4">
             <div className="flex flex-col space-y-1 px-4">
-              <Link
-                href="/"
-                onClick={handleLinkClick}
-                className={`px-4 py-3 rounded-lg transition-colors ${
-                  isActive('/')
-                    ? 'bg-blue-50 text-blue-600 font-medium'
-                    : 'text-gray-700 hover:bg-gray-50'
-                }`}
-              >
-                Trang chủ
-              </Link>
-              <Link
-                href="/courses"
-                onClick={handleLinkClick}
-                className={`px-4 py-3 rounded-lg transition-colors ${
-                  isActive('/courses')
-                    ? 'bg-blue-50 text-blue-600 font-medium'
-                    : 'text-gray-700 hover:bg-gray-50'
-                }`}
-              >
-                Khóa học
-              </Link>
-
               {isAuthenticated ? (
                 <>
-                  <div className="my-2 border-t border-gray-200" />
-                  <Link
-                    href={
-                      user?.role === 'admin'
-                        ? '/admin/dashboard'
-                        : user?.role === 'instructor'
-                        ? '/instructor/dashboard'
-                        : '/dashboard'
-                    }
-                    onClick={handleLinkClick}
-                    className={`px-4 py-3 rounded-lg transition-colors ${
-                      isActive('/dashboard') || isActive('/admin/dashboard') || isActive('/instructor/dashboard')
-                        ? 'bg-blue-50 text-blue-600 font-medium'
-                        : 'text-gray-700 hover:bg-gray-50'
-                    }`}
-                  >
-                    Dashboard
-                  </Link>
-                  <Link
-                    href="/my-learning"
-                    onClick={handleLinkClick}
-                    className={`px-4 py-3 rounded-lg transition-colors ${
-                      isActive('/my-learning')
-                        ? 'bg-blue-50 text-blue-600 font-medium'
-                        : 'text-gray-700 hover:bg-gray-50'
-                    }`}
-                  >
-                    Khóa học của tôi
-                  </Link>
+                  {/* Dashboard - chỉ hiển thị cho admin và instructor */}
+                  {(user?.role === 'admin' || user?.role === 'instructor') && (
+                    <Link
+                      href={
+                        user?.role === 'admin'
+                          ? '/admin/dashboard'
+                          : '/instructor/dashboard'
+                      }
+                      onClick={handleLinkClick}
+                      className={`px-4 py-3 rounded-lg transition-colors ${
+                        isActive('/admin/dashboard') || isActive('/instructor/dashboard')
+                          ? 'bg-blue-50 text-blue-600 font-medium'
+                          : 'text-gray-700 hover:bg-gray-50'
+                      }`}
+                    >
+                      Dashboard
+                    </Link>
+                  )}
+                  {/* Khóa học của tôi - chỉ hiển thị cho student */}
+                  {user?.role === 'student' && (
+                    <Link
+                      href="/my-learning"
+                      onClick={handleLinkClick}
+                      className={`px-4 py-3 rounded-lg transition-colors ${
+                        isActive('/my-learning')
+                          ? 'bg-blue-50 text-blue-600 font-medium'
+                          : 'text-gray-700 hover:bg-gray-50'
+                      }`}
+                    >
+                      Học tập của tôi
+                    </Link>
+                  )}
                   <Link
                     href="/profile"
                     onClick={handleLinkClick}

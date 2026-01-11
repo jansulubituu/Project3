@@ -10,6 +10,13 @@ import { getAuthErrorMessage } from '@/lib/authErrorUtils';
 export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [rememberMe, setRememberMe] = useState(() => {
+    // Restore preference from localStorage (only on client side)
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('rememberMe') === 'true';
+    }
+    return false;
+  });
   const [error, setError] = useState<{ message: string; type?: string; field?: string } | null>(null);
   const [loading, setLoading] = useState(false);
   const { login } = useAuth();
@@ -20,7 +27,8 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      await login(email, password);
+      await login(email, password, rememberMe);
+      // Note: rememberMe preference is already saved in AuthContext.login()
     } catch (err) {
       const authError = getAuthErrorMessage(err);
       setError({
@@ -104,25 +112,34 @@ export default function LoginPage() {
               />
             </div>
 
-            {/* Forgot Password */}
-            <div className="flex items-center justify-between">
+            {/* Forgot Password & Remember Me */}
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              {/* Remember Me */}
               <div className="flex items-center">
                 <input
                   id="remember-me"
                   type="checkbox"
-                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                  checked={rememberMe}
+                  onChange={(e) => setRememberMe(e.target.checked)}
+                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded cursor-pointer transition-all hover:border-blue-400"
                 />
-                <label htmlFor="remember-me" className="ml-2 block text-sm text-gray-700">
+                <label 
+                  htmlFor="remember-me" 
+                  className="ml-2 block text-sm font-medium text-gray-700 cursor-pointer select-none hover:text-gray-900 transition-colors"
+                >
                   Ghi nhớ đăng nhập
                 </label>
               </div>
 
-              <Link
-                href="/forgot-password"
-                className="text-sm font-medium text-blue-600 hover:text-blue-500"
-              >
-                Quên mật khẩu?
-              </Link>
+              {/* Forgot Password Link */}
+              <div className="flex items-center sm:justify-end">
+                <Link
+                  href="/forgot-password"
+                  className="text-sm font-medium text-blue-600 hover:text-blue-700 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 rounded px-1 py-0.5"
+                >
+                  Quên mật khẩu?
+                </Link>
+              </div>
             </div>
 
             {/* Submit Button */}

@@ -82,8 +82,15 @@ function VerifyOTPContent() {
       if (response.data.success) {
         // Show success message
         alert('Xác thực email thành công! 🎉');
-        // Redirect to dashboard
-        router.push('/dashboard');
+        // Redirect based on role
+        const user = response.data.user;
+        if (user?.role === 'admin') {
+          router.push('/admin/dashboard');
+        } else if (user?.role === 'instructor') {
+          router.push('/instructor/dashboard');
+        } else {
+          router.push('/my-learning');
+        }
       }
     } catch (err) {
       let errorMessage = 'Xác thực thất bại';

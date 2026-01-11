@@ -1,5 +1,5 @@
 import { Response } from 'express';
-import { Comment, Lesson, Enrollment, User, Course } from '../models';
+import { Comment, Lesson, Enrollment, User } from '../models';
 import { AuthRequest } from '../middleware/auth';
 import { createCommentNotification, createReplyNotification } from '../services/notificationService';
 
@@ -111,16 +111,23 @@ export const getLessonComments = async (req: AuthRequest, res: Response) => {
     });
 
     // Format comments with replies and user-specific data
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required',
+      });
+    }
+
     const formattedComments = topLevelComments.map((comment: any) => {
       const isLiked = comment.likes?.some(
-        (likeId: any) => likeId.toString() === req.user.id
+        (likeId: any) => likeId.toString() === req.user!.id
       ) || false;
 
-      const canEdit = comment.author._id.toString() === req.user.id;
+      const canEdit = comment.author._id.toString() === req.user!.id;
       const canDelete =
         canEdit ||
-        req.user.role === 'admin' ||
-        (req.user.role === 'instructor' && course.instructor.toString() === req.user.id);
+        req.user!.role === 'admin' ||
+        (req.user!.role === 'instructor' && course.instructor.toString() === req.user!.id);
 
       return {
         _id: comment._id,
@@ -138,7 +145,7 @@ export const getLessonComments = async (req: AuthRequest, res: Response) => {
         createdAt: comment.createdAt,
         replies: (repliesMap[comment._id.toString()] || []).map((reply: any) => {
           const replyIsLiked = reply.likes?.some(
-            (likeId: any) => likeId.toString() === req.user.id
+            (likeId: any) => likeId.toString() === req.user!.id
           ) || false;
           return {
             _id: reply._id,
@@ -522,7 +529,7 @@ export const editComment = async (req: AuthRequest, res: Response) => {
           role: (comment.author as any).role,
         },
         likeCount: comment.likeCount,
-        isLiked: comment.likes.some((likeId) => likeId.toString() === req.user.id),
+        isLiked: req.user ? comment.likes.some((likeId: any) => likeId.toString() === req.user!.id) : false,
         isEdited: comment.isEdited,
         editedAt: comment.editedAt,
         createdAt: comment.createdAt,

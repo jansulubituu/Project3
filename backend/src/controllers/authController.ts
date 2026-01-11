@@ -209,8 +209,11 @@ export const login = async (req: Request, res: Response) => {
     user.lastLogin = new Date();
     await user.save();
 
-    // Generate token
-    const token = user.generateAuthToken();
+    // Get rememberMe from request body (optional)
+    const rememberMe = req.body.rememberMe === true;
+
+    // Generate token with appropriate expiration
+    const token = user.generateAuthToken(rememberMe);
 
     res.json({
       success: true,

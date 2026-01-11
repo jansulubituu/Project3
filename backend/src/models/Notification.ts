@@ -1,4 +1,4 @@
-import mongoose, { Document, Schema } from 'mongoose';
+import mongoose, { Document, Schema, Model } from 'mongoose';
 
 export interface INotification extends Document {
   _id: mongoose.Types.ObjectId;
@@ -12,6 +12,20 @@ export interface INotification extends Document {
   readAt?: Date;
   createdAt: Date;
   updatedAt: Date;
+  markAsRead(): Promise<void>;
+}
+
+export interface INotificationModel extends Model<INotification> {
+  createNotification(data: {
+    user: mongoose.Types.ObjectId;
+    type: INotification['type'];
+    title: string;
+    message: string;
+    link?: string;
+    data?: Map<string, string>;
+  }): Promise<INotification>;
+  markAllAsRead(userId: mongoose.Types.ObjectId): Promise<{ modifiedCount: number }>;
+  deleteOldNotifications(days?: number): Promise<{ deletedCount: number }>;
 }
 
 const notificationSchema = new Schema<INotification>(
@@ -122,7 +136,7 @@ notificationSchema.methods.markAsRead = async function () {
   await this.save();
 };
 
-const Notification = mongoose.model<INotification>('Notification', notificationSchema);
+const Notification = mongoose.model<INotification, INotificationModel>('Notification', notificationSchema);
 
 export default Notification;
 

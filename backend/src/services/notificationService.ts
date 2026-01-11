@@ -1,4 +1,4 @@
-import { Notification, User, Course, Lesson, Comment } from '../models';
+import { Notification, User, INotification } from '../models';
 import mongoose from 'mongoose';
 
 export type NotificationType = 
@@ -27,7 +27,7 @@ interface CreateNotificationData {
  */
 export async function createNotification(
   data: CreateNotificationData
-): Promise<typeof Notification> {
+): Promise<INotification> {
   const notificationData: any = {
     user: data.userId,
     type: data.type,
@@ -52,7 +52,7 @@ export async function createNotification(
 export async function createNotificationForUsers(
   userIds: mongoose.Types.ObjectId[],
   data: Omit<CreateNotificationData, 'userId'>
-): Promise<typeof Notification[]> {
+): Promise<INotification[]> {
   const notifications = userIds.map((userId) => ({
     user: userId,
     type: data.type,
@@ -62,7 +62,7 @@ export async function createNotificationForUsers(
     data: data.data ? new Map(Object.entries(data.data)) : undefined,
   }));
 
-  return await Notification.insertMany(notifications);
+  return await Notification.insertMany(notifications) as INotification[];
 }
 
 /**

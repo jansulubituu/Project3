@@ -2,7 +2,7 @@ import { Response } from 'express';
 import mongoose from 'mongoose';
 import { Notification, User } from '../models';
 import { AuthRequest } from '../middleware/auth';
-import { createNotification, createNotificationForUsers } from '../services/notificationService';
+import { createNotificationForUsers as createNotificationForUsersService } from '../services/notificationService';
 
 /**
  * @desc    Get notifications for current user
@@ -173,7 +173,7 @@ export const markAllAsRead = async (req: AuthRequest, res: Response) => {
       });
     }
 
-    const result = await Notification.markAllAsRead(req.user.id);
+    const result = await Notification.markAllAsRead(new mongoose.Types.ObjectId(req.user.id));
 
     res.json({
       success: true,
@@ -349,7 +349,7 @@ export const createSystemNotification = async (req: AuthRequest, res: Response) 
     }
 
     // Create notifications for all target users
-    const notifications = await createNotificationForUsers(targetUserIds, {
+    const notifications = await createNotificationForUsersService(targetUserIds, {
       type: 'system',
       title,
       message,
@@ -649,7 +649,7 @@ export const createNotificationForUsers = async (req: AuthRequest, res: Response
 
     // Create notifications
     const targetUserIds = validUserIds.map((id: string) => new mongoose.Types.ObjectId(id));
-    const notifications = await createNotificationForUsers(targetUserIds, {
+    const notifications = await createNotificationForUsersService(targetUserIds, {
       type,
       title,
       message,

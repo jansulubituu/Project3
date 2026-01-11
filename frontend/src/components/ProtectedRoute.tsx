@@ -35,7 +35,7 @@ export default function ProtectedRoute({
           } else if (user.role === 'instructor') {
             router.push('/instructor/dashboard');
           } else {
-            router.push('/dashboard');
+            router.push('/my-learning');
           }
         }
       }

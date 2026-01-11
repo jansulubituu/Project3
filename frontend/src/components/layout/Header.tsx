@@ -2,18 +2,15 @@
 
 import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import Avatar from '@/components/ui/Avatar';
 import Dropdown from '@/components/ui/Dropdown';
 import SearchBar from './SearchBar';
-import CategoriesDropdown from './CategoriesDropdown';
 import NotificationBell from './NotificationBell';
 import MobileMenu from './MobileMenu';
 
 export default function Header() {
   const { isAuthenticated, user, logout } = useAuth();
-  const pathname = usePathname();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
@@ -29,15 +26,10 @@ export default function Header() {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
-  const isActive = (path: string) => {
-    if (path === '/') return pathname === '/';
-    return pathname.startsWith(path);
-  };
-
   const getDashboardPath = () => {
     if (user?.role === 'admin') return '/admin/dashboard';
     if (user?.role === 'instructor') return '/instructor/dashboard';
-    return '/dashboard';
+    return '/my-learning';
   };
 
   const getRoleBadge = () => {
@@ -94,35 +86,6 @@ export default function Header() {
             </div>
 
             <div className="hidden md:flex items-center space-x-1 lg:space-x-2">
-              {/* Navigation Links */}
-              <Link
-                href="/"
-                className={`px-3 py-2 rounded-lg text-sm lg:text-base font-medium transition-all relative ${
-                  isActive('/')
-                    ? 'text-blue-600 bg-blue-50'
-                    : 'text-gray-700 hover:text-blue-600 hover:bg-gray-50'
-                }`}
-              >
-                Trang chủ
-                {isActive('/') && (
-                  <span className="absolute bottom-0 left-1/2 -translate-x-1/2 w-1 h-1 bg-blue-600 rounded-full" />
-                )}
-              </Link>
-              <Link
-                href="/courses"
-                className={`px-3 py-2 rounded-lg text-sm lg:text-base font-medium transition-all relative ${
-                  isActive('/courses')
-                    ? 'text-blue-600 bg-blue-50'
-                    : 'text-gray-700 hover:text-blue-600 hover:bg-gray-50'
-                }`}
-              >
-                Khóa học
-                {isActive('/courses') && (
-                  <span className="absolute bottom-0 left-1/2 -translate-x-1/2 w-1 h-1 bg-blue-600 rounded-full" />
-                )}
-              </Link>
-              <CategoriesDropdown />
-
               {isAuthenticated ? (
                 <>
                   <NotificationBell className="ml-2" />
@@ -173,26 +136,32 @@ export default function Header() {
 
                       {/* Menu Items */}
                       <div className="py-1">
-                        <Link
-                          href={getDashboardPath()}
-                          onClick={() => setUserDropdownOpen(false)}
-                          className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-                        >
-                          <svg className="w-5 h-5 mr-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-                          </svg>
-                          Dashboard
-                        </Link>
-                        <Link
-                          href="/my-learning"
-                          onClick={() => setUserDropdownOpen(false)}
-                          className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-                        >
-                          <svg className="w-5 h-5 mr-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
-                          </svg>
-                          Khóa học của tôi
-                        </Link>
+                        {/* Dashboard - chỉ hiển thị cho admin và instructor */}
+                        {(user?.role === 'admin' || user?.role === 'instructor') && (
+                          <Link
+                            href={getDashboardPath()}
+                            onClick={() => setUserDropdownOpen(false)}
+                            className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                          >
+                            <svg className="w-5 h-5 mr-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+                            </svg>
+                            Dashboard
+                          </Link>
+                        )}
+                        {/* Khóa học của tôi - chỉ hiển thị cho student */}
+                        {user?.role === 'student' && (
+                          <Link
+                            href="/my-learning"
+                            onClick={() => setUserDropdownOpen(false)}
+                            className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                          >
+                            <svg className="w-5 h-5 mr-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                            </svg>
+                            Khóa học của tôi
+                          </Link>
+                        )}
                         <Link
                           href="/profile"
                           onClick={() => setUserDropdownOpen(false)}

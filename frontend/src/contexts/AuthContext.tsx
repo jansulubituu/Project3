@@ -16,7 +16,7 @@ interface User {
 interface AuthContextType {
   user: User | null;
   loading: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string, rememberMe?: boolean) => Promise<void>;
   register: (data: RegisterData) => Promise<void>;
   logout: () => void;
   refreshUser: () => Promise<void>;
@@ -44,7 +44,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const checkAuth = async () => {
     try {
-      const token = localStorage.getItem('token');
+      // Check both localStorage and sessionStorage for token
+      const rememberMe = localStorage.getItem('rememberMe') === 'true';
+      const token = rememberMe 
+        ? localStorage.getItem('token')
+        : sessionStorage.getItem('token') || localStorage.getItem('token'); // Fallback to localStorage for backward compatibility
+      
       if (!token) {
         setLoading(false);
         return;
@@ -56,19 +61,35 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       }
     } catch (error) {
       console.error('Auth check failed:', error);
+      // Clear both storages on auth failure
       localStorage.removeItem('token');
+      sessionStorage.removeItem('token');
+      localStorage.removeItem('rememberMe');
     } finally {
       setLoading(false);
     }
   };
 
-  const login = async (email: string, password: string) => {
+  const login = async (email: string, password: string, rememberMe: boolean = false) => {
     try {
-      const response = await api.post('/auth/login', { email, password });
+      const response = await api.post('/auth/login', { email, password, rememberMe });
       
       if (response.data.success) {
         const { token, user } = response.data;
-        localStorage.setItem('token', token);
+        
+        // Save token to appropriate storage based on rememberMe
+        if (rememberMe) {
+          localStorage.setItem('token', token);
+          localStorage.setItem('rememberMe', 'true');
+          // Clear sessionStorage if exists
+          sessionStorage.removeItem('token');
+        } else {
+          sessionStorage.setItem('token', token);
+          localStorage.removeItem('rememberMe');
+          // Clear localStorage token if exists (for migration)
+          localStorage.removeItem('token');
+        }
+        
         setUser(user);
         
         // Redirect based on role
@@ -77,7 +98,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         } else if (user.role === 'instructor') {
           router.push('/instructor/dashboard');
         } else {
-          router.push('/dashboard');
+          router.push('/my-learning');
         }
       }
     } catch (error) {
@@ -96,15 +117,27 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       
       if (response.data.success) {
         const { token, user, requiresVerification } = response.data;
-        localStorage.setItem('token', token);
+        
+        // For registration, default to sessionStorage (not rememberMe)
+        // User can login later with rememberMe if they want
+        sessionStorage.setItem('token', token);
+        localStorage.removeItem('token'); // Clear any existing localStorage token
+        localStorage.removeItem('rememberMe'); // Clear rememberMe preference
+        
         setUser(user);
         
         // If requires email verification, redirect to OTP page
         if (requiresVerification) {
           router.push(`/verify-otp?email=${encodeURIComponent(user.email)}`);
         } else {
-          // Redirect to dashboard
-          router.push('/dashboard');
+          // Redirect based on role
+          if (user.role === 'admin') {
+            router.push('/admin/dashboard');
+          } else if (user.role === 'instructor') {
+            router.push('/instructor/dashboard');
+          } else {
+            router.push('/my-learning');
+          }
         }
       }
     } catch (error) {
@@ -118,14 +151,22 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const logout = () => {
+    // Clear both storages
     localStorage.removeItem('token');
+    sessionStorage.removeItem('token');
+    localStorage.removeItem('rememberMe');
     setUser(null);
     router.push('/login');
   };
 
   const refreshUser = async () => {
     try {
-      const token = localStorage.getItem('token');
+      // Check both storages for token
+      const rememberMe = localStorage.getItem('rememberMe') === 'true';
+      const token = rememberMe 
+        ? localStorage.getItem('token')
+        : sessionStorage.getItem('token') || localStorage.getItem('token');
+      
       if (!token) {
         setUser(null);
         return;
