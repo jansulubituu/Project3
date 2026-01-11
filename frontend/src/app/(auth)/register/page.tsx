@@ -3,7 +3,10 @@
 import { useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import Link from 'next/link';
+import Logo from '@/components/ui/Logo';
+import ErrorMessage from '@/components/auth/ErrorMessage';
 import PasswordRequirements from '@/components/auth/PasswordRequirements';
+import { getAuthErrorMessage } from '@/lib/authErrorUtils';
 
 export default function RegisterPage() {
   const [formData, setFormData] = useState({
@@ -13,29 +16,42 @@ export default function RegisterPage() {
     confirmPassword: '',
     role: 'student' as 'student' | 'instructor',
   });
-  const [error, setError] = useState('');
+  const [error, setError] = useState<{ message: string; type?: string; field?: string } | null>(null);
   const [loading, setLoading] = useState(false);
   const { register } = useAuth();
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    const { name, value } = e.target;
     setFormData({
       ...formData,
-      [e.target.name]: e.target.value,
+      [name]: value,
     });
+    // Clear error when user starts typing in the field with error
+    if (error?.field === name) {
+      setError(null);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
+    setError(null);
 
-    // Validation
+    // Client-side validation
     if (formData.password !== formData.confirmPassword) {
-      setError('Mật khẩu không khớp');
+      setError({
+        message: 'Mật khẩu xác nhận không khớp. Vui lòng kiểm tra lại.',
+        type: 'validation',
+        field: 'confirmPassword',
+      });
       return;
     }
 
     if (formData.password.length < 6) {
-      setError('Mật khẩu phải có ít nhất 6 ký tự');
+      setError({
+        message: 'Mật khẩu phải có ít nhất 6 ký tự.',
+        type: 'validation',
+        field: 'password',
+      });
       return;
     }
 
@@ -44,7 +60,11 @@ export default function RegisterPage() {
     const hasNumber = /\d/.test(formData.password);
     
     if (!hasLetter || !hasNumber) {
-      setError('Mật khẩu phải có ít nhất 1 chữ cái và 1 số');
+      setError({
+        message: 'Mật khẩu phải có ít nhất 1 chữ cái và 1 số.',
+        type: 'validation',
+        field: 'password',
+      });
       return;
     }
 
@@ -58,8 +78,12 @@ export default function RegisterPage() {
         role: formData.role,
       });
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Đăng ký thất bại';
-      setError(errorMessage);
+      const authError = getAuthErrorMessage(err);
+      setError({
+        message: authError.message,
+        type: authError.type,
+        field: authError.field,
+      });
     } finally {
       setLoading(false);
     }
@@ -70,9 +94,9 @@ export default function RegisterPage() {
       <div className="max-w-md w-full space-y-8">
         {/* Header */}
         <div className="text-center">
-          <h2 className="text-4xl font-bold text-gray-900">
-            🎓 EduLearn
-          </h2>
+          <div className="flex justify-center mb-4">
+            <Logo size="lg" showText={true} href="/" />
+          </div>
           <p className="mt-2 text-lg text-gray-600">
             Tạo tài khoản mới
           </p>
@@ -83,9 +107,11 @@ export default function RegisterPage() {
           <form onSubmit={handleSubmit} className="space-y-6">
             {/* Error Message */}
             {error && (
-              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
-                {error}
-              </div>
+              <ErrorMessage
+                error={error.message}
+                type={error.type === 'validation' || error.type === 'auth' ? 'error' : error.type === 'warning' ? 'warning' : 'error'}
+                onDismiss={() => setError(null)}
+              />
             )}
 
             {/* Full Name */}
@@ -100,8 +126,12 @@ export default function RegisterPage() {
                 required
                 value={formData.fullName}
                 onChange={handleChange}
-                className="mt-1 block w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className={`mt-1 block w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                  error?.field === 'fullName' ? 'border-red-300 bg-red-50' : 'border-gray-300'
+                }`}
                 placeholder="Nguyễn Văn A"
+                aria-invalid={error?.field === 'fullName' ? 'true' : 'false'}
+                aria-describedby={error?.field === 'fullName' ? 'fullName-error' : undefined}
               />
             </div>
 
@@ -117,8 +147,12 @@ export default function RegisterPage() {
                 required
                 value={formData.email}
                 onChange={handleChange}
-                className="mt-1 block w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className={`mt-1 block w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                  error?.field === 'email' ? 'border-red-300 bg-red-50' : 'border-gray-300'
+                }`}
                 placeholder="your@email.com"
+                aria-invalid={error?.field === 'email' ? 'true' : 'false'}
+                aria-describedby={error?.field === 'email' ? 'email-error' : undefined}
               />
             </div>
 
@@ -151,8 +185,12 @@ export default function RegisterPage() {
                 required
                 value={formData.password}
                 onChange={handleChange}
-                className="mt-1 block w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className={`mt-1 block w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                  error?.field === 'password' ? 'border-red-300 bg-red-50' : 'border-gray-300'
+                }`}
                 placeholder="••••••••"
+                aria-invalid={error?.field === 'password' ? 'true' : 'false'}
+                aria-describedby={error?.field === 'password' ? 'password-error' : undefined}
               />
               <PasswordRequirements password={formData.password} showAll={true} />
             </div>
@@ -169,8 +207,12 @@ export default function RegisterPage() {
                 required
                 value={formData.confirmPassword}
                 onChange={handleChange}
-                className="mt-1 block w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className={`mt-1 block w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                  error?.field === 'confirmPassword' ? 'border-red-300 bg-red-50' : 'border-gray-300'
+                }`}
                 placeholder="••••••••"
+                aria-invalid={error?.field === 'confirmPassword' ? 'true' : 'false'}
+                aria-describedby={error?.field === 'confirmPassword' ? 'confirmPassword-error' : undefined}
               />
             </div>
 

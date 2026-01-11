@@ -3,24 +3,31 @@
 import { useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import Link from 'next/link';
+import Logo from '@/components/ui/Logo';
+import ErrorMessage from '@/components/auth/ErrorMessage';
+import { getAuthErrorMessage } from '@/lib/authErrorUtils';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
+  const [error, setError] = useState<{ message: string; type?: string; field?: string } | null>(null);
   const [loading, setLoading] = useState(false);
   const { login } = useAuth();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
+    setError(null);
     setLoading(true);
 
     try {
       await login(email, password);
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Login failed';
-      setError(errorMessage);
+      const authError = getAuthErrorMessage(err);
+      setError({
+        message: authError.message,
+        type: authError.type,
+        field: authError.field,
+      });
     } finally {
       setLoading(false);
     }
@@ -31,9 +38,9 @@ export default function LoginPage() {
       <div className="max-w-md w-full space-y-8">
         {/* Header */}
         <div className="text-center">
-          <h2 className="text-4xl font-bold text-gray-900">
-            🎓 EduLearn
-          </h2>
+          <div className="flex justify-center mb-4">
+            <Logo size="lg" showText={true} href="/" />
+          </div>
           <p className="mt-2 text-lg text-gray-600">
             Đăng nhập vào tài khoản của bạn
           </p>
@@ -44,9 +51,11 @@ export default function LoginPage() {
           <form onSubmit={handleSubmit} className="space-y-6">
             {/* Error Message */}
             {error && (
-              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
-                {error}
-              </div>
+              <ErrorMessage
+                error={error.message}
+                type={error.type === 'validation' || error.type === 'auth' ? 'error' : error.type === 'warning' ? 'warning' : 'error'}
+                onDismiss={() => setError(null)}
+              />
             )}
 
             {/* Email */}
@@ -59,9 +68,16 @@ export default function LoginPage() {
                 type="email"
                 required
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="mt-1 block w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                onChange={(e) => {
+                  setEmail(e.target.value);
+                  if (error?.field === 'email') setError(null);
+                }}
+                className={`mt-1 block w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                  error?.field === 'email' ? 'border-red-300 bg-red-50' : 'border-gray-300'
+                }`}
                 placeholder="your@email.com"
+                aria-invalid={error?.field === 'email' ? 'true' : 'false'}
+                aria-describedby={error?.field === 'email' ? 'email-error' : undefined}
               />
             </div>
 
@@ -75,9 +91,16 @@ export default function LoginPage() {
                 type="password"
                 required
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="mt-1 block w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                onChange={(e) => {
+                  setPassword(e.target.value);
+                  if (error?.field === 'password') setError(null);
+                }}
+                className={`mt-1 block w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                  error?.field === 'password' ? 'border-red-300 bg-red-50' : 'border-gray-300'
+                }`}
                 placeholder="••••••••"
+                aria-invalid={error?.field === 'password' ? 'true' : 'false'}
+                aria-describedby={error?.field === 'password' ? 'password-error' : undefined}
               />
             </div>
 
