@@ -659,7 +659,7 @@ export default function LandingPage() {
                   return (
                   <Link
                     key={category._id}
-                    href={`/categories/${category.slug}`}
+                    href={`/courses?category=${category.slug}`}
                     className={`group relative bg-white rounded-2xl shadow-lg p-6 sm:p-8 text-center hover:shadow-2xl transition-all duration-500 hover:scale-110 hover:-translate-y-2 border-2 border-transparent hover:border-purple-200 overflow-hidden scroll-reveal ${isRevealed ? 'revealed' : ''}`}
                     style={{ transitionDelay: isRevealed ? `${index * 50}ms` : '0s' }}
                   >
