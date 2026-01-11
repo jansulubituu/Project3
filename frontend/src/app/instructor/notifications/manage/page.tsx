@@ -1,14 +1,13 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import Header from '@/components/layout/Header';
 import Footer from '@/components/layout/Footer';
 import { api } from '@/lib/api';
 import { NotificationType, getNotificationIcon } from '@/lib/notificationUtils';
-import { ChevronLeft, Plus, Edit2, Trash2, Filter, X, Search, Save } from 'lucide-react';
+import { ChevronLeft, Plus, Edit2, Trash2, Filter, X, Save } from 'lucide-react';
 
 interface Notification {
   _id: string;
@@ -67,7 +66,6 @@ const statusOptions = [
 ];
 
 function InstructorNotificationsManageContent() {
-  const router = useRouter();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(false);
   const [pagination, setPagination] = useState<Pagination>({

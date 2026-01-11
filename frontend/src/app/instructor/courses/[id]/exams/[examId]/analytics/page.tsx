@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import {
   ArrowLeft,
@@ -12,7 +12,6 @@ import {
   Clock,
   CheckCircle,
   XCircle,
-  FileText,
 } from 'lucide-react';
 import {
   BarChart,
@@ -90,7 +89,6 @@ interface StudentPerformance {
 
 function ExamAnalyticsContent() {
   const params = useParams<{ id: string; examId: string }>();
-  const router = useRouter();
   const courseId = params?.id;
   const examId = params?.examId;
 

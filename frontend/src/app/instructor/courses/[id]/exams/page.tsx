@@ -106,8 +106,11 @@ function InstructorCourseExamsContent() {
 
   // Analytics modal state
   const [showAnalytics, setShowAnalytics] = useState(false);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [analyticsError, setAnalyticsError] = useState<string | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [analyticsData, setAnalyticsData] = useState<any>(null);
 
   // Load exams function

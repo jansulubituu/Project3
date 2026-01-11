@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { api } from '@/lib/api';
 import Image from 'next/image';
-import { Heart, Edit2, Trash2, MoreVertical } from 'lucide-react';
+import { Heart, MoreVertical } from 'lucide-react';
 import { isValidImageUrl } from '@/lib/utils';
 
 interface Author {

@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import Header from '@/components/layout/Header';
@@ -61,7 +60,6 @@ const statusOptions = [
 ];
 
 function AdminNotificationsManageContent() {
-  const router = useRouter();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(false);
   const [pagination, setPagination] = useState<Pagination>({
@@ -321,7 +319,6 @@ function AdminNotificationsManageContent() {
 
   const selectedTypeLabel = typeOptions.find((opt) => opt.value === filters.type)?.label || 'Tất cả';
   const selectedStatusLabel = statusOptions.find((opt) => opt.value === filters.isRead)?.label || 'Tất cả';
-  const selectedUser = users.find((u) => u._id === filters.userId);
 
   return (
     <div className="min-h-screen flex flex-col">
