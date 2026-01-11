@@ -163,9 +163,16 @@ export const getAllCourses = async (req: Request, res: Response) => {
         });
       }
       
+      // 🎯 Calculate enrollmentCount dynamically from actual enrollments
+      const actualEnrollmentCount = await Enrollment.countDocuments({
+        course: course._id,
+        status: { $in: ['active', 'completed'] }, // Only count active and completed enrollments
+      });
+      
       // 🎯 For public catalog, totalLessons = publishedLessonCount (all users see published only)
       const courseObj = course.toObject();
       courseObj.totalLessons = courseObj.publishedLessonCount ?? 0; // ✅ Transform for public view
+      courseObj.enrollmentCount = actualEnrollmentCount; // ✅ Use dynamically calculated count
       transformedCourses.push(courseObj);
     }
 
@@ -234,6 +241,19 @@ export const getMyCourses = async (req: Request, res: Response) => {
 
     const total = await Course.countDocuments(query);
 
+    // 🎯 Calculate enrollmentCount dynamically for each course
+    const coursesWithCount = await Promise.all(
+      courses.map(async (course) => {
+        const actualEnrollmentCount = await Enrollment.countDocuments({
+          course: course._id,
+          status: { $in: ['active', 'completed'] }, // Only count active and completed enrollments
+        });
+        const courseObj = course.toObject();
+        courseObj.enrollmentCount = actualEnrollmentCount;
+        return courseObj;
+      })
+    );
+
     res.json({
       success: true,
       pagination: {
@@ -242,7 +262,7 @@ export const getMyCourses = async (req: Request, res: Response) => {
         totalItems: total,
         itemsPerPage: Number(limit),
       },
-      courses,
+      courses: coursesWithCount,
     });
   } catch (error) {
     res.status(500).json({
@@ -295,6 +315,19 @@ export const getAdminCourses = async (req: Request, res: Response) => {
 
     const total = await Course.countDocuments(query);
 
+    // 🎯 Calculate enrollmentCount dynamically for each course
+    const coursesWithCount = await Promise.all(
+      courses.map(async (course) => {
+        const actualEnrollmentCount = await Enrollment.countDocuments({
+          course: course._id,
+          status: { $in: ['active', 'completed'] }, // Only count active and completed enrollments
+        });
+        const courseObj = course.toObject();
+        courseObj.enrollmentCount = actualEnrollmentCount;
+        return courseObj;
+      })
+    );
+
     res.json({
       success: true,
       pagination: {
@@ -303,7 +336,7 @@ export const getAdminCourses = async (req: Request, res: Response) => {
         totalItems: total,
         itemsPerPage: Number(limit),
       },
-      courses,
+      courses: coursesWithCount,
     });
   } catch (error) {
     res.status(500).json({
@@ -361,12 +394,21 @@ export const getCourseById = async (req: Request, res: Response) => {
     const isInstructor = req.user && course.instructor.toString() === req.user.id;
     const isAdmin = req.user && req.user.role === 'admin';
     
+    // 🎯 Calculate enrollmentCount dynamically from actual enrollments
+    const actualEnrollmentCount = await Enrollment.countDocuments({
+      course: course._id,
+      status: { $in: ['active', 'completed'] }, // Only count active and completed enrollments
+    });
+    
     const courseObj = course.toObject();
     if (!isInstructor && !isAdmin) {
       // Public view: only show published lessons
       courseObj.totalLessons = courseObj.publishedLessonCount ?? 0;
     }
     // For instructors/admins, keep totalLessons as is (they can see all)
+    
+    // ✅ Use dynamically calculated enrollmentCount
+    courseObj.enrollmentCount = actualEnrollmentCount;
 
     res.json({
       success: true,
@@ -1309,6 +1351,93 @@ export const getPlatformStats = async (_req: Request, res: Response) => {
     res.status(500).json({
       success: false,
       message: 'Error fetching platform statistics',
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+};
+
+// @desc    Sync enrollmentCount for a specific course or all courses
+// @route   POST /api/courses/:id/sync-enrollment-count or POST /api/courses/sync-enrollment-count
+// @access  Private/Admin
+export const syncEnrollmentCount = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    // If id is provided, sync for a specific course
+    if (id) {
+      if (!mongoose.Types.ObjectId.isValid(id)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid course ID',
+        });
+      }
+
+      const course = await Course.findById(id);
+      if (!course) {
+        return res.status(404).json({
+          success: false,
+          message: 'Course not found',
+        });
+      }
+
+      // Count actual enrollments for this course
+      const actualCount = await Enrollment.countDocuments({
+        course: course._id,
+        status: { $in: ['active', 'completed'] }, // Only count active and completed enrollments
+      });
+
+      // Update enrollmentCount
+      course.enrollmentCount = actualCount;
+      await course.save();
+
+      return res.json({
+        success: true,
+        message: 'Enrollment count synced successfully',
+        course: {
+          _id: course._id,
+          title: course.title,
+          enrollmentCount: course.enrollmentCount,
+          previousCount: course.enrollmentCount,
+        },
+      });
+    }
+
+    // If no id, sync for all courses
+    const courses = await Course.find({});
+    let syncedCount = 0;
+    const results = [];
+
+    for (const course of courses) {
+      const actualCount = await Enrollment.countDocuments({
+        course: course._id,
+        status: { $in: ['active', 'completed'] },
+      });
+
+      const previousCount = course.enrollmentCount;
+      if (actualCount !== previousCount) {
+        course.enrollmentCount = actualCount;
+        await course.save();
+        syncedCount++;
+        results.push({
+          courseId: course._id.toString(),
+          title: course.title,
+          previousCount,
+          newCount: actualCount,
+        });
+      }
+    }
+
+    return res.json({
+      success: true,
+      message: `Enrollment count sync completed. ${syncedCount} course(s) updated.`,
+      totalCourses: courses.length,
+      syncedCount,
+      results,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error syncing enrollment count',
       error: error instanceof Error ? error.message : 'Unknown error',
     });
   }

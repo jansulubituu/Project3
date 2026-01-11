@@ -15,6 +15,7 @@ import {
   getAdminCourses,
   uploadCourseThumbnail,
   getPlatformStats,
+  syncEnrollmentCount,
 } from '../controllers/courseController';
 import { createReview } from '../controllers/reviewController';
 import { protect, optionalAuth } from '../middleware/auth';
@@ -157,6 +158,10 @@ router.post('/:id/publish', protect, instructorOrAdmin, publishCourse);
 router.post('/:id/submit', protect, instructorOrAdmin, submitCourse);
 router.put('/:id/approve', protect, adminOnly, approveCourse);
 router.put('/:id/reject', protect, adminOnly, rejectCourseValidation, rejectCourse);
+
+// Sync enrollment count routes
+router.post('/sync-enrollment-count', protect, adminOnly, syncEnrollmentCount);
+router.post('/:id/sync-enrollment-count', protect, adminOnly, syncEnrollmentCount);
 
 // Section routes nested under courses
 import { createSection, reorderSections } from '../controllers/sectionController';

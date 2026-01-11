@@ -32,10 +32,26 @@ export const getAllCategories = async (req: Request, res: Response) => {
       .populate('parent', 'name slug')
       .sort({ order: 1, createdAt: 1 });
 
+    // Calculate courseCount dynamically for each category
+    // Note: Only check status='published' to match getAllCourses logic
+    // Some legacy data may have status='published' but isPublished=false
+    const categoriesWithCount = await Promise.all(
+      categories.map(async (category) => {
+        const courseCount = await Course.countDocuments({
+          category: category._id,
+          status: 'published',
+        });
+        return {
+          ...category.toObject(),
+          courseCount,
+        };
+      })
+    );
+
     res.json({
       success: true,
-      count: categories.length,
-      categories,
+      count: categoriesWithCount.length,
+      categories: categoriesWithCount,
     });
   } catch (error) {
     res.status(500).json({
@@ -73,9 +89,37 @@ export const getCategoryById = async (req: Request, res: Response) => {
       });
     }
 
+    // Calculate courseCount dynamically
+    // Note: Only check status='published' to match getAllCourses logic
+    const courseCount = await Course.countDocuments({
+      category: category._id,
+      status: 'published',
+    });
+
+    // Calculate courseCount for subcategories
+    const categoryObj = category.toObject() as any;
+    if (categoryObj.subcategories && Array.isArray(categoryObj.subcategories)) {
+      const subcategoriesWithCount = await Promise.all(
+        categoryObj.subcategories.map(async (subcat: any) => {
+          const subcatCourseCount = await Course.countDocuments({
+            category: subcat._id,
+            status: 'published',
+          });
+          return {
+            ...subcat,
+            courseCount: subcatCourseCount,
+          };
+        })
+      );
+      categoryObj.subcategories = subcategoriesWithCount;
+    }
+
     res.json({
       success: true,
-      category,
+      category: {
+        ...categoryObj,
+        courseCount,
+      },
     });
   } catch (error) {
     res.status(500).json({
@@ -184,6 +228,20 @@ export const getCategoryCourses = async (req: Request, res: Response) => {
 
     const total = await Course.countDocuments(courseQuery);
 
+    // 🎯 Calculate enrollmentCount dynamically for each course
+    const { Enrollment } = await import('../models');
+    const coursesWithCount = await Promise.all(
+      courses.map(async (course) => {
+        const actualEnrollmentCount = await Enrollment.countDocuments({
+          course: course._id,
+          status: { $in: ['active', 'completed'] }, // Only count active and completed enrollments
+        });
+        const courseObj = course.toObject();
+        courseObj.enrollmentCount = actualEnrollmentCount;
+        return courseObj;
+      })
+    );
+
     res.json({
       success: true,
       category: {
@@ -197,7 +255,7 @@ export const getCategoryCourses = async (req: Request, res: Response) => {
         totalItems: total,
         itemsPerPage: Number(limit),
       },
-      courses,
+      courses: coursesWithCount,
     });
   } catch (error) {
     res.status(500).json({
