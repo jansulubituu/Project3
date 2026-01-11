@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import mongoose from 'mongoose';
 import { Course, Enrollment, User } from '../models';
+import { createNotification } from '../services/notificationService';
 
 const ENROLLMENT_STATUSES = ['active', 'completed', 'suspended', 'expired'];
 
@@ -151,6 +152,25 @@ export const enrollInCourse = async (req: Request, res: Response) => {
       path: 'course',
       select: 'title slug thumbnail',
     });
+
+    // Create notification for student (async, don't wait)
+    const populatedCourse = enrollment.course as any;
+    if (populatedCourse) {
+      createNotification({
+        userId: new mongoose.Types.ObjectId(req.user.id) as mongoose.Types.ObjectId,
+        type: 'enrollment',
+        title: 'Đăng ký thành công',
+        message: `Bạn đã đăng ký thành công khóa học '${populatedCourse.title}'`,
+        link: `/courses/${populatedCourse.slug}`,
+        data: {
+          courseId: populatedCourse._id.toString(),
+          courseSlug: populatedCourse.slug,
+          enrollmentId: enrollment._id.toString(),
+        },
+      }).catch((err) => {
+        console.error('Error creating enrollment notification:', err);
+      });
+    }
 
     res.status(201).json({
       success: true,

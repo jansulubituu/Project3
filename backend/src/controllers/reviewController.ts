@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { Review, Course, Enrollment } from '../models';
 import mongoose from 'mongoose';
 import type { ICourse } from '../models/Course';
+import { createNotification } from '../services/notificationService';
 
 // @desc    Create a review for a course
 // @route   POST /api/courses/:courseId/reviews
@@ -20,8 +21,8 @@ export const createReview = async (req: Request, res: Response) => {
     }
 
     // Check if course exists
-    const course = await Course.findById(courseId);
-    if (!course) {
+    const courseForReview = await Course.findById(courseId);
+    if (!courseForReview) {
       return res.status(404).json({
         success: false,
         message: 'Course not found',
@@ -64,8 +65,30 @@ export const createReview = async (req: Request, res: Response) => {
       comment,
     });
 
-    // Populate student info
+    // Populate student and course info
     await review.populate('student', 'fullName avatar');
+    await review.populate('course', 'title slug instructor');
+
+    // Create notification for instructor (async, don't wait)
+    const populatedCourse = review.course as any;
+    const student = review.student as any;
+    if (populatedCourse && populatedCourse.instructor && populatedCourse.instructor.toString() !== userId) {
+      createNotification({
+        userId: populatedCourse.instructor,
+        type: 'review',
+        title: 'Đánh giá mới',
+        message: `${student.fullName} đã đánh giá khóa học '${populatedCourse.title}'`,
+        link: `/courses/${populatedCourse.slug}`,
+        data: {
+          reviewId: review._id.toString(),
+          courseId: populatedCourse._id.toString(),
+          courseSlug: populatedCourse.slug,
+          rating: rating.toString(),
+        },
+      }).catch((err) => {
+        console.error('Error creating review notification:', err);
+      });
+    }
 
     res.status(201).json({
       success: true,
@@ -319,11 +342,11 @@ export const addInstructorResponse = async (req: Request, res: Response) => {
 
     // Populate course to get instructor
     await review.populate('course', 'instructor');
-    const course = review.course as mongoose.Types.ObjectId | { instructor: mongoose.Types.ObjectId };
+    const courseForAuth = review.course as mongoose.Types.ObjectId | { instructor: mongoose.Types.ObjectId };
     
     // Type guard to check if course is populated
-    const isPopulated = typeof course === 'object' && course !== null && 'instructor' in course;
-    const instructorId = isPopulated ? course.instructor : null;
+    const isPopulated = typeof courseForAuth === 'object' && courseForAuth !== null && 'instructor' in courseForAuth;
+    const instructorId = isPopulated ? courseForAuth.instructor : null;
 
     // Check if user is the instructor of the course or admin
     if (
@@ -339,8 +362,31 @@ export const addInstructorResponse = async (req: Request, res: Response) => {
     // Use the model method to add instructor response
     await review.addInstructorResponse(response);
 
-    // Populate student info
+    // Populate student and course info for notification
     await review.populate('student', 'fullName avatar');
+    await review.populate({
+      path: 'course',
+      select: 'title slug',
+    });
+
+    // Create notification for student (review author) (async, don't wait)
+    const populatedCourse = review.course as any;
+    if (populatedCourse && typeof populatedCourse === 'object' && 'title' in populatedCourse && review.student) {
+      createNotification({
+        userId: review.student as any,
+        type: 'instructor_response',
+        title: 'Phản hồi từ giảng viên',
+        message: `Giảng viên đã trả lời đánh giá của bạn cho khóa học '${populatedCourse.title}'`,
+        link: `/courses/${populatedCourse.slug}`,
+        data: {
+          reviewId: review._id.toString(),
+          courseId: populatedCourse._id.toString(),
+          courseSlug: populatedCourse.slug,
+        },
+      }).catch((err) => {
+        console.error('Error creating instructor response notification:', err);
+      });
+    }
 
     res.json({
       success: true,

@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
-import { Enrollment } from '../models';
+import { Enrollment, Course } from '../models';
 import mongoose from 'mongoose';
+import { createNotification } from '../services/notificationService';
 
 /**
  * @desc    Get certificate for enrollment
@@ -142,6 +143,29 @@ export const generateCertificateManually = async (req: Request, res: Response) =
     });
 
     await enrollment.generateCertificate();
+
+    // Populate course for notification
+    await enrollment.populate('course', 'title slug');
+
+    // Create notification for student (async, don't wait)
+    const course = enrollment.course as any;
+    if (course && enrollment.certificateId) {
+      createNotification({
+        userId: enrollment.student as any,
+        type: 'certificate',
+        title: 'Chứng chỉ đã được cấp',
+        message: `Chúc mừng! Bạn đã nhận chứng chỉ cho khóa học '${course.title}'`,
+        link: `/certificates/verify/${enrollment.certificateId}`,
+        data: {
+          certificateId: enrollment.certificateId,
+          courseId: course._id.toString(),
+          courseSlug: course.slug,
+          enrollmentId: enrollment._id.toString(),
+        },
+      }).catch((err) => {
+        console.error('Error creating certificate notification:', err);
+      });
+    }
 
     return res.json({
       success: true,

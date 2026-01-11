@@ -1,0 +1,258 @@
+### Notification Module Tests
+### Sử dụng VS Code REST Client extension
+### Hoặc copy vào Postman/Thunder Client
+
+@baseUrl = http://localhost:5000/api
+@token = YOUR_TOKEN_HERE
+@studentToken = 
+@instructorToken = 
+@adminToken = 
+
+### ============================================
+### SETUP: Login để lấy tokens
+### ============================================
+
+### Login Student
+# @name loginStudent
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "student@edulearn.com",
+  "password": "Student123!"
+}
+
+### Login Instructor
+# @name loginInstructor
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "instructor@edulearn.com",
+  "password": "Instructor123!"
+}
+
+### ============================================
+### NOTIFICATION API TESTS
+### ============================================
+
+### 1. Get Notifications (Default - All)
+GET {{baseUrl}}/notifications
+Authorization: Bearer {{token}}
+
+### 2. Get Notifications with Pagination
+GET {{baseUrl}}/notifications?page=1&limit=10
+Authorization: Bearer {{token}}
+
+### 3. Get Unread Notifications Only
+GET {{baseUrl}}/notifications?isRead=false
+Authorization: Bearer {{token}}
+
+### 4. Get Read Notifications Only
+GET {{baseUrl}}/notifications?isRead=true
+Authorization: Bearer {{token}}
+
+### 5. Filter by Type - Comment
+GET {{baseUrl}}/notifications?type=comment
+Authorization: Bearer {{token}}
+
+### 6. Filter by Type - Enrollment
+GET {{baseUrl}}/notifications?type=enrollment
+Authorization: Bearer {{token}}
+
+### 7. Filter by Type - Certificate
+GET {{baseUrl}}/notifications?type=certificate
+Authorization: Bearer {{token}}
+
+### 8. Filter by Type - Payment
+GET {{baseUrl}}/notifications?type=payment
+Authorization: Bearer {{token}}
+
+### 9. Filter by Type - Review
+GET {{baseUrl}}/notifications?type=review
+Authorization: Bearer {{token}}
+
+### 10. Filter by Type - New Lesson
+GET {{baseUrl}}/notifications?type=new_lesson
+Authorization: Bearer {{token}}
+
+### 11. Get Unread Count
+GET {{baseUrl}}/notifications/unread-count
+Authorization: Bearer {{token}}
+
+### 12. Mark Notification as Read
+PUT {{baseUrl}}/notifications/NOTIFICATION_ID_HERE/read
+Authorization: Bearer {{token}}
+
+### 13. Mark All Notifications as Read
+PUT {{baseUrl}}/notifications/read-all
+Authorization: Bearer {{token}}
+
+### 14. Delete Single Notification
+DELETE {{baseUrl}}/notifications/NOTIFICATION_ID_HERE
+Authorization: Bearer {{token}}
+
+### 15. Delete All Read Notifications
+DELETE {{baseUrl}}/notifications/read
+Authorization: Bearer {{token}}
+
+### ============================================
+### INTEGRATION TESTS - Trigger Notifications
+### ============================================
+
+### Test 1: Enrollment Notification
+### Enroll in a course (should create enrollment notification)
+POST {{baseUrl}}/enrollments
+Authorization: Bearer {{studentToken}}
+Content-Type: application/json
+
+{
+  "course": "COURSE_ID_HERE"
+}
+
+### Test 2: Comment Notification
+### Create a comment in a lesson (should notify instructor)
+POST {{baseUrl}}/comments/lesson/LESSON_ID_HERE
+Authorization: Bearer {{studentToken}}
+Content-Type: application/json
+
+{
+  "content": "Đây là comment test để trigger notification"
+}
+
+### Test 3: Reply Notification
+### Reply to a comment (should notify comment author)
+POST {{baseUrl}}/comments/COMMENT_ID_HERE/reply
+Authorization: Bearer {{studentToken}}
+Content-Type: application/json
+
+{
+  "content": "Đây là reply test"
+}
+
+### Test 4: Review Notification
+### Create a review (should notify instructor)
+POST {{baseUrl}}/courses/COURSE_ID_HERE/reviews
+Authorization: Bearer {{studentToken}}
+Content-Type: application/json
+
+{
+  "rating": 5,
+  "comment": "Khóa học rất hay!"
+}
+
+### Test 5: Instructor Response Notification
+### Instructor responds to review (should notify student)
+POST {{baseUrl}}/reviews/REVIEW_ID_HERE/response
+Authorization: Bearer {{instructorToken}}
+Content-Type: application/json
+
+{
+  "response": "Cảm ơn bạn đã đánh giá!"
+}
+
+### Test 6: Certificate Notification
+### Generate certificate (should notify student)
+POST {{baseUrl}}/certificates/enrollment/ENROLLMENT_ID_HERE/generate
+Authorization: Bearer {{studentToken}}
+
+### Test 7: New Lesson Notification
+### Publish a lesson (should notify all enrolled students)
+PUT {{baseUrl}}/lessons/LESSON_ID_HERE
+Authorization: Bearer {{instructorToken}}
+Content-Type: application/json
+
+{
+  "isPublished": true
+}
+
+### Test 8: Payment Notification
+### Complete a payment (via IPN - test separately)
+POST {{baseUrl}}/payments/ipn
+Content-Type: application/json
+
+{
+  "order_invoice_number": "PAY-PAYMENT_ID_HERE",
+  "notification_type": "ORDER_PAID",
+  "order_status": "CAPTURED",
+  "transaction_status": "APPROVED"
+}
+
+### ============================================
+### TEST SCENARIOS
+### ============================================
+
+### Scenario 1: Student Flow
+### 1. Student enrolls → Check enrollment notification
+### 2. Student comments → Check instructor gets notification
+### 3. Instructor replies → Check student gets notification
+### 4. Student completes course → Check certificate notification
+
+### Scenario 2: Instructor Flow
+### 1. Student reviews course → Check instructor gets notification
+### 2. Instructor responds → Check student gets notification
+### 3. Instructor publishes lesson → Check all students get notification
+
+### Scenario 3: Payment Flow
+### 1. Student creates payment → Payment pending
+### 2. Payment completes (IPN) → Check payment notification
+
+### ============================================
+### VERIFICATION CHECKLIST
+### ============================================
+
+### ✅ Backend API Tests
+### - [ ] GET /api/notifications - Success case
+### - [ ] GET /api/notifications - Pagination works
+### - [ ] GET /api/notifications - Filter by type works
+### - [ ] GET /api/notifications - Filter by isRead works
+### - [ ] GET /api/notifications/unread-count - Returns correct count
+### - [ ] PUT /api/notifications/:id/read - Marks as read
+### - [ ] PUT /api/notifications/read-all - Marks all as read
+### - [ ] DELETE /api/notifications/:id - Deletes notification
+### - [ ] DELETE /api/notifications/read - Deletes all read
+### - [ ] Authorization - User can only see own notifications
+
+### ✅ Integration Tests
+### - [ ] Enrollment creates notification
+### - [ ] Comment creates notification for instructor
+### - [ ] Reply creates notification for comment author
+### - [ ] Review creates notification for instructor
+### - [ ] Instructor response creates notification for student
+### - [ ] Certificate generation creates notification
+### - [ ] Lesson publish creates notifications for all students
+### - [ ] Payment completion creates notification
+
+### ✅ Frontend Tests (Manual)
+### - [ ] NotificationBell shows unread count
+### - [ ] Dropdown opens and shows notifications
+### - [ ] Click notification marks as read and navigates
+### - [ ] Delete notification works
+### - [ ] Mark all as read works
+### - [ ] Notifications update when new ones arrive
+
+### ============================================
+### NOTES
+### ============================================
+
+### 1. Replace placeholders:
+###    - {{token}} → Actual JWT token from login
+###    - NOTIFICATION_ID_HERE → Actual notification ID
+###    - COURSE_ID_HERE → Actual course ID
+###    - LESSON_ID_HERE → Actual lesson ID
+###    - COMMENT_ID_HERE → Actual comment ID
+###    - REVIEW_ID_HERE → Actual review ID
+###    - ENROLLMENT_ID_HERE → Actual enrollment ID
+###    - PAYMENT_ID_HERE → Actual payment ID
+
+### 2. Test Order:
+###    - First login to get tokens
+###    - Then test notification API endpoints
+###    - Finally test integration (trigger notifications)
+
+### 3. Expected Results:
+###    - All API endpoints return 200/201 with success: true
+###    - Notifications are created when actions occur
+###    - Unread count updates correctly
+###    - Mark as read updates isRead flag
+###    - Delete removes notification from database

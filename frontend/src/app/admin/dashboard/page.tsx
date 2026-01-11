@@ -229,6 +229,18 @@ function AdminDashboardContent() {
                 Cấu hình Landing Page
               </Link>
               <Link
+                href="/admin/notifications"
+                className="px-4 py-3 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors text-center font-medium"
+              >
+                Tạo Thông Báo Hệ Thống
+              </Link>
+              <Link
+                href="/admin/notifications/manage"
+                className="px-4 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-center font-medium"
+              >
+                Quản Lý Thông Báo
+              </Link>
+              <Link
                 href="/admin/analytics"
                 className="px-4 py-3 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 transition-colors text-center font-medium"
               >

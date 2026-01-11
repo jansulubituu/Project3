@@ -1,6 +1,7 @@
 import { Response } from 'express';
-import { Comment, Lesson, Enrollment, User } from '../models';
+import { Comment, Lesson, Enrollment, User, Course } from '../models';
 import { AuthRequest } from '../middleware/auth';
+import { createCommentNotification, createReplyNotification } from '../services/notificationService';
 
 /**
  * @desc    Get comments for a lesson
@@ -214,7 +215,10 @@ export const createComment = async (req: AuthRequest, res: Response) => {
     }
 
     // Check if lesson exists and is published
-    const lesson = await Lesson.findById(lessonId).populate('course');
+    const lesson = await Lesson.findById(lessonId).populate({
+      path: 'course',
+      select: 'instructor slug title',
+    });
     if (!lesson) {
       return res.status(404).json({
         success: false,
@@ -269,6 +273,11 @@ export const createComment = async (req: AuthRequest, res: Response) => {
 
     await comment.save();
     await comment.populate('author', 'fullName avatar role');
+
+    // Create notification for instructor (async, don't wait)
+    createCommentNotification(comment, lesson, course).catch((err) => {
+      console.error('Error creating comment notification:', err);
+    });
 
     res.status(201).json({
       success: true,
@@ -404,6 +413,11 @@ export const replyToComment = async (req: AuthRequest, res: Response) => {
 
     await reply.save();
     await reply.populate('author', 'fullName avatar role');
+
+    // Create notification for parent comment author (async, don't wait)
+    createReplyNotification(reply, parentComment, lesson, course).catch((err) => {
+      console.error('Error creating reply notification:', err);
+    });
 
     res.status(201).json({
       success: true,

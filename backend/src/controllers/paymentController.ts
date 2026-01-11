@@ -3,6 +3,7 @@ import { SePayPgClient } from 'sepay-pg-node';
 import mongoose from 'mongoose';
 import crypto from 'crypto';
 import { Course, Payment } from '../models';
+import { createNotification } from '../services/notificationService';
 
 type SePayEnv = 'sandbox' | 'production';
 
@@ -237,6 +238,29 @@ export const handleIpn = async (req: Request, res: Response) => {
       
       const transactionId = body?.transaction?.transaction_id || orderInvoiceNumber;
       await payment.markCompleted(transactionId);
+      
+      // Populate payment for notification
+      await payment.populate('course', 'title slug');
+      
+      // Create notification for student (async, don't wait)
+      const course = payment.course as any;
+      if (course) {
+        createNotification({
+          userId: payment.user as any,
+          type: 'payment',
+          title: 'Thanh toán thành công',
+          message: `Thanh toán thành công cho khóa học '${course.title}'`,
+          link: `/courses/${course.slug}`,
+          data: {
+            paymentId: payment._id.toString(),
+            courseId: course._id.toString(),
+            courseSlug: course.slug,
+            transactionId: transactionId,
+          },
+        }).catch((err) => {
+          console.error('Error creating payment notification:', err);
+        });
+      }
       
       // Verify enrollment was created
       const Enrollment = mongoose.model('Enrollment');

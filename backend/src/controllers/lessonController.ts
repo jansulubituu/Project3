@@ -1,5 +1,7 @@
 import { Request, Response } from 'express';
+import mongoose from 'mongoose';
 import { Enrollment, Lesson, Progress, Section, Comment } from '../models';
+import { createNotificationForUsers } from '../services/notificationService';
 
 interface LessonStatsQuestion {
   questionId: string;
@@ -400,9 +402,39 @@ export const updateLesson = async (req: Request, res: Response) => {
       updateData.duration = updateData.videoDuration;
     }
 
+    // Check if lesson is being published (was unpublished, now published)
+    const wasPublished = lesson.isPublished;
+    const willBePublished = updateData.isPublished === true;
+
     // Update lesson
     Object.assign(lesson, updateData);
     await lesson.save();
+
+    // If lesson was just published, notify all enrolled students (async, don't wait)
+    if (!wasPublished && willBePublished && course) {
+      const Enrollment = mongoose.model('Enrollment');
+      const enrollments = await Enrollment.find({
+        course: course._id,
+        status: 'active',
+      }).select('student');
+
+      if (enrollments.length > 0) {
+        const studentIds = enrollments.map((e: any) => e.student);
+        createNotificationForUsers(studentIds, {
+          type: 'new_lesson',
+          title: 'Bài học mới',
+          message: `Khóa học '${course.title}' có bài học mới: '${lesson.title}'`,
+          link: `/courses/${course.slug}/learn/${lesson._id}`,
+          data: {
+            lessonId: lesson._id.toString(),
+            courseId: course._id.toString(),
+            courseSlug: course.slug,
+          },
+        }).catch((err) => {
+          console.error('Error creating new lesson notifications:', err);
+        });
+      }
+    }
 
     // Update section statistics
     const sectionDoc = section as any;

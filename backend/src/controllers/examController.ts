@@ -548,9 +548,7 @@ export const getExamAnalytics = async (req: AuthRequest, res: Response) => {
       const correctCount = questionAnswers.filter((ans: any) => ans.isCorrect).length;
       const difficultyIndex = questionAnswers.length > 0 
         ? (correctCount / questionAnswers.length) * 100 
-        : 0;
-
-      questionStats.push({
+        : 0;      questionStats.push({
         questionId,
         totalAnswers: questionAnswers.length,
         correctCount,

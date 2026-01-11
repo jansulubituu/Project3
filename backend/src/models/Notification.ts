@@ -3,7 +3,7 @@ import mongoose, { Document, Schema } from 'mongoose';
 export interface INotification extends Document {
   _id: mongoose.Types.ObjectId;
   user: mongoose.Types.ObjectId;
-  type: 'enrollment' | 'course_update' | 'new_lesson' | 'certificate' | 'review' | 'instructor_response' | 'payment' | 'system';
+  type: 'enrollment' | 'course_update' | 'new_lesson' | 'certificate' | 'review' | 'instructor_response' | 'payment' | 'system' | 'comment' | 'comment_reply';
   title: string;
   message: string;
   link?: string;
@@ -32,6 +32,8 @@ const notificationSchema = new Schema<INotification>(
         'instructor_response',
         'payment',
         'system',
+        'comment',
+        'comment_reply',
       ],
       required: [true, 'Type is required'],
     },

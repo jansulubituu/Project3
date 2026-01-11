@@ -112,9 +112,7 @@ export const uploadFileHandler = async (req: Request, res: Response) => {
         success: false,
         message: 'No file uploaded',
       });
-    }
-
-    const maxSizeMb = 20;
+    }    const maxSizeMb = 20;
     if (req.file.size > maxSizeMb * 1024 * 1024) {
       return res.status(400).json({
         success: false,
@@ -170,9 +168,7 @@ export const listImagesHandler = async (req: Request, res: Response) => {
 
     if (folder) {
       options.folder = folder as string;
-    }
-
-    if (maxResults) {
+    }    if (maxResults) {
       options.maxResults = Number(maxResults);
     }
 

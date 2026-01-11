@@ -1,16 +1,21 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import Dropdown from '@/components/ui/Dropdown';
+import { api } from '@/lib/api';
+import NotificationItem from '@/components/notifications/NotificationItem';
+import { NotificationType } from '@/lib/notificationUtils';
 
 interface Notification {
   _id: string;
+  type: NotificationType;
   title: string;
   message: string;
-  type: 'info' | 'success' | 'warning' | 'error';
-  read: boolean;
-  createdAt: string;
   link?: string;
+  isRead: boolean;
+  createdAt: string;
 }
 
 interface NotificationBellProps {
@@ -18,30 +23,49 @@ interface NotificationBellProps {
 }
 
 export default function NotificationBell({ className = '' }: NotificationBellProps) {
+  const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [markingAllRead, setMarkingAllRead] = useState(false);
 
+  // Fetch unread count on mount
+  useEffect(() => {
+    fetchUnreadCount();
+  }, []);
+
+  // Fetch notifications when dropdown opens
   useEffect(() => {
     if (isOpen) {
       fetchNotifications();
     }
   }, [isOpen]);
 
+  const fetchUnreadCount = async () => {
+    try {
+      const res = await api.get('/notifications/unread-count');
+      if (res.data.success) {
+        setUnreadCount(res.data.unreadCount || 0);
+      }
+    } catch (error) {
+      console.error('Failed to fetch unread count:', error);
+    }
+  };
+
   const fetchNotifications = async () => {
     setLoading(true);
     try {
-      // TODO: Replace with actual API endpoint when available
-      // const res = await api.get('/notifications');
-      // if (res.data.success) {
-      //   setNotifications(res.data.notifications || []);
-      //   setUnreadCount(res.data.unreadCount || 0);
-      // }
-      
-      // Placeholder for now
-      setNotifications([]);
-      setUnreadCount(0);
+      const res = await api.get('/notifications', {
+        params: {
+          page: 1,
+          limit: 10,
+        },
+      });
+      if (res.data.success) {
+        setNotifications(res.data.notifications || []);
+        setUnreadCount(res.data.unreadCount || 0);
+      }
     } catch (error) {
       console.error('Failed to fetch notifications:', error);
     } finally {
@@ -49,17 +73,29 @@ export default function NotificationBell({ className = '' }: NotificationBellPro
     }
   };
 
-  const markAsRead = async (notificationId: string) => {
+  const handleMarkAllAsRead = async () => {
+    if (markingAllRead || unreadCount === 0) return;
+
     try {
-      // TODO: Replace with actual API endpoint when available
-      // await api.put(`/notifications/${notificationId}/read`);
+      setMarkingAllRead(true);
+      await api.put('/notifications/read-all');
+      // Update local state
       setNotifications((prev) =>
-        prev.map((notif) => (notif._id === notificationId ? { ...notif, read: true } : notif))
+        prev.map((notif) => ({ ...notif, isRead: true }))
       );
-      setUnreadCount((prev) => Math.max(0, prev - 1));
+      setUnreadCount(0);
     } catch (error) {
-      console.error('Failed to mark notification as read:', error);
+      console.error('Failed to mark all as read:', error);
+      alert('Không thể đánh dấu tất cả đã đọc. Vui lòng thử lại.');
+    } finally {
+      setMarkingAllRead(false);
     }
+  };
+
+  const handleUpdate = () => {
+    // Refresh notifications and unread count
+    fetchNotifications();
+    fetchUnreadCount();
   };
 
   return (
@@ -84,26 +120,37 @@ export default function NotificationBell({ className = '' }: NotificationBellPro
         )}
       </button>
 
-      <Dropdown isOpen={isOpen} onClose={() => setIsOpen(false)} align="right" className="w-80">
+      <Dropdown isOpen={isOpen} onClose={() => setIsOpen(false)} align="right" className="w-80 sm:w-96">
         <div className="max-h-96 overflow-y-auto">
-          <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-gray-900">Thông báo</h3>
-            {unreadCount > 0 && (
-              <button
-                onClick={() => {
-                  notifications.forEach((notif) => {
-                    if (!notif.read) markAsRead(notif._id);
-                  });
-                }}
-                className="text-xs text-blue-600 hover:text-blue-700"
+          <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between sticky top-0 bg-white z-10">
+            <h3 className="text-sm font-semibold text-gray-900">
+              Thông báo {unreadCount > 0 && `(${unreadCount})`}
+            </h3>
+            <div className="flex items-center gap-2">
+              {unreadCount > 0 && (
+                <button
+                  onClick={handleMarkAllAsRead}
+                  disabled={markingAllRead}
+                  className="text-xs text-blue-600 hover:text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  {markingAllRead ? 'Đang xử lý...' : 'Đánh dấu tất cả đã đọc'}
+                </button>
+              )}
+              <Link
+                href="/notifications"
+                onClick={() => setIsOpen(false)}
+                className="text-xs text-blue-600 hover:text-blue-700 transition-colors font-medium"
               >
-                Đánh dấu tất cả đã đọc
-              </button>
-            )}
+                Xem tất cả
+              </Link>
+            </div>
           </div>
 
           {loading ? (
-            <div className="px-4 py-8 text-center text-sm text-gray-500">Đang tải...</div>
+            <div className="px-4 py-8 text-center">
+              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mx-auto mb-2"></div>
+              <p className="text-sm text-gray-500">Đang tải...</p>
+            </div>
           ) : notifications.length === 0 ? (
             <div className="px-4 py-8 text-center">
               <svg className="w-12 h-12 mx-auto text-gray-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -119,33 +166,11 @@ export default function NotificationBell({ className = '' }: NotificationBellPro
           ) : (
             <div className="divide-y divide-gray-200">
               {notifications.map((notification) => (
-                <div
+                <NotificationItem
                   key={notification._id}
-                  className={`px-4 py-3 hover:bg-gray-50 transition-colors cursor-pointer ${
-                    !notification.read ? 'bg-blue-50' : ''
-                  }`}
-                  onClick={() => {
-                    if (!notification.read) markAsRead(notification._id);
-                    if (notification.link) {
-                      window.location.href = notification.link;
-                    }
-                  }}
-                >
-                  <div className="flex items-start space-x-3">
-                    <div
-                      className={`w-2 h-2 rounded-full mt-2 ${
-                        !notification.read ? 'bg-blue-600' : 'bg-transparent'
-                      }`}
-                    />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-900">{notification.title}</p>
-                      <p className="text-sm text-gray-600 mt-1">{notification.message}</p>
-                      <p className="text-xs text-gray-400 mt-1">
-                        {new Date(notification.createdAt).toLocaleDateString('vi-VN')}
-                      </p>
-                    </div>
-                  </div>
-                </div>
+                  notification={notification}
+                  onUpdate={handleUpdate}
+                />
               ))}
             </div>
           )}

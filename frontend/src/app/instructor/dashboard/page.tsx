@@ -176,6 +176,12 @@ function InstructorDashboardContent() {
                 Quản lý khóa học
               </Link>
               <Link
+                href="/instructor/notifications/manage"
+                className="px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors font-medium"
+              >
+                Quản Lý Thông Báo
+              </Link>
+              <Link
                 href="/instructor/analytics"
                 className="px-6 py-3 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors font-medium"
               >
