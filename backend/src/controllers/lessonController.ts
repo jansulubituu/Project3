@@ -169,7 +169,8 @@ export const getLessonStats = async (req: Request, res: Response) => {
     }
 
     const [enrollmentsCount, progresses] = await Promise.all([
-      Enrollment.countDocuments({ course: course?._id, status: 'active' }),
+      // Count both active and completed enrollments for accurate statistics
+      Enrollment.countDocuments({ course: course?._id, status: { $in: ['active', 'completed'] } }),
       Progress.find({ lesson: id }).select('status quizScore quizAnswers'),
     ]);
 
@@ -283,10 +284,11 @@ export const getLessonDetails = async (req: Request, res: Response) => {
 
     if (req.user) {
       if (!lesson.isFree && !isInstructor && !isAdmin) {
+        // Check for both active and completed enrollments
         const enrollment = await Enrollment.findOne({
           student: req.user.id,
           course: course?._id,
-          status: 'active',
+          status: { $in: ['active', 'completed'] },
         });
 
         if (!enrollment) {
@@ -299,10 +301,11 @@ export const getLessonDetails = async (req: Request, res: Response) => {
         isEnrolled = true;
       } else if (lesson.isFree) {
         // Free lessons can be viewed by any authenticated user
+        // Check for both active and completed enrollments
         isEnrolled = !!(await Enrollment.findOne({
           student: req.user.id,
           course: course?._id,
-          status: 'active',
+          status: { $in: ['active', 'completed'] },
         }));
       }
 

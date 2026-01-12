@@ -118,9 +118,11 @@ export default function CourseCurriculum({
   };
 
   const formatDuration = (minutes?: number) => {
-    if (!minutes) return '';
+    if (!minutes || minutes === 0) return '';
     const hours = Math.floor(minutes / 60);
     const mins = minutes % 60;
+    // Don't show "0 phút" - return empty string instead
+    if (hours === 0 && mins === 0) return '';
     if (hours === 0) return `${mins} phút`;
     return mins > 0 ? `${hours} giờ ${mins} phút` : `${hours} giờ`;
   };
@@ -210,7 +212,14 @@ export default function CourseCurriculum({
           <div>
             <h2 className="text-2xl font-bold text-gray-900">Nội dung khóa học</h2>
             <p className="text-sm text-gray-600 mt-1">
-              {sections.reduce((total, section) => total + (section.lessons?.length || 0), 0)} bài học
+              {(() => {
+                const totalLessons = sections.reduce((total, section) => total + (section.lessons?.length || 0), 0);
+                const totalExams = sections.reduce((total, section) => total + (section.exams?.length || 0), 0);
+                const parts = [];
+                if (totalLessons > 0) parts.push(`${totalLessons} bài học`);
+                if (totalExams > 0) parts.push(`${totalExams} bài kiểm tra`);
+                return parts.length > 0 ? parts.join(' • ') : 'Chưa có nội dung';
+              })()}
               {isEnrolled && (
                 <span className="ml-2 text-blue-600 font-medium">
                   (Tiến độ của bạn được hiển thị bên dưới)
@@ -253,11 +262,20 @@ export default function CourseCurriculum({
                     )}
                   </div>
                   <div className="flex items-center space-x-4 mt-1 text-sm text-gray-600">
-                    <span>{section.lessons?.length || 0} bài học</span>
+                    {section.lessons && section.lessons.length > 0 && (
+                      <span>{section.lessons.length} bài học</span>
+                    )}
                     {section.exams && section.exams.length > 0 && (
                       <span>{section.exams.length} bài kiểm tra</span>
                     )}
-                    {section.duration && <span>{formatDuration(section.duration)}</span>}
+                    {section.duration && section.duration > 0 && (
+                      <span>{formatDuration(section.duration)}</span>
+                    )}
+                    {(!section.lessons || section.lessons.length === 0) && 
+                     (!section.exams || section.exams.length === 0) && 
+                     (!section.duration || section.duration === 0) && (
+                      <span className="text-gray-400">Chưa có nội dung</span>
+                    )}
                   </div>
                 </div>
                 <svg
@@ -280,8 +298,11 @@ export default function CourseCurriculum({
               {/* Section Lessons */}
               {isExpanded && (
                 <div className="px-6 pb-4 bg-gray-50">
-                  <div className="space-y-1">
-                    {availableLessons.map((lesson) => (
+                  {availableLessons.length === 0 && (!section.exams || section.exams.length === 0) ? (
+                    <p className="text-sm text-gray-500 py-4 text-center">Chưa có nội dung trong phần này</p>
+                  ) : (
+                    <div className="space-y-1">
+                      {availableLessons.map((lesson) => (
                       <button
                         key={lesson._id}
                         onClick={() => handleLessonClick(lesson)}
@@ -320,7 +341,9 @@ export default function CourseCurriculum({
                           )}
                         </div>
                         <div className="flex items-center space-x-2 text-sm text-gray-500">
-                          {lesson.duration && <span>{formatDuration(lesson.duration)}</span>}
+                          {lesson.duration && lesson.duration > 0 && (
+                            <span>{formatDuration(lesson.duration)}</span>
+                          )}
                           <svg
                             className="w-4 h-4 opacity-0 group-hover:opacity-100 transition-opacity"
                             fill="none"
@@ -404,9 +427,11 @@ export default function CourseCurriculum({
                                     <span className={`font-medium ${canTake ? 'text-gray-900 group-hover:text-blue-600' : 'text-gray-500'}`}>
                                       {exam.title}
                                     </span>
-                                    <span className="px-2 py-0.5 bg-orange-100 text-orange-700 text-xs rounded">
-                                      {exam.totalPoints} điểm
-                                    </span>
+                                    {exam.totalPoints > 0 && (
+                                      <span className="px-2 py-0.5 bg-orange-100 text-orange-700 text-xs rounded">
+                                        {exam.totalPoints} điểm
+                                      </span>
+                                    )}
                                     {/* Exam Progress Status */}
                                     {isEnrolled && examProgress && (
                                       <>
@@ -449,13 +474,15 @@ export default function CourseCurriculum({
                                     </p>
                                   )}
                                   <div className="flex items-center space-x-3 mt-1 text-xs text-gray-500">
-                                    {exam.durationMinutes && (
+                                    {exam.durationMinutes && exam.durationMinutes > 0 && (
                                       <span>⏱️ {formatDuration(exam.durationMinutes)}</span>
                                     )}
                                     {exam.maxAttempts && (
                                       <span>
-                                        {exam.remainingAttempts !== null
-                                          ? `Còn ${exam.remainingAttempts}/${exam.maxAttempts} lần`
+                                        {exam.remainingAttempts !== null && exam.remainingAttempts !== undefined
+                                          ? exam.remainingAttempts > 0
+                                            ? `Còn ${exam.remainingAttempts}/${exam.maxAttempts} lần`
+                                            : `Đã hết lần (${exam.maxAttempts} lần)`
                                           : `Tối đa ${exam.maxAttempts} lần`}
                                       </span>
                                     )}
@@ -485,7 +512,8 @@ export default function CourseCurriculum({
                         </div>
                       </div>
                     )}
-                  </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -498,7 +526,13 @@ export default function CourseCurriculum({
         <div className="p-6 bg-blue-50 border-t">
           <div className="text-center">
             <p className="text-gray-700 mb-3">
-              Đăng ký ngay để xem tất cả {sections.reduce((total, section) => total + (section.lessons?.length || 0), 0)} bài học
+              {(() => {
+                const totalLessons = sections.reduce((total, section) => total + (section.lessons?.length || 0), 0);
+                if (totalLessons > 0) {
+                  return `Đăng ký ngay để xem tất cả ${totalLessons} bài học`;
+                }
+                return 'Đăng ký ngay để truy cập khóa học';
+              })()}
             </p>
             <Link
               href={`/courses/${courseSlug}`}

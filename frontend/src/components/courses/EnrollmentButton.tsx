@@ -12,6 +12,7 @@ interface EnrollmentButtonProps {
   price: number;
   discountPrice?: number;
   isEnrolled: boolean;
+  enrollmentStatus?: 'active' | 'completed' | null;
   onEnrollmentChange: () => void;
 }
 
@@ -21,6 +22,7 @@ export default function EnrollmentButton({
   price,
   discountPrice,
   isEnrolled,
+  enrollmentStatus,
   onEnrollmentChange,
 }: EnrollmentButtonProps) {
   const router = useRouter();
@@ -119,17 +121,38 @@ export default function EnrollmentButton({
 
   // Show enrolled state
   if (isEnrolled) {
+    const isCompleted = enrollmentStatus === 'completed';
+    
     return (
       <div className="space-y-3">
-        <Link
-          href={`/courses/${courseSlug}/learn`}
-          className="block w-full px-6 py-3 bg-green-600 text-white text-center rounded-lg font-semibold hover:bg-green-700 transition-colors shadow-md"
-        >
-          Vào học ngay
-        </Link>
-        <p className="text-sm text-green-600 text-center font-medium">
-          ✓ Bạn đã đăng ký khóa học này
-        </p>
+        {isCompleted ? (
+          <>
+            <div className="block w-full px-6 py-3 bg-gradient-to-r from-purple-600 to-indigo-600 text-white text-center rounded-lg font-semibold shadow-md">
+              🎉 Bạn đã hoàn thành khóa học
+            </div>
+            <Link
+              href={`/courses/${courseSlug}/learn`}
+              className="block w-full px-6 py-3 bg-gray-100 text-gray-700 text-center rounded-lg font-semibold hover:bg-gray-200 transition-colors border border-gray-300"
+            >
+              Xem lại nội dung
+            </Link>
+            <p className="text-sm text-purple-600 text-center font-medium">
+              ✓ Chúc mừng bạn đã hoàn thành khóa học này
+            </p>
+          </>
+        ) : (
+          <>
+            <Link
+              href={`/courses/${courseSlug}/learn`}
+              className="block w-full px-6 py-3 bg-green-600 text-white text-center rounded-lg font-semibold hover:bg-green-700 transition-colors shadow-md"
+            >
+              Vào học ngay
+            </Link>
+            <p className="text-sm text-green-600 text-center font-medium">
+              ✓ Bạn đã đăng ký khóa học này
+            </p>
+          </>
+        )}
       </div>
     );
   }

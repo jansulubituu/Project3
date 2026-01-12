@@ -184,9 +184,7 @@ export const listImagesHandler = async (req: Request, res: Response) => {
       options.prefix = prefix as string;
     }
 
-    const result = await listImages(options);
-
-    res.json({
+    const result = await listImages(options);    res.json({
       success: true,
       images: result.resources,
       pagination: {

@@ -379,14 +379,17 @@ export const getCourseById = async (req: Request, res: Response) => {
     }
 
     // Check if user is enrolled (for additional info)
+    // Include both active and completed enrollments
     let isEnrolled = false;
+    let enrollmentStatus: string | null = null;
     if (req.user) {
       const enrollment = await Enrollment.findOne({
         student: req.user.id,
         course: course._id,
-        status: 'active',
+        status: { $in: ['active', 'completed'] },
       });
       isEnrolled = !!enrollment;
+      enrollmentStatus = enrollment ? enrollment.status : null;
     }
 
     // 🎯 For public view, totalLessons = publishedLessonCount (all users see published only)
@@ -414,6 +417,7 @@ export const getCourseById = async (req: Request, res: Response) => {
       success: true,
       course: courseObj,
       isEnrolled,
+      enrollmentStatus, // Return enrollment status: 'active' or 'completed' or null
     });
   } catch (error) {
     res.status(500).json({
@@ -453,13 +457,14 @@ export const getCourseCurriculum = async (req: Request, res: Response) => {
     }
 
     // Check if user is enrolled (for progress / UI hints)
+    // Include both active and completed enrollments
     let isEnrolled = false;
     let enrollment = null;
     if (req.user) {
       enrollment = await Enrollment.findOne({
         student: req.user.id,
         course: course._id,
-        status: 'active',
+        status: { $in: ['active', 'completed'] },
       });
       isEnrolled = !!enrollment;
     }
@@ -1442,4 +1447,3 @@ export const syncEnrollmentCount = async (req: Request, res: Response) => {
     });
   }
 };
-

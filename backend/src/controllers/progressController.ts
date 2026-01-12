@@ -76,10 +76,11 @@ export const updateLessonProgress = async (req: Request, res: Response) => {
     const course: any = lesson.course;
 
     // Ensure student is enrolled in the course
+    // Include both active and completed enrollments to allow access to lessons
     const enrollment = await Enrollment.findOne({
       student: req.user.id,
       course: course?._id,
-      status: 'active',
+      status: { $in: ['active', 'completed'] },
     });
 
     if (!enrollment) {
@@ -183,10 +184,11 @@ export const completeLesson = async (req: Request, res: Response) => {
 
     const course: any = lesson.course;
 
+    // Include both active and completed enrollments to allow access to lessons
     const enrollment = await Enrollment.findOne({
       student: req.user.id,
       course: course?._id,
-      status: 'active',
+      status: { $in: ['active', 'completed'] },
     });
 
     if (!enrollment) {
@@ -370,10 +372,11 @@ export const markExamComplete = async (req: AuthRequest, res: Response) => {
 
     const course: any = exam.course;
 
+    // Include both active and completed enrollments to allow access to exams
     const enrollment = await Enrollment.findOne({
       student: req.user.id,
       course: course?._id,
-      status: 'active',
+      status: { $in: ['active', 'completed'] },
     });
 
     if (!enrollment) {
@@ -463,11 +466,11 @@ export const checkUnlockStatus = async (req: AuthRequest, res: Response) => {
       });
     }
 
-    // Check enrollment
+    // Check enrollment - include both active and completed enrollments
     const enrollment = await Enrollment.findOne({
       student: req.user.id,
       course: courseId,
-      status: 'active',
+      status: { $in: ['active', 'completed'] },
     });
 
     if (!enrollment) {

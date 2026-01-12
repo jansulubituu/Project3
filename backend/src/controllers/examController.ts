@@ -195,7 +195,8 @@ export const getExamById = async (req: AuthRequest, res: Response) => {
 
     // Check authorization
     if (req.user) {
-      const isInstructor = course?.instructor?.toString() === req.user.id;
+      const isInstructor = req.user.role === 'instructor';
+      const isInstructorOwner = course?.instructor?.toString() === req.user.id;
       const isAdmin = req.user.role === 'admin';
       const isStudent = req.user.role === 'student';
 
@@ -207,8 +208,16 @@ export const getExamById = async (req: AuthRequest, res: Response) => {
         });
       }
 
-      // Instructors and admins can see all exams
-      if (!isInstructor && !isAdmin && !isStudent) {
+      // Instructors can only see exams of courses they created
+      if (isInstructor && !isInstructorOwner && !isAdmin) {
+        return res.status(403).json({
+          success: false,
+          message: 'Not authorized to view this exam. You can only view exams of courses you created.',
+        });
+      }
+
+      // Only students, course owner instructors, and admins can view
+      if (!isStudent && !isInstructorOwner && !isAdmin) {
         return res.status(403).json({
           success: false,
           message: 'Not authorized to view this exam',
@@ -419,6 +428,21 @@ export const listExamsByCourse = async (req: AuthRequest, res: Response) => {
         success: false,
         message: 'Course not found',
       });
+    }
+
+    // Check authorization for instructors
+    if (req.user) {
+      const isInstructor = req.user.role === 'instructor';
+      const isInstructorOwner = course.instructor.toString() === req.user.id;
+      const isAdmin = req.user.role === 'admin';
+
+      // Instructors can only see exams of courses they created
+      if (isInstructor && !isInstructorOwner && !isAdmin) {
+        return res.status(403).json({
+          success: false,
+          message: 'Not authorized to view exams of this course. You can only view exams of courses you created.',
+        });
+      }
     }
 
     // Build query

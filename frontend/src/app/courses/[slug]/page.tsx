@@ -55,6 +55,7 @@ function CourseDetailContent() {
 
   const [course, setCourse] = useState<Course | null>(null);
   const [isEnrolled, setIsEnrolled] = useState(false);
+  const [enrollmentStatus, setEnrollmentStatus] = useState<'active' | 'completed' | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState<'overview' | 'curriculum' | 'reviews'>('overview');
@@ -75,6 +76,7 @@ function CourseDetailContent() {
       if (response.data.success) {
         setCourse(response.data.course);
         setIsEnrolled(response.data.isEnrolled || false);
+        setEnrollmentStatus(response.data.enrollmentStatus || null);
       } else {
         setError('Không tìm thấy khóa học');
       }
@@ -288,6 +290,7 @@ function CourseDetailContent() {
                     price={course.price}
                     discountPrice={course.discountPrice}
                     isEnrolled={isEnrolled}
+                    enrollmentStatus={enrollmentStatus}
                     onEnrollmentChange={handleEnrollmentChange}
                   />
                 </div>

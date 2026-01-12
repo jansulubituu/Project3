@@ -35,24 +35,41 @@ export const getExamOverview = async (req: AuthRequest, res: Response) => {
       });
     }
 
-    // Check if exam is published
-    if (exam.status !== 'published') {
+    const course = exam.course as any;
+
+    // Check authorization for instructors
+    if (req.user) {
+      const isInstructor = req.user.role === 'instructor';
+      const isInstructorOwner = course?.instructor?.toString() === req.user.id;
+      const isAdmin = req.user.role === 'admin';
+
+      // Instructors can only view exams of courses they created
+      if (isInstructor && !isInstructorOwner && !isAdmin) {
+        return res.status(403).json({
+          success: false,
+          message: 'Not authorized to view this exam. You can only view exams of courses you created.',
+        });
+      }
+    }
+
+    // Students can only see published exams
+    if (req.user && req.user.role === 'student' && exam.status !== 'published') {
       return res.status(403).json({
         success: false,
         message: 'Exam is not available',
       });
     }
 
-    // Check enrollment for non-free courses
-    const course = exam.course as any;
-    if (course.status === 'published') {
+    // Check enrollment for non-free courses (only for students)
+    // Include both active and completed enrollments
+    if (req.user && req.user.role === 'student' && course.status === 'published') {
       const enrollment = await Enrollment.findOne({
         student: req.user.id,
         course: course._id,
-        status: 'active',
+        status: { $in: ['active', 'completed'] },
       });
 
-      if (!enrollment && req.user.role !== 'admin') {
+      if (!enrollment) {
         return res.status(403).json({
           success: false,
           message: 'You must be enrolled in this course to take the exam',
@@ -145,24 +162,39 @@ export const startExamAttempt = async (req: AuthRequest, res: Response) => {
       });
     }
 
-    // Check if exam is published
-    if (exam.status !== 'published') {
+    const course = exam.course as any;
+
+    // Check authorization for instructors
+    const isInstructor = req.user.role === 'instructor';
+    const isAdmin = req.user.role === 'admin';
+    const isStudent = req.user.role === 'student';
+
+    // Instructors cannot take exams (only students can take exams)
+    if (isInstructor && !isAdmin) {
+      return res.status(403).json({
+        success: false,
+        message: 'Instructors cannot take exams. Only students can take exams.',
+      });
+    }
+
+    // Students can only take published exams
+    if (isStudent && exam.status !== 'published') {
       return res.status(403).json({
         success: false,
         message: 'Exam is not available',
       });
     }
 
-    // Check enrollment
-    const course = exam.course as any;
-    if (course.status === 'published') {
+    // Check enrollment (only for students)
+    // Include both active and completed enrollments
+    if (isStudent && course.status === 'published') {
       const enrollment = await Enrollment.findOne({
         student: req.user.id,
         course: course._id,
-        status: 'active',
+        status: { $in: ['active', 'completed'] },
       });
 
-      if (!enrollment && req.user.role !== 'admin') {
+      if (!enrollment) {
         return res.status(403).json({
           success: false,
           message: 'You must be enrolled in this course to take the exam',
@@ -330,18 +362,38 @@ export const getExamAttemptById = async (req: AuthRequest, res: Response) => {
     }
 
     // Check authorization
-    if (attempt.student.toString() !== req.user.id && req.user.role !== 'admin') {
-      const exam = attempt.exam as any;
-      const course = exam.course as any;
-      if (req.user.role !== 'admin' && course.instructor.toString() !== req.user.id) {
-        return res.status(403).json({
-          success: false,
-          message: 'Not authorized to view this attempt',
-        });
-      }
+    const exam = attempt.exam as any;
+    const course = exam.course as any;
+    const isStudent = req.user.role === 'student';
+    const isInstructor = req.user.role === 'instructor';
+    const isInstructorOwner = course?.instructor?.toString() === req.user.id;
+    const isAdmin = req.user.role === 'admin';
+    const isAttemptOwner = attempt.student.toString() === req.user.id;
+
+    // Students can only view their own attempts
+    if (isStudent && !isAttemptOwner) {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized to view this attempt',
+      });
     }
 
-    const exam = attempt.exam as any;
+    // Instructors can only view attempts of exams in courses they created
+    if (isInstructor && !isInstructorOwner && !isAdmin) {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized to view this attempt. You can only view attempts of exams in courses you created.',
+      });
+    }
+
+    // Only attempt owner, course instructor, or admin can view
+    if (!isAttemptOwner && !isInstructorOwner && !isAdmin) {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized to view this attempt',
+      });
+    }
+
     const now = new Date();
 
     // Determine if correct answers should be shown
@@ -813,7 +865,7 @@ export const listMyAttemptsForExam = async (req: AuthRequest, res: Response) => 
 
     const { examId } = req.params;
 
-    const exam = await Exam.findById(examId);
+    const exam = await Exam.findById(examId).populate('course');
     if (!exam) {
       return res.status(404).json({
         success: false,
@@ -821,10 +873,35 @@ export const listMyAttemptsForExam = async (req: AuthRequest, res: Response) => 
       });
     }
 
-    const attempts = await ExamAttempt.find({
-      exam: examId,
-      student: req.user.id,
-    })
+    const course = exam.course as any;
+    const isStudent = req.user.role === 'student';
+    const isInstructor = req.user.role === 'instructor';
+    const isInstructorOwner = course?.instructor?.toString() === req.user.id;
+    const isAdmin = req.user.role === 'admin';
+
+    // Students can only view attempts for published exams
+    if (isStudent && exam.status !== 'published') {
+      return res.status(403).json({
+        success: false,
+        message: 'Exam is not available',
+      });
+    }
+
+    // Instructors can only view attempts of exams in courses they created
+    if (isInstructor && !isInstructorOwner && !isAdmin) {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized to view attempts of this exam. You can only view attempts of exams in courses you created.',
+      });
+    }
+
+    // Students can only view their own attempts
+    const query: any = { exam: examId };
+    if (isStudent) {
+      query.student = req.user.id;
+    }
+
+    const attempts = await ExamAttempt.find(query)
       .sort({ createdAt: -1 })
       .populate({
         path: 'exam',
