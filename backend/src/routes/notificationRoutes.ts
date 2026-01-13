@@ -13,6 +13,7 @@ import {
   updateNotification,
   deleteNotificationAdmin,
   deleteNotificationInstructor,
+  getNotificationGroups,
 } from '../controllers/notificationController';
 import { protect } from '../middleware/auth';
 import { adminOnly, instructorOrAdmin } from '../middleware/authorize';
@@ -51,6 +52,8 @@ router.delete('/:id/admin', adminOnly, deleteNotificationAdmin);
 // Instructor/Admin routes
 // GET /api/notifications/instructor - Get notifications for instructor's courses
 router.get('/instructor', instructorOrAdmin, getInstructorNotifications);
+// GET /api/notifications/groups - Get available user groups
+router.get('/groups', instructorOrAdmin, getNotificationGroups);
 // POST /api/notifications - Create notification for specific users
 router.post('/', instructorOrAdmin, createNotificationForUsers);
 // PUT /api/notifications/:id - Update notification

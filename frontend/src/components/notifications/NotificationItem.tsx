@@ -1,10 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, memo } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 import { getNotificationIcon, formatNotificationTime, NotificationType } from '@/lib/notificationUtils';
 import { X } from 'lucide-react';
+import toast from 'react-hot-toast';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
 
 interface Notification {
   _id: string;
@@ -21,10 +23,11 @@ interface NotificationItemProps {
   onUpdate: () => void;
 }
 
-export default function NotificationItem({ notification, onUpdate }: NotificationItemProps) {
+function NotificationItem({ notification, onUpdate }: NotificationItemProps) {
   const router = useRouter();
   const [markingRead, setMarkingRead] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [showConfirmDialog, setShowConfirmDialog] = useState(false);
 
   const handleClick = async () => {
     // Mark as read if unread
@@ -46,20 +49,23 @@ export default function NotificationItem({ notification, onUpdate }: Notificatio
     }
   };
 
-  const handleDelete = async (e: React.MouseEvent) => {
+  const handleDeleteClick = (e: React.MouseEvent) => {
     e.stopPropagation(); // Prevent triggering onClick
+    setShowConfirmDialog(true);
+  };
 
-    if (!confirm('Bạn có chắc chắn muốn xóa thông báo này?')) return;
-
+  const handleDeleteConfirm = async () => {
     try {
       setDeleting(true);
       await api.delete(`/notifications/${notification._id}`);
+      toast.success('Đã xóa thông báo thành công');
       onUpdate();
     } catch (err) {
       console.error('Error deleting notification:', err);
-      alert('Không thể xóa thông báo. Vui lòng thử lại.');
+      toast.error('Không thể xóa thông báo. Vui lòng thử lại.');
     } finally {
       setDeleting(false);
+      setShowConfirmDialog(false);
     }
   };
 
@@ -96,7 +102,7 @@ export default function NotificationItem({ notification, onUpdate }: Notificatio
 
         {/* Delete button */}
         <button
-          onClick={handleDelete}
+          onClick={handleDeleteClick}
           disabled={deleting}
           className="opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 p-1 hover:bg-red-100 rounded text-gray-400 hover:text-red-600 disabled:opacity-50"
           aria-label="Xóa thông báo"
@@ -104,6 +110,20 @@ export default function NotificationItem({ notification, onUpdate }: Notificatio
           <X className="w-4 h-4" />
         </button>
       </div>
+
+      {/* Confirm Dialog */}
+      <ConfirmDialog
+        isOpen={showConfirmDialog}
+        title="Xác nhận xóa thông báo"
+        message="Thao tác này không thể hoàn tác."
+        confirmText="Xóa"
+        cancelText="Hủy"
+        variant="danger"
+        onConfirm={handleDeleteConfirm}
+        onCancel={() => setShowConfirmDialog(false)}
+      />
     </div>
   );
 }
+
+export default memo(NotificationItem);

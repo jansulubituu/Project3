@@ -1,13 +1,17 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import Header from '@/components/layout/Header';
 import Footer from '@/components/layout/Footer';
+import ErrorState from '@/components/notifications/ErrorState';
+import EmptyState from '@/components/ui/EmptyState';
 import { api } from '@/lib/api';
 import { NotificationType, getNotificationIcon } from '@/lib/notificationUtils';
 import { ChevronLeft, Plus, Edit2, Trash2, Filter, X, Save } from 'lucide-react';
+import toast from 'react-hot-toast';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
 
 interface Notification {
   _id: string;
@@ -68,6 +72,18 @@ const statusOptions = [
 function InstructorNotificationsManageContent() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [confirmDialog, setConfirmDialog] = useState<{
+    isOpen: boolean;
+    notificationId: string | null;
+  }>({
+    isOpen: false,
+    notificationId: null,
+  });
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [notificationToDelete, setNotificationToDelete] = useState<string | null>(null);
   const [pagination, setPagination] = useState<Pagination>({
     currentPage: 1,
     totalPages: 1,
@@ -82,14 +98,18 @@ function InstructorNotificationsManageContent() {
   });
   const [courses, setCourses] = useState<Course[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
+  const [admins, setAdmins] = useState<Student[]>([]);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingNotification, setEditingNotification] = useState<Notification | null>(null);
   const [selectedStudents, setSelectedStudents] = useState<Student[]>([]);
+  const [selectedAdmins, setSelectedAdmins] = useState<Student[]>([]);
+  const [recipientType, setRecipientType] = useState<'students' | 'admin'>('students');
   const [showTypeFilter, setShowTypeFilter] = useState(false);
   const [showStatusFilter, setShowStatusFilter] = useState(false);
   const [showCourseFilter, setShowCourseFilter] = useState(false);
   const [studentSearchTerm, setStudentSearchTerm] = useState('');
+  const [adminSearchTerm, setAdminSearchTerm] = useState('');
   const [selectedCourseForCreate, setSelectedCourseForCreate] = useState<string>('');
 
   // Form state
@@ -102,9 +122,13 @@ function InstructorNotificationsManageContent() {
   });
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
+  const [selectedNotificationIds, setSelectedNotificationIds] = useState<Set<string>>(new Set());
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [bulkMarkingRead, setBulkMarkingRead] = useState(false);
 
   const fetchNotifications = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
       const params: any = {
         page: pagination.currentPage,
@@ -130,15 +154,15 @@ function InstructorNotificationsManageContent() {
       const res = await api.get('/notifications/instructor', { params });
       if (res.data.success) {
         setNotifications(res.data.notifications || []);
-        setPagination(res.data.pagination || pagination);
+        setPagination((prev) => res.data.pagination || prev);
       }
     } catch (err: any) {
       console.error('Failed to fetch notifications:', err);
-      alert(err.response?.data?.message || 'Không thể tải thông báo. Vui lòng thử lại.');
+      setError(err.response?.data?.message || 'Không thể tải thông báo. Vui lòng thử lại.');
     } finally {
       setLoading(false);
     }
-  }, [pagination.currentPage, filters, pagination.itemsPerPage]);
+  }, [pagination.currentPage, pagination.itemsPerPage, filters.type, filters.isRead, filters.courseId, filters.studentId]);
 
   const fetchCourses = useCallback(async () => {
     try {
@@ -148,6 +172,22 @@ function InstructorNotificationsManageContent() {
       }
     } catch (err) {
       console.error('Failed to fetch courses:', err);
+    }
+  }, []);
+
+  const fetchAdmins = useCallback(async () => {
+    try {
+      const res = await api.get('/users', {
+        params: {
+          limit: 1000,
+          role: 'admin',
+        },
+      });
+      if (res.data.success) {
+        setAdmins(res.data.users || []);
+      }
+    } catch (err) {
+      console.error('Failed to fetch admins:', err);
     }
   }, []);
 
@@ -172,7 +212,8 @@ function InstructorNotificationsManageContent() {
   useEffect(() => {
     fetchNotifications();
     fetchCourses();
-  }, [fetchNotifications, fetchCourses]);
+    fetchAdmins();
+  }, [fetchNotifications, fetchCourses, fetchAdmins]);
 
   useEffect(() => {
     if (showCreateModal && selectedCourseForCreate) {
@@ -229,6 +270,8 @@ function InstructorNotificationsManageContent() {
       userIds: [],
     });
     setSelectedStudents([]);
+    setSelectedAdmins([]);
+    setRecipientType('students');
     setSelectedCourseForCreate('');
     setFormErrors({});
     setShowCreateModal(true);
@@ -252,13 +295,19 @@ function InstructorNotificationsManageContent() {
       return;
     }
 
+    if (deletingId) return; // Prevent multiple deletions
+
     try {
-      await api.delete(`/notifications/${notificationId}/instructor`);
+      setDeletingId(notificationId);
+      await api.delete(`/notifications/${notificationId}`);
       await fetchNotifications();
-      alert('Xóa thông báo thành công');
+      setError(null);
+      setSelectedNotificationIds(new Set()); // Clear selection after delete
     } catch (err: any) {
       console.error('Failed to delete notification:', err);
-      alert(err.response?.data?.message || 'Không thể xóa thông báo. Vui lòng thử lại.');
+      setError(err.response?.data?.message || 'Không thể xóa thông báo. Vui lòng thử lại.');
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -273,28 +322,65 @@ function InstructorNotificationsManageContent() {
     });
   };
 
+  const handleAdminToggle = (admin: Student) => {
+    setSelectedAdmins((prev) => {
+      const isSelected = prev.some((a) => a._id === admin._id);
+      if (isSelected) {
+        return prev.filter((a) => a._id !== admin._id);
+      } else {
+        return [...prev, admin];
+      }
+    });
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     // Validation
     const errors: Record<string, string> = {};
-    if (!formData.title.trim()) {
+    const trimmedTitle = formData.title.trim();
+    const trimmedMessage = formData.message.trim();
+    const trimmedLink = formData.link.trim();
+
+    if (!trimmedTitle) {
       errors.title = 'Tiêu đề không được để trống';
-    } else if (formData.title.length > 200) {
+    } else if (trimmedTitle.length > 200) {
       errors.title = 'Tiêu đề không được vượt quá 200 ký tự';
     }
 
-    if (!formData.message.trim()) {
+    if (!trimmedMessage) {
       errors.message = 'Nội dung không được để trống';
-    } else if (formData.message.length > 500) {
+    } else if (trimmedMessage.length > 500) {
       errors.message = 'Nội dung không được vượt quá 500 ký tự';
     }
 
+    if (trimmedLink) {
+      if (trimmedLink.length > 500) {
+        errors.link = 'Link không được vượt quá 500 ký tự';
+      } else {
+        // Validate URL format
+        try {
+          new URL(trimmedLink);
+        } catch {
+          // Also allow relative paths starting with /
+          if (!trimmedLink.startsWith('/')) {
+            errors.link = 'Link phải là URL hợp lệ hoặc đường dẫn tương đối (bắt đầu với /)';
+          }
+        }
+      }
+    }
+
     if (showCreateModal) {
-      if (!selectedCourseForCreate) {
-        errors.courseId = 'Vui lòng chọn khóa học';
-      } else if (selectedStudents.length === 0) {
-        errors.userIds = 'Vui lòng chọn ít nhất một học viên';
+      if (recipientType === 'students') {
+        if (!selectedCourseForCreate) {
+          errors.courseId = 'Vui lòng chọn khóa học';
+        } else if (selectedStudents.length === 0) {
+          errors.userIds = 'Vui lòng chọn ít nhất một học viên';
+        }
+      } else if (recipientType === 'admin') {
+        if (selectedAdmins.length === 0) {
+          errors.userIds = 'Vui lòng chọn ít nhất một admin';
+        }
       }
     }
 
@@ -305,30 +391,61 @@ function InstructorNotificationsManageContent() {
 
     try {
       setSubmitting(true);
-      const userIds = selectedStudents.map((s) => s._id);
+      setError(null);
+      setSuccess(null);
+      const userIds = recipientType === 'admin' 
+        ? selectedAdmins.map((a) => a._id)
+        : selectedStudents.map((s) => s._id);
 
       if (showCreateModal) {
-        await api.post('/notifications', {
+        const response = await api.post('/notifications', {
           userIds,
           type: formData.type,
-          title: formData.title.trim(),
-          message: formData.message.trim(),
-          link: formData.link.trim() || undefined,
+          title: trimmedTitle,
+          message: trimmedMessage,
+          link: trimmedLink || undefined,
+          recipientType: recipientType,
         });
-        alert('Tạo thông báo thành công');
+
+        toast.success(
+          response.data?.notificationCount
+            ? `Thông báo đã được gửi thành công đến ${response.data.notificationCount} người dùng!`
+            : 'Thông báo đã được tạo thành công!'
+        );
+
+        // Reset form
+        setFormData({
+          type: 'system' as NotificationType,
+          title: '',
+          message: '',
+          link: '',
+        });
+        setSelectedStudents([]);
+        setSelectedAdmins([]);
+        setRecipientType('students');
+        setSelectedCourseForCreate('');
+        setStudentSearchTerm('');
+        setAdminSearchTerm('');
+        setFormErrors({});
       } else if (showEditModal && editingNotification) {
         await api.put(`/notifications/${editingNotification._id}`, {
-          title: formData.title.trim(),
-          message: formData.message.trim(),
-          link: formData.link.trim() || undefined,
+          title: trimmedTitle,
+          message: trimmedMessage,
+          link: trimmedLink || undefined,
         });
-        alert('Cập nhật thông báo thành công');
+
+        const successMessage = 'Thông báo đã được cập nhật thành công!';
+        setSuccess(successMessage);
+        toast.success(successMessage);
       }
 
       setShowCreateModal(false);
       setShowEditModal(false);
       setEditingNotification(null);
       await fetchNotifications();
+
+      // Clear success message after 3 seconds
+      setTimeout(() => setSuccess(null), 3000);
     } catch (err: any) {
       console.error('Failed to submit:', err);
       
@@ -344,18 +461,33 @@ function InstructorNotificationsManageContent() {
       if (Object.keys(backendErrors).length > 0) {
         setFormErrors(backendErrors);
       } else {
-        alert(err.response?.data?.message || 'Có lỗi xảy ra. Vui lòng thử lại.');
+        const errorMsg = err.response?.data?.message || 'Có lỗi xảy ra. Vui lòng thử lại.';
+        setError(errorMsg);
+        toast.error(errorMsg);
       }
     } finally {
       setSubmitting(false);
     }
   };
 
-  const filteredStudents = students.filter(
-    (student) =>
-      student.fullName.toLowerCase().includes(studentSearchTerm.toLowerCase()) ||
-      student.email.toLowerCase().includes(studentSearchTerm.toLowerCase())
-  );
+  // Memoize filtered students and admins
+  const filteredStudents = useMemo(() => {
+    if (!studentSearchTerm) return students.slice(0, 10);
+    return students.filter(
+      (student) =>
+        student.fullName.toLowerCase().includes(studentSearchTerm.toLowerCase()) ||
+        student.email.toLowerCase().includes(studentSearchTerm.toLowerCase())
+    ).slice(0, 10);
+  }, [students, studentSearchTerm]);
+
+  const filteredAdmins = useMemo(() => {
+    if (!adminSearchTerm) return admins.slice(0, 10);
+    return admins.filter(
+      (admin) =>
+        admin.fullName.toLowerCase().includes(adminSearchTerm.toLowerCase()) ||
+        admin.email.toLowerCase().includes(adminSearchTerm.toLowerCase())
+    ).slice(0, 10);
+  }, [admins, adminSearchTerm]);
 
   const selectedTypeLabel = typeOptions.find((opt) => opt.value === filters.type)?.label || 'Tất cả';
   const selectedStatusLabel = statusOptions.find((opt) => opt.value === filters.isRead)?.label || 'Tất cả';
@@ -378,13 +510,53 @@ function InstructorNotificationsManageContent() {
               </Link>
               <h1 className="text-2xl font-bold text-gray-900">Quản Lý Thông Báo</h1>
             </div>
-            <button
-              onClick={handleCreate}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
-            >
-              <Plus className="w-4 h-4" />
-              Tạo Thông Báo
-            </button>
+            <div className="flex items-center gap-2">
+              {selectedNotificationIds.size > 0 && (
+                <>
+                  <button
+                    onClick={handleBulkMarkAsRead}
+                    disabled={bulkMarkingRead}
+                    className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {bulkMarkingRead ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        Đang xử lý...
+                      </>
+                    ) : (
+                      <>
+                        <Save className="w-4 h-4" />
+                        Đánh dấu đã đọc ({selectedNotificationIds.size})
+                      </>
+                    )}
+                  </button>
+                  <button
+                    onClick={handleBulkDelete}
+                    disabled={bulkDeleting}
+                    className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {bulkDeleting ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        Đang xóa...
+                      </>
+                    ) : (
+                      <>
+                        <Trash2 className="w-4 h-4" />
+                        Xóa ({selectedNotificationIds.size})
+                      </>
+                    )}
+                  </button>
+                </>
+              )}
+              <button
+                onClick={handleCreate}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
+              >
+                <Plus className="w-4 h-4" />
+                Tạo Thông Báo
+              </button>
+            </div>
           </div>
 
           {/* Filters */}
@@ -495,6 +667,11 @@ function InstructorNotificationsManageContent() {
           </div>
         </div>
 
+        {/* Error Message */}
+        {error && (
+          <ErrorState message={error} onRetry={fetchNotifications} className="mb-4" />
+        )}
+
         {/* Notifications List */}
         {loading ? (
           <div className="space-y-4">
@@ -513,19 +690,62 @@ function InstructorNotificationsManageContent() {
           </div>
         ) : notifications.length === 0 ? (
           <div className="bg-white rounded-lg border border-gray-200 p-12 text-center">
-            <p className="text-gray-500">Không có thông báo nào</p>
+            <div className="max-w-md mx-auto">
+              <div className="text-6xl mb-4">📭</div>
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">Chưa có thông báo nào</h3>
+              <p className="text-gray-500 mb-4">
+                {filters.type !== 'all' || filters.isRead !== 'all' || filters.courseId !== 'all' || filters.studentId !== 'all'
+                  ? 'Không tìm thấy thông báo phù hợp với bộ lọc của bạn.'
+                  : 'Bạn chưa có thông báo nào từ học viên. Thông báo sẽ xuất hiện khi học viên tương tác với khóa học của bạn.'}
+              </p>
+              {filters.type === 'all' && filters.isRead === 'all' && filters.courseId === 'all' && filters.studentId === 'all' && (
+                <button
+                  onClick={handleCreate}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors inline-flex items-center gap-2"
+                >
+                  <Plus className="w-4 h-4" />
+                  Tạo thông báo đầu tiên
+                </button>
+              )}
+            </div>
           </div>
         ) : (
           <>
+            {/* Bulk Actions Bar */}
+            {selectedNotificationIds.size > 0 && (
+              <div className="mb-4 bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-center justify-between">
+                <p className="text-sm text-blue-700 font-medium">
+                  Đã chọn {selectedNotificationIds.size} thông báo
+                </p>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleSelectAll}
+                    className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+                  >
+                    {selectedNotificationIds.size === notifications.length ? 'Bỏ chọn tất cả' : 'Chọn tất cả'}
+                  </button>
+                </div>
+              </div>
+            )}
+
             <div className="bg-white rounded-lg border border-gray-200 divide-y divide-gray-200">
               {notifications.map((notification) => (
                 <div
                   key={notification._id}
                   className={`px-4 py-3 hover:bg-gray-50 transition-colors ${
                     !notification.isRead ? 'bg-blue-50' : ''
-                  }`}
+                  } ${selectedNotificationIds.has(notification._id) ? 'bg-blue-100' : ''}`}
                 >
                   <div className="flex items-start gap-3">
+                    <div className="flex-shrink-0 pt-1">
+                      <input
+                        type="checkbox"
+                        checked={selectedNotificationIds.has(notification._id)}
+                        onChange={() => handleToggleSelect(notification._id)}
+                        onClick={(e) => e.stopPropagation()}
+                        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                      />
+                    </div>
                     <div className="flex-shrink-0 text-lg">
                       {getNotificationIcon(notification.type)}
                     </div>
@@ -559,8 +779,9 @@ function InstructorNotificationsManageContent() {
                             <Edit2 className="w-4 h-4" />
                           </button>
                           <button
-                            onClick={() => handleDelete(notification._id)}
-                            className="p-2 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                            onClick={() => handleDeleteClick(notification._id)}
+                            disabled={deletingId === notification._id}
+                            className="p-2 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                             aria-label="Xóa"
                           >
                             <Trash2 className="w-4 h-4" />
@@ -654,8 +875,77 @@ function InstructorNotificationsManageContent() {
                     <>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Khóa học *
+                          Gửi cho *
                         </label>
+                        <div className="flex gap-4">
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="radio"
+                              name="recipientType"
+                              value="students"
+                              checked={recipientType === 'students'}
+                              onChange={(e) => {
+                                setRecipientType(e.target.value as 'students' | 'admin');
+                                setSelectedStudents([]);
+                                setSelectedAdmins([]);
+                                setSelectedCourseForCreate('');
+                                if (formErrors.courseId) {
+                                  setFormErrors((prev) => {
+                                    const newErrors = { ...prev };
+                                    delete newErrors.courseId;
+                                    return newErrors;
+                                  });
+                                }
+                                if (formErrors.userIds) {
+                                  setFormErrors((prev) => {
+                                    const newErrors = { ...prev };
+                                    delete newErrors.userIds;
+                                    return newErrors;
+                                  });
+                                }
+                              }}
+                              className="rounded"
+                            />
+                            <span className="text-sm">Học viên trong khóa học</span>
+                          </label>
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="radio"
+                              name="recipientType"
+                              value="admin"
+                              checked={recipientType === 'admin'}
+                              onChange={(e) => {
+                                setRecipientType(e.target.value as 'students' | 'admin');
+                                setSelectedStudents([]);
+                                setSelectedAdmins([]);
+                                setSelectedCourseForCreate('');
+                                if (formErrors.courseId) {
+                                  setFormErrors((prev) => {
+                                    const newErrors = { ...prev };
+                                    delete newErrors.courseId;
+                                    return newErrors;
+                                  });
+                                }
+                                if (formErrors.userIds) {
+                                  setFormErrors((prev) => {
+                                    const newErrors = { ...prev };
+                                    delete newErrors.userIds;
+                                    return newErrors;
+                                  });
+                                }
+                              }}
+                              className="rounded"
+                            />
+                            <span className="text-sm">Quản trị viên</span>
+                          </label>
+                        </div>
+                      </div>
+
+                      {recipientType === 'students' && (
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Khóa học *
+                          </label>
                         <select
                           value={selectedCourseForCreate}
                           onChange={(e) => {
@@ -683,6 +973,57 @@ function InstructorNotificationsManageContent() {
                           <p className="text-sm text-red-600 mt-1">{formErrors.courseId}</p>
                         )}
                       </div>
+                      )}
+
+                      {recipientType === 'admin' && (
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Quản trị viên <span className="text-red-500">*</span>
+                          </label>
+                          <p className="text-xs text-gray-500 mb-2">
+                            Tìm kiếm và chọn ít nhất một quản trị viên để gửi thông báo. Bạn có thể tìm theo tên hoặc email.
+                          </p>
+                          <div className="space-y-2">
+                            <input
+                              type="text"
+                              placeholder="Tìm kiếm quản trị viên theo tên hoặc email..."
+                              value={adminSearchTerm}
+                              onChange={(e) => setAdminSearchTerm(e.target.value)}
+                              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            />
+                            <div className="border border-gray-300 rounded-lg max-h-40 overflow-y-auto">
+                              {filteredAdmins.length === 0 ? (
+                                <p className="px-4 py-2 text-sm text-gray-500">Không tìm thấy quản trị viên nào</p>
+                              ) : (
+                                filteredAdmins.map((admin) => (
+                                  <label
+                                    key={admin._id}
+                                    className="flex items-center gap-2 px-4 py-2 hover:bg-gray-50 cursor-pointer"
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={selectedAdmins.some((a) => a._id === admin._id)}
+                                      onChange={() => handleAdminToggle(admin)}
+                                      className="rounded"
+                                    />
+                                    <span className="text-sm">
+                                      {admin.fullName} ({admin.email})
+                                    </span>
+                                  </label>
+                                ))
+                              )}
+                            </div>
+                            {selectedAdmins.length > 0 && (
+                              <p className="text-sm text-green-600">
+                                ✓ Đã chọn: {selectedAdmins.length} quản trị viên
+                              </p>
+                            )}
+                            {formErrors.userIds && (
+                              <p className="text-sm text-red-600">{formErrors.userIds}</p>
+                            )}
+                          </div>
+                        </div>
+                      )}
 
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -708,53 +1049,55 @@ function InstructorNotificationsManageContent() {
                         </p>
                       </div>
 
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Học viên <span className="text-red-500">*</span>
-                        </label>
-                        <p className="text-xs text-gray-500 mb-2">
-                          Tìm kiếm và chọn ít nhất một học viên để gửi thông báo. Bạn có thể tìm theo tên hoặc email.
-                        </p>
-                        <div className="space-y-2">
-                          <input
-                            type="text"
-                            placeholder="Tìm kiếm học viên theo tên hoặc email..."
-                            value={studentSearchTerm}
-                            onChange={(e) => setStudentSearchTerm(e.target.value)}
-                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                          />
-                          <div className="border border-gray-300 rounded-lg max-h-40 overflow-y-auto">
-                            {filteredStudents.length === 0 ? (
-                              <p className="px-4 py-2 text-sm text-gray-500">Không tìm thấy học viên nào</p>
-                            ) : (
-                              filteredStudents.slice(0, 10).map((student) => (
-                                <label
-                                  key={student._id}
-                                  className="flex items-center gap-2 px-4 py-2 hover:bg-gray-50 cursor-pointer"
-                                >
-                                  <input
-                                    type="checkbox"
-                                    checked={selectedStudents.some((s) => s._id === student._id)}
-                                    onChange={() => handleStudentToggle(student)}
-                                    className="rounded"
-                                  />
-                                  <span className="text-sm">
-                                    {student.fullName} ({student.email})
-                                  </span>
-                                </label>
-                              ))
+                      {recipientType === 'students' && (
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Học viên <span className="text-red-500">*</span>
+                          </label>
+                          <p className="text-xs text-gray-500 mb-2">
+                            Tìm kiếm và chọn ít nhất một học viên để gửi thông báo. Bạn có thể tìm theo tên hoặc email.
+                          </p>
+                          <div className="space-y-2">
+                            <input
+                              type="text"
+                              placeholder="Tìm kiếm học viên theo tên hoặc email..."
+                              value={studentSearchTerm}
+                              onChange={(e) => setStudentSearchTerm(e.target.value)}
+                              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            />
+                            <div className="border border-gray-300 rounded-lg max-h-40 overflow-y-auto">
+                              {filteredStudents.length === 0 ? (
+                                <p className="px-4 py-2 text-sm text-gray-500">Không tìm thấy học viên nào</p>
+                              ) : (
+                                filteredStudents.map((student) => (
+                                  <label
+                                    key={student._id}
+                                    className="flex items-center gap-2 px-4 py-2 hover:bg-gray-50 cursor-pointer"
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={selectedStudents.some((s) => s._id === student._id)}
+                                      onChange={() => handleStudentToggle(student)}
+                                      className="rounded"
+                                    />
+                                    <span className="text-sm">
+                                      {student.fullName} ({student.email})
+                                    </span>
+                                  </label>
+                                ))
+                              )}
+                            </div>
+                            {selectedStudents.length > 0 && (
+                              <p className="text-sm text-green-600">
+                                ✓ Đã chọn: {selectedStudents.length} học viên
+                              </p>
+                            )}
+                            {formErrors.userIds && (
+                              <p className="text-sm text-red-600">{formErrors.userIds}</p>
                             )}
                           </div>
-                          {selectedStudents.length > 0 && (
-                            <p className="text-sm text-green-600">
-                              ✓ Đã chọn: {selectedStudents.length} học viên
-                            </p>
-                          )}
-                          {formErrors.userIds && (
-                            <p className="text-sm text-red-600">{formErrors.userIds}</p>
-                          )}
                         </div>
-                      </div>
+                      )}
                     </>
                   )}
 
@@ -857,6 +1200,20 @@ function InstructorNotificationsManageContent() {
               </div>
             </div>
           </div>
+        )}
+
+        {/* Delete Confirmation Dialog */}
+        {showDeleteConfirm && notificationToDelete && (
+          <ConfirmDialog
+            isOpen={showDeleteConfirm}
+            title="Xác nhận xóa"
+            message="Bạn có chắc chắn muốn xóa thông báo này?"
+            confirmText="Xóa"
+            cancelText="Hủy"
+            onConfirm={handleDeleteConfirm}
+            onCancel={handleDeleteCancel}
+            variant="danger"
+          />
         )}
       </main>
       <Footer />

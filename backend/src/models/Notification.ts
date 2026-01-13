@@ -86,6 +86,8 @@ const notificationSchema = new Schema<INotification>(
 notificationSchema.index({ user: 1 });
 notificationSchema.index({ user: 1, isRead: 1 });
 notificationSchema.index({ user: 1, createdAt: -1 });
+notificationSchema.index({ type: 1, createdAt: -1 });
+notificationSchema.index({ 'data.createdBy': 1, createdAt: -1 }); // For admin notifications
 notificationSchema.index({ type: 1 });
 
 // Pre-save hook to set readAt

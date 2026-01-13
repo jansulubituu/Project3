@@ -6,6 +6,7 @@ import Dropdown from '@/components/ui/Dropdown';
 import { api } from '@/lib/api';
 import NotificationItem from '@/components/notifications/NotificationItem';
 import { NotificationType } from '@/lib/notificationUtils';
+import toast from 'react-hot-toast';
 
 interface Notification {
   _id: string;
@@ -82,9 +83,10 @@ export default function NotificationBell({ className = '' }: NotificationBellPro
         prev.map((notif) => ({ ...notif, isRead: true }))
       );
       setUnreadCount(0);
+      toast.success('Đã đánh dấu tất cả thông báo là đã đọc');
     } catch (error) {
       console.error('Failed to mark all as read:', error);
-      alert('Không thể đánh dấu tất cả đã đọc. Vui lòng thử lại.');
+      toast.error('Không thể đánh dấu tất cả đã đọc. Vui lòng thử lại.');
     } finally {
       setMarkingAllRead(false);
     }

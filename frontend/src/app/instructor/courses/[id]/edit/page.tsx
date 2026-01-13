@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import Header from '@/components/layout/Header';
 import Footer from '@/components/layout/Footer';
+import { useAuth } from '@/contexts/AuthContext';
 import { api } from '@/lib/api';
 
 type CourseStatus = 'draft' | 'published' | 'archived';
@@ -32,6 +33,7 @@ interface CategoryOption {
 function EditCourseContent() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
+  const { user } = useAuth();
   const courseId = params?.id;
 
   const [form, setForm] = useState<CourseFormData | null>(null);
@@ -62,6 +64,20 @@ function EditCourseContent() {
 
         if (courseRes.data?.success) {
           const c = courseRes.data.course;
+          
+          // Check ownership: instructor can only edit their own courses, admin can edit all
+          if (user) {
+            const isAdmin = user.role === 'admin';
+            const instructorId = typeof c.instructor === 'object' ? c.instructor?._id : c.instructor;
+            const isOwner = instructorId === user.id;
+            
+            if (!isAdmin && !isOwner) {
+              setError('Bạn không có quyền chỉnh sửa khóa học này. Chỉ giảng viên phụ trách hoặc admin mới có quyền chỉnh sửa.');
+              setLoading(false);
+              return;
+            }
+          }
+          
           setForm({
             title: c.title,
             shortDescription: c.shortDescription || '',
@@ -78,16 +94,21 @@ function EditCourseContent() {
         } else {
           setError('Không tìm thấy khóa học.');
         }
-      } catch (err) {
+      } catch (err: any) {
         console.error('Failed to load course:', err);
-        setError('Không thể tải dữ liệu khóa học.');
+        // Check if it's a 403 error (unauthorized)
+        if (err?.response?.status === 403) {
+          setError('Bạn không có quyền chỉnh sửa khóa học này. Chỉ giảng viên phụ trách hoặc admin mới có quyền chỉnh sửa.');
+        } else {
+          setError('Không thể tải dữ liệu khóa học.');
+        }
       } finally {
         setLoading(false);
       }
     };
 
     fetchData();
-  }, [courseId]);
+  }, [courseId, user]);
 
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>

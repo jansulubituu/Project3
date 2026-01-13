@@ -371,7 +371,22 @@ export const getCourseById = async (req: Request, res: Response) => {
     }
 
     // Check if user can view (published or owner/admin)
-    if (course.status !== 'published' && (!req.user || (req.user.id !== course.instructor.toString() && req.user.role !== 'admin'))) {
+    // Allow access if:
+    // 1. Course is published, OR
+    // 2. User is the instructor (owner) of the course, OR
+    // 3. User is admin
+    const isPublished = course.status === 'published';
+    // Handle both ObjectId and populated instructor
+    let instructorId: string;
+    if (typeof course.instructor === 'object' && course.instructor !== null && '_id' in course.instructor) {
+      instructorId = (course.instructor as any)._id.toString();
+    } else {
+      instructorId = (course.instructor as mongoose.Types.ObjectId).toString();
+    }
+    const isOwner = req.user && instructorId === req.user.id;
+    const isAdminUser = req.user && req.user.role === 'admin';
+    
+    if (!isPublished && !isOwner && !isAdminUser) {
       return res.status(403).json({
         success: false,
         message: 'Course is not published',
@@ -394,8 +409,7 @@ export const getCourseById = async (req: Request, res: Response) => {
 
     // 🎯 For public view, totalLessons = publishedLessonCount (all users see published only)
     // For instructors/admins, they can see all lessons via other endpoints
-    const isInstructor = req.user && course.instructor.toString() === req.user.id;
-    const isAdmin = req.user && req.user.role === 'admin';
+    const isInstructor = req.user && instructorId === req.user.id;
     
     // 🎯 Calculate enrollmentCount dynamically from actual enrollments
     const actualEnrollmentCount = await Enrollment.countDocuments({
@@ -404,11 +418,11 @@ export const getCourseById = async (req: Request, res: Response) => {
     });
     
     const courseObj = course.toObject();
-    if (!isInstructor && !isAdmin) {
+    if (!isInstructor && !isAdminUser) {
       // Public view: only show published lessons
       courseObj.totalLessons = courseObj.publishedLessonCount ?? 0;
     }
-    // For instructors/admins, keep totalLessons as is (they can see all)
+    // For instructors/admins, keep totalLessons as is (they can see all lessons)
     
     // ✅ Use dynamically calculated enrollmentCount
     courseObj.enrollmentCount = actualEnrollmentCount;
