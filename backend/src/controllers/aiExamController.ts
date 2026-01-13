@@ -24,9 +24,26 @@ export const createGenerationJob = async (req: AuthRequest, res: Response) => {
       inputType,
       sources,
       prompt,
-      targetTemplate,
+      targetTemplate: rawTargetTemplate,
       targetExam,
     } = req.body;
+
+    // Normalize targetTemplate - handle empty strings, null, undefined
+    const targetTemplate = rawTargetTemplate && typeof rawTargetTemplate === 'string' && rawTargetTemplate.trim() 
+      ? rawTargetTemplate.trim() 
+      : null;
+
+    console.log('[AI Exam Generate] Request received:', {
+      course,
+      section,
+      inputType,
+      sourcesCount: sources?.length || 0,
+      promptLength: prompt?.length || 0,
+      rawTargetTemplate,
+      targetTemplate,
+      targetExam,
+      targetTemplateType: typeof rawTargetTemplate,
+    });
 
     // Verify course exists and user has permission
     const courseDoc = await Course.findById(course);
@@ -47,13 +64,65 @@ export const createGenerationJob = async (req: AuthRequest, res: Response) => {
 
     // Verify template if provided
     if (targetTemplate) {
+      console.log('[AI Exam Generate] Verifying template:', targetTemplate);
       const template = await ExamTemplate.findById(targetTemplate);
-      if (!template || template.course.toString() !== course) {
+      if (!template) {
+        console.warn('[AI Exam Generate] Template not found:', targetTemplate);
+        return res.status(400).json({
+          success: false,
+          message: 'Template not found',
+        });
+      }
+      if (template.course.toString() !== course) {
+        console.warn('[AI Exam Generate] Template course mismatch:', {
+          templateCourse: template.course.toString(),
+          requestCourse: course,
+        });
         return res.status(400).json({
           success: false,
           message: 'Invalid template for this course',
         });
       }
+      console.log('[AI Exam Generate] Template verified:', {
+        templateId: template._id,
+        title: template.title,
+        numberOfQuestions: template.numberOfQuestions,
+      });
+    } else {
+      console.log('[AI Exam Generate] No template provided');
+    }
+
+    // Validate inputType and sources consistency
+    const sourcesArray = sources || [];
+    if (inputType === 'course_material') {
+      // Must have at least one lesson source
+      const hasLessonSource = sourcesArray.some((s: any) => s.type === 'lesson' && s.lessonId);
+      if (!hasLessonSource) {
+        return res.status(400).json({
+          success: false,
+          message: 'course_material inputType requires at least one lesson source',
+        });
+      }
+    } else if (inputType === 'uploaded_file') {
+      // Must have at least one file/text source
+      const hasFileSource = sourcesArray.some((s: any) => 
+        (s.type === 'file' && s.fileContent) || 
+        (s.type === 'text' && s.textExcerpt)
+      );
+      if (!hasFileSource) {
+        return res.status(400).json({
+          success: false,
+          message: 'uploaded_file inputType requires at least one file or text source',
+        });
+      }
+    } else if (inputType === 'prompt_only') {
+      // prompt_only can have empty sources or optional sources
+      // No validation needed, sources can be empty
+    } else {
+      return res.status(400).json({
+        success: false,
+        message: `Invalid inputType: ${inputType}. Must be one of: uploaded_file, course_material, prompt_only`,
+      });
     }
 
     // Create job
@@ -61,7 +130,7 @@ export const createGenerationJob = async (req: AuthRequest, res: Response) => {
       course,
       section: section || null,
       inputType,
-      sources: sources || [],
+      sources: sourcesArray,
       prompt,
       targetTemplate: targetTemplate || null,
       targetExam: targetExam || null,
@@ -345,75 +414,89 @@ async function processAiGenerationJob(jobId: string) {
     job.status = 'processing';
     await job.save();
 
-    // Extract content from sources
+    // Extract content from sources based on inputType
     let sourceContent = '';
     const Lesson = mongoose.model('Lesson');
     
-    console.log(`📚 Extracting content from ${job.sources.length} source(s)...`);
+    console.log(`📚 Extracting content for inputType: ${job.inputType} from ${job.sources.length} source(s)...`);
     
-    for (const source of job.sources) {
-      if (source.type === 'lesson' && source.lessonId) {
-        const lesson = await Lesson.findById(source.lessonId);
-        if (lesson) {
-          const lessonData = lesson as any;
-          sourceContent += `\n\n=== Lesson: ${lessonData.title} ===\n`;
-          
-          // Add description
-          if (lessonData.description) {
-            sourceContent += `Description: ${lessonData.description}\n`;
+    // Handle prompt_only: no source extraction needed
+    if (job.inputType === 'prompt_only') {
+      console.log('✅ prompt_only mode: using prompt only, no source content extraction');
+      sourceContent = ''; // Explicitly empty for prompt_only
+    } else {
+      // Extract content from sources for course_material and uploaded_file
+      for (const source of job.sources) {
+        if (source.type === 'lesson' && source.lessonId) {
+          const lesson = await Lesson.findById(source.lessonId);
+          if (lesson) {
+            const lessonData = lesson as any;
+            sourceContent += `\n\n=== Lesson: ${lessonData.title} ===\n`;
+            
+            // Add description
+            if (lessonData.description) {
+              sourceContent += `Description: ${lessonData.description}\n`;
+            }
+            
+            // Add article content (for article type lessons)
+            if (lessonData.articleContent) {
+              sourceContent += `\nContent:\n${lessonData.articleContent}\n`;
+            }
+            
+            // Add video transcript if available
+            if (lessonData.videoTranscript) {
+              sourceContent += `\nVideo Transcript:\n${lessonData.videoTranscript}\n`;
+            }
+            
+            // Add quiz questions content if available
+            if (lessonData.quizQuestions && lessonData.quizQuestions.length > 0) {
+              sourceContent += `\nQuiz Questions:\n`;
+              lessonData.quizQuestions.forEach((q: any, idx: number) => {
+                sourceContent += `${idx + 1}. ${q.question}\n`;
+                if (q.options && q.options.length > 0) {
+                  sourceContent += `   Options: ${q.options.join(', ')}\n`;
+                }
+                sourceContent += `   Correct Answer: ${q.correctAnswer}\n`;
+                if (q.explanation) {
+                  sourceContent += `   Explanation: ${q.explanation}\n`;
+                }
+              });
+            }
+            
+            console.log(`✅ Extracted content from lesson: ${lessonData.title}`);
+          } else {
+            console.warn(`⚠️ Lesson not found: ${source.lessonId}`);
           }
-          
-          // Add article content (for article type lessons)
-          if (lessonData.articleContent) {
-            sourceContent += `\nContent:\n${lessonData.articleContent}\n`;
-          }
-          
-          // Add video transcript if available
-          if (lessonData.videoTranscript) {
-            sourceContent += `\nVideo Transcript:\n${lessonData.videoTranscript}\n`;
-          }
-          
-          // Add quiz questions content if available
-          if (lessonData.quizQuestions && lessonData.quizQuestions.length > 0) {
-            sourceContent += `\nQuiz Questions:\n`;
-            lessonData.quizQuestions.forEach((q: any, idx: number) => {
-              sourceContent += `${idx + 1}. ${q.question}\n`;
-              if (q.options && q.options.length > 0) {
-                sourceContent += `   Options: ${q.options.join(', ')}\n`;
-              }
-              sourceContent += `   Correct Answer: ${q.correctAnswer}\n`;
-              if (q.explanation) {
-                sourceContent += `   Explanation: ${q.explanation}\n`;
-              }
-            });
-          }
-          
-          console.log(`✅ Extracted content from lesson: ${lessonData.title}`);
-        } else {
-          console.warn(`⚠️ Lesson not found: ${source.lessonId}`);
+        } else if (source.type === 'text' && source.textExcerpt) {
+          sourceContent += `\n\n=== Text Content ===\n${source.textExcerpt}\n`;
+          console.log(`✅ Extracted text content (${source.textExcerpt.length} chars)`);
+        } else if (source.type === 'file' && source.fileContent) {
+          sourceContent += `\n\n=== File Content ===\n${source.fileContent}\n`;
+          console.log(`✅ Extracted file content (${source.fileContent.length} chars)`);
+        } else if (source.type === 'url' && source.url) {
+          // In production, fetch and parse URL content
+          sourceContent += `\n\n=== URL Content ===\nURL: ${source.url}\n`;
+          console.log(`⚠️ URL content extraction not implemented: ${source.url}`);
         }
-      } else if (source.type === 'text' && source.textExcerpt) {
-        sourceContent += `\n\n=== Text Content ===\n${source.textExcerpt}\n`;
-        console.log(`✅ Extracted text content (${source.textExcerpt.length} chars)`);
-      } else if (source.type === 'file' && source.fileContent) {
-        sourceContent += `\n\n=== File Content ===\n${source.fileContent}\n`;
-        console.log(`✅ Extracted file content (${source.fileContent.length} chars)`);
-      } else if (source.type === 'url' && source.url) {
-        // In production, fetch and parse URL content
-        sourceContent += `\n\n=== URL Content ===\nURL: ${source.url}\n`;
-        console.log(`⚠️ URL content extraction not implemented: ${source.url}`);
       }
     }
     
     // Log extracted content summary
-    if (sourceContent.trim()) {
+    if (job.inputType === 'prompt_only') {
+      console.log('📝 prompt_only mode: no source content (using prompt only)');
+    } else if (sourceContent.trim()) {
       console.log(`📝 Total extracted content: ${sourceContent.length} characters`);
     } else {
-      console.warn('⚠️ No content extracted from sources!');
+      console.warn(`⚠️ No content extracted from sources for inputType: ${job.inputType}!`);
+      if (job.inputType === 'course_material') {
+        console.warn('⚠️ course_material requires lesson sources with content');
+      } else if (job.inputType === 'uploaded_file') {
+        console.warn('⚠️ uploaded_file requires file/text sources with content');
+      }
     }
 
     // Build prompt for AI
-    const fullPrompt = buildAiPrompt(job.prompt, sourceContent, job.targetTemplate);
+    const fullPrompt = await buildAiPrompt(job.prompt, sourceContent, job.targetTemplate);
     console.log(`📝 Built prompt (${fullPrompt.length} characters)`);
 
     // Call AI service
@@ -457,14 +540,17 @@ async function processAiGenerationJob(jobId: string) {
         .toLowerCase()
         .trim()
         .replace(/\s+/g, '-')
-        .replace(/[^\w\-]+/g, '')
-        .replace(/\-\-+/g, '-') + `-${Date.now()}`;
+        .replace(/[^\w-]+/g, '')
+        .replace(/--+/g, '-') + `-${Date.now()}`;
+
+      // Use template description if available, otherwise use default
+      const examDescription = template?.description || 'AI generated exam';
 
       exam = await Exam.create({
         course: job.course,
-        section: job.section,
+        section: job.section || template?.section || null,
         title: examTitle,
-        description: 'AI generated exam',
+        description: examDescription,
         slug,
         status: 'draft',
         questions: questionIds.map((id, index) => ({
@@ -485,6 +571,12 @@ async function processAiGenerationJob(jobId: string) {
         latePenaltyPercent: 0,
         timeLimitType: 'per_attempt',
         createdBy: job.createdBy,
+      });
+      
+      console.log(`[AI Exam] Created exam from template: ${template ? template.title : 'none'}`, {
+        examId: exam._id,
+        questionCount: createdQuestions.length,
+        templateQuestionCount: template?.numberOfQuestions,
       });
     }
 
@@ -512,11 +604,11 @@ async function processAiGenerationJob(jobId: string) {
 /**
  * Build AI prompt from template and source content
  */
-function buildAiPrompt(
+async function buildAiPrompt(
   userPrompt: string,
   sourceContent: string,
   templateId: mongoose.Types.ObjectId | null | undefined
-): string {
+): Promise<string> {
   let prompt = `You are an expert educational content creator. Generate exam questions based on the provided material and instructions.
 
 OUTPUT FORMAT:
@@ -547,9 +639,71 @@ IMPORTANT RULES:
     prompt += `SOURCE MATERIAL:\n${sourceContent.substring(0, 100000)}\n\n`; // Safety limit
   }
 
+  // Load and integrate exam template if provided
   if (templateId) {
-    // Template details would be injected here if available
-    prompt += `[Template specific instructions would go here]\n`;
+    try {
+      const template = await ExamTemplate.findById(templateId).lean();
+      if (!template) {
+        console.warn(`[AI Prompt] Template not found: ${templateId}`);
+      } else {
+        console.log(`[AI Prompt] Loading template: ${template.title}`, {
+          numberOfQuestions: template.numberOfQuestions,
+          hasDifficultyDistribution: !!template.difficultyDistribution?.length,
+          hasTypeDistribution: !!template.typeDistribution?.length,
+          hasTopicDistribution: !!template.topicDistribution?.length,
+        });
+
+        prompt += `EXAM TEMPLATE REQUIREMENTS:\n`;
+        prompt += `- Number of questions: ${template.numberOfQuestions}\n`;
+        
+        // Difficulty distribution from database
+        if (template.difficultyDistribution && Array.isArray(template.difficultyDistribution) && template.difficultyDistribution.length > 0) {
+          prompt += `- Difficulty distribution:\n`;
+          template.difficultyDistribution.forEach((rule) => {
+            if (rule && rule.level && typeof rule.ratio === 'number') {
+              const percentage = (rule.ratio * 100).toFixed(0);
+              const count = Math.round(template.numberOfQuestions * rule.ratio);
+              prompt += `  * ${rule.level}: ${percentage}% (approximately ${count} questions)\n`;
+            }
+          });
+        }
+        
+        // Type distribution from database
+        if (template.typeDistribution && Array.isArray(template.typeDistribution) && template.typeDistribution.length > 0) {
+          prompt += `- Question type distribution:\n`;
+          template.typeDistribution.forEach((rule) => {
+            if (rule && rule.type && typeof rule.ratio === 'number') {
+              const percentage = (rule.ratio * 100).toFixed(0);
+              const count = Math.round(template.numberOfQuestions * rule.ratio);
+              prompt += `  * ${rule.type}: ${percentage}% (approximately ${count} questions)\n`;
+            }
+          });
+        }
+        
+        // Topic distribution from database
+        if (template.topicDistribution && Array.isArray(template.topicDistribution) && template.topicDistribution.length > 0) {
+          prompt += `- Topic distribution:\n`;
+          template.topicDistribution.forEach((rule) => {
+            if (rule && rule.tag && typeof rule.ratio === 'number') {
+              const percentage = (rule.ratio * 100).toFixed(0);
+              const count = Math.round(template.numberOfQuestions * rule.ratio);
+              prompt += `  * ${rule.tag}: ${percentage}% (approximately ${count} questions)\n`;
+            }
+          });
+        }
+        
+        if (template.description) {
+          prompt += `- Template description: ${template.description}\n`;
+        }
+        
+        prompt += `\nIMPORTANT: You must generate exactly ${template.numberOfQuestions} questions following the distribution requirements above. Make sure the total matches the specified number.\n\n`;
+        
+        console.log(`[AI Prompt] Template requirements added to prompt`);
+      }
+    } catch (templateError) {
+      console.error('[AI Prompt] Failed to load exam template:', templateError);
+      // Continue without template if loading fails
+    }
   }
 
   prompt += `USER INSTRUCTIONS:\n${userPrompt}\n\n`;
@@ -784,6 +938,7 @@ async function callAiService(
 
 /**
  * Parse AI response and create question objects
+ * Handles various response formats including markdown code blocks and incomplete JSON
  */
 function parseAiResponse(
   aiResponse: string,
@@ -792,8 +947,75 @@ function parseAiResponse(
   ownerId: mongoose.Types.ObjectId
 ): any[] {
   try {
-    const parsed = JSON.parse(aiResponse);
+    // Clean the response: remove markdown code blocks, whitespace, etc.
+    let cleanedResponse = aiResponse.trim();
+    
+    // Remove markdown code blocks (```json ... ``` or ``` ... ```)
+    // Handle both opening and closing tags
+    cleanedResponse = cleanedResponse.replace(/^```(?:json)?\s*\n?/i, '');
+    cleanedResponse = cleanedResponse.replace(/\n?```\s*$/i, '');
+    
+    // Remove any leading/trailing whitespace
+    cleanedResponse = cleanedResponse.trim();
+    
+    // Try to extract JSON object if there's extra text
+    // Look for first { and last } to extract JSON object
+    const firstBrace = cleanedResponse.indexOf('{');
+    const lastBrace = cleanedResponse.lastIndexOf('}');
+    
+    if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+      cleanedResponse = cleanedResponse.substring(firstBrace, lastBrace + 1);
+    }
+    
+    // Try to fix common JSON issues
+    // Remove trailing commas before closing brackets/braces
+    cleanedResponse = cleanedResponse.replace(/,(\s*[}\]])/g, '$1');
+    
+    // Try to close incomplete JSON structures
+    // Count open braces and brackets
+    const openBraces = (cleanedResponse.match(/{/g) || []).length;
+    const closeBraces = (cleanedResponse.match(/}/g) || []).length;
+    const openBrackets = (cleanedResponse.match(/\[/g) || []).length;
+    const closeBrackets = (cleanedResponse.match(/\]/g) || []).length;
+    
+    // Close missing brackets/braces
+    if (openBrackets > closeBrackets) {
+      cleanedResponse += ']'.repeat(openBrackets - closeBrackets);
+    }
+    if (openBraces > closeBraces) {
+      cleanedResponse += '}'.repeat(openBraces - closeBraces);
+    }
+    
+    // Parse JSON
+    let parsed: any;
+    try {
+      parsed = JSON.parse(cleanedResponse);
+    } catch (parseError) {
+      // If still fails, try to extract just the questions array
+      const questionsMatch = cleanedResponse.match(/"questions"\s*:\s*\[([\s\S]*?)\]/);
+      if (questionsMatch) {
+        try {
+          // Try to parse just the questions array
+          const questionsArrayStr = '[' + questionsMatch[1] + ']';
+          const questionsArray = JSON.parse(questionsArrayStr);
+          parsed = { questions: questionsArray };
+        } catch (arrayError) {
+          throw parseError; // Throw original error
+        }
+      } else {
+        throw parseError; // Throw original error
+      }
+    }
+    
     const questions = parsed.questions || [];
+
+    if (questions.length === 0) {
+      console.warn('[AI Parse] No questions found in parsed response');
+      console.warn('[AI Parse] Parsed object keys:', Object.keys(parsed));
+      return [];
+    }
+
+    console.log(`[AI Parse] Successfully parsed ${questions.length} questions`);
 
     return questions.map((q: any) => ({
       course: courseId,
@@ -819,7 +1041,9 @@ function parseAiResponse(
       isArchived: false,
     }));
   } catch (error) {
-    console.error('Error parsing AI response:', error);
+    console.error('[AI Parse] Error parsing AI response:', error);
+    console.error('[AI Parse] Response content (first 1000 chars):', aiResponse.substring(0, 1000));
+    console.error('[AI Parse] Response content (last 500 chars):', aiResponse.substring(Math.max(0, aiResponse.length - 500)));
     return [];
   }
 }

@@ -498,8 +498,8 @@ export const getCourseCurriculum = async (req: Request, res: Response) => {
         path: 'section',
         select: 'title order _id',
       })
-      .select('title description section status totalPoints passingScore durationMinutes openAt closeAt maxAttempts')
-      .sort({ createdAt: 1 });
+      .select('title description section status totalPoints passingScore durationMinutes openAt closeAt maxAttempts order allowLateSubmission latePenaltyPercent')
+      .sort({ order: 1, createdAt: 1 });
 
     exams.forEach((exam: any) => {
       // Handle both populated and non-populated section
@@ -531,6 +531,9 @@ export const getCourseCurriculum = async (req: Request, res: Response) => {
           openAt: examObj.openAt,
           closeAt: examObj.closeAt,
           maxAttempts: examObj.maxAttempts,
+          order: examObj.order || 0,
+          allowLateSubmission: examObj.allowLateSubmission || false,
+          latePenaltyPercent: examObj.latePenaltyPercent || 0,
         });
       }
     });
@@ -539,27 +542,39 @@ export const getCourseCurriculum = async (req: Request, res: Response) => {
     const lessonProgressMap: Record<string, { status: string; completedAt?: Date }> = {};
     const examProgressMap: Record<string, any> = {};
     if (isEnrolled && enrollment && req.user) {
+      // Query progress by both student+course AND enrollment to ensure we get all progress
       const progresses = await Progress.find({
-        student: req.user.id,
-        course: course._id,
+        $or: [
+          { student: req.user.id, course: course._id },
+          { enrollment: enrollment._id },
+        ],
       }).select('lesson exam type status completedAt examBestScore examLatestScore examPassed examAttempts');
+      
+      console.log(`[Curriculum] Found ${progresses.length} progress records for course ${course._id}, enrollment ${enrollment._id}`);
       
       progresses.forEach((p: any) => {
         if (p.type === 'lesson' && p.lesson) {
-          lessonProgressMap[p.lesson.toString()] = {
+          const lessonId = p.lesson.toString();
+          lessonProgressMap[lessonId] = {
             status: p.status,
             completedAt: p.completedAt,
           };
+          console.log(`[Curriculum] Lesson progress: ${lessonId} -> ${p.status}`);
         } else if (p.type === 'exam' && p.exam) {
-          examProgressMap[p.exam.toString()] = {
+          const examId = p.exam.toString();
+          examProgressMap[examId] = {
             status: p.status,
             bestScore: p.examBestScore,
             latestScore: p.examLatestScore,
             passed: p.examPassed,
             attempts: p.examAttempts,
           };
+          console.log(`[Curriculum] Exam progress: ${examId} -> status: ${p.status}, passed: ${p.examPassed}, bestScore: ${p.examBestScore}, attempts: ${p.examAttempts}`);
         }
       });
+      
+      console.log(`[Curriculum] Exam progress map keys:`, Object.keys(examProgressMap));
+      console.log(`[Curriculum] Exam IDs from exams:`, exams.map((e: any) => e._id.toString()));
     }
 
     // Get exam attempts for enrolled students to check remaining attempts
@@ -608,9 +623,30 @@ export const getCourseCurriculum = async (req: Request, res: Response) => {
           } : null,
         };
       }),
-      exams: (examsBySection[section._id.toString()] || []).map((exam: any) => {
-        const attemptInfo = examAttemptsMap[exam._id.toString()];
-        const progress = examProgressMap[exam._id.toString()];
+      exams: (examsBySection[section._id.toString()] || [])
+        .filter((exam: any) => {
+          // Double-check: students can only see published exams
+          if (!isInstructor && !isAdmin) {
+            return exam.status === 'published';
+          }
+          return true;
+        })
+        .sort((a: any, b: any) => {
+          // Sort by order (lessons and exams are at the same level)
+          const orderA = a.order || 0;
+          const orderB = b.order || 0;
+          return orderA - orderB;
+        })
+        .map((exam: any) => {
+        const examIdStr = exam._id.toString();
+        const attemptInfo = examAttemptsMap[examIdStr];
+        const progress = examProgressMap[examIdStr];
+        
+        // Debug logging
+        if (!progress && isEnrolled) {
+          console.log(`[Curriculum] No progress found for exam ${examIdStr} (${exam.title})`);
+        }
+        
         return {
           ...exam,
           remainingAttempts: attemptInfo?.remaining ?? null,

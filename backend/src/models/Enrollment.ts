@@ -161,8 +161,30 @@ enrollmentSchema.methods.updateProgress = async function () {
       isPublished: true,
     });
     
-    // Count completed exams
-    const completedExamsCount = (this.completedExams || []).length;
+    // Count completed exams - only count exams that are actually passed
+    // Check Progress records to verify exam was actually passed
+    const Progress = mongoose.model('Progress');
+    const completedExamsIds = this.completedExams || [];
+    let completedExamsCount = 0;
+    
+    // Verify each exam in completedExams was actually passed
+    for (const examId of completedExamsIds) {
+      const examProgress = await Progress.findOne({
+        student: this.student,
+        exam: examId,
+        type: 'exam',
+        examPassed: true, // Only count exams that were actually passed
+      });
+      
+      if (examProgress && examProgress.examPassed === true) {
+        completedExamsCount++;
+      } else {
+        // Remove exam from completedExams if it wasn't actually passed
+        this.completedExams = this.completedExams.filter(
+          (id: mongoose.Types.ObjectId) => id.toString() !== examId.toString()
+        );
+      }
+    }
     
     // Calculate progress: (completedLessons + completedExams) / (totalLessons + totalRequiredExams)
     const totalItems = publishedLessonCount + totalRequiredExams;

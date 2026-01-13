@@ -1,8 +1,15 @@
 'use client';
 
+import { useEffect } from 'react';
 import Link from 'next/link';
 
 export default function PaymentSuccessPage() {
+  useEffect(() => {
+    // Trigger event to refresh my-learning page when payment succeeds
+    window.dispatchEvent(new Event('enrollmentUpdated'));
+    localStorage.setItem('enrollment_updated', Date.now().toString());
+  }, []);
+
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-green-50 px-4">
       <div className="max-w-lg w-full bg-white shadow-md rounded-lg p-6 space-y-4 text-center">

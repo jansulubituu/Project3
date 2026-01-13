@@ -59,6 +59,11 @@ export default function EnrollmentButton({
           // Call callback to update parent component
           onEnrollmentChange();
           
+          // Trigger custom event to refresh my-learning page if open
+          window.dispatchEvent(new Event('enrollmentUpdated'));
+          // Also update localStorage to trigger refresh in other tabs
+          localStorage.setItem('enrollment_updated', Date.now().toString());
+          
           // Show success message briefly before redirecting
           setTimeout(() => {
             router.push(`/courses/${courseSlug}/learn`);

@@ -63,6 +63,7 @@ function AiExamGenerateContent() {
   const [sections, setSections] = useState<Section[]>([]);
   const [lessons, setLessons] = useState<Lesson[]>([]);
   const [templates, setTemplates] = useState<PromptTemplate[]>([]);
+  const [examTemplates, setExamTemplates] = useState<any[]>([]);
 
   // Form state
   const [inputType, setInputType] = useState<'prompt_only' | 'course_material' | 'uploaded_file'>('prompt_only');
@@ -73,6 +74,7 @@ function AiExamGenerateContent() {
   const [isProcessingFile, setIsProcessingFile] = useState(false);
   const [prompt, setPrompt] = useState('');
   const [selectedTemplate, setSelectedTemplate] = useState('');
+  const [selectedExamTemplate, setSelectedExamTemplate] = useState('');
 
   // Job state
   const [submitting, setSubmitting] = useState(false);
@@ -118,6 +120,18 @@ function AiExamGenerateContent() {
           }
         } catch (err) {
           console.error('Failed to load prompt templates:', err);
+          // Don't fail the whole page if templates fail
+        }
+
+        // Load exam templates
+        try {
+          const examTemplatesRes = await api.get(`/courses/${courseId}/exam-templates`);
+          if (examTemplatesRes.data?.success && Array.isArray(examTemplatesRes.data.templates)) {
+            setExamTemplates(examTemplatesRes.data.templates);
+            console.log('[AI Exam Generate] Loaded exam templates:', examTemplatesRes.data.templates.length);
+          }
+        } catch (err) {
+          console.error('Failed to load exam templates:', err);
           // Don't fail the whole page if templates fail
         }
       } catch (err: any) {
@@ -297,13 +311,31 @@ function AiExamGenerateContent() {
         });
       }
 
+      // Prepare targetTemplate - only include if it's a valid non-empty string
+      // Logic should match backend: check if it's a string, then trim and check if not empty
+      const targetTemplateValue = selectedExamTemplate && typeof selectedExamTemplate === 'string' && selectedExamTemplate.trim() 
+        ? selectedExamTemplate.trim() 
+        : null;
+
       const payload = {
         course: courseId,
         section: selectedSection || null,
         inputType,
         sources,
         prompt: prompt.trim(),
+        targetTemplate: targetTemplateValue,
       };
+
+      console.log('[AI Exam Generate] Submitting payload:', {
+        course: payload.course,
+        section: payload.section,
+        inputType: payload.inputType,
+        sourcesCount: payload.sources.length,
+        promptLength: payload.prompt.length,
+        targetTemplate: payload.targetTemplate,
+        selectedExamTemplateState: selectedExamTemplate,
+        hasSelectedTemplate: !!selectedExamTemplate && selectedExamTemplate.trim() !== '',
+      });
 
       const res = await api.post('/ai/exams/generate', payload);
       if (res.data?.success) {
@@ -580,11 +612,46 @@ function AiExamGenerateContent() {
                     </div>
                   )}
 
+                  {/* Exam Template */}
+                  {examTemplates.length > 0 && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Exam Template (Optional)
+                      </label>
+                      <select
+                        value={selectedExamTemplate}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          console.log('[AI Exam Generate] Template selected:', value);
+                          setSelectedExamTemplate(value);
+                        }}
+                        className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        disabled={submitting}
+                      >
+                        <option value="">-- Không sử dụng template --</option>
+                        {examTemplates.map((template) => (
+                          <option key={template._id} value={template._id}>
+                            {template.title} ({template.numberOfQuestions} câu hỏi)
+                          </option>
+                        ))}
+                      </select>
+                      {selectedExamTemplate && (
+                        <div className="mt-2 p-2 bg-blue-50 rounded text-xs text-gray-700">
+                          <p className="font-medium">Template: {examTemplates.find((t) => t._id === selectedExamTemplate)?.title}</p>
+                          <p>Số câu hỏi: {examTemplates.find((t) => t._id === selectedExamTemplate)?.numberOfQuestions}</p>
+                          {examTemplates.find((t) => t._id === selectedExamTemplate)?.description && (
+                            <p className="mt-1">{examTemplates.find((t) => t._id === selectedExamTemplate)?.description}</p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   {/* Prompt Template */}
                   {templates.length > 0 && (
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Template (Optional)
+                        Prompt Template (Optional)
                       </label>
                       <select
                         value={selectedTemplate}
@@ -592,7 +659,7 @@ function AiExamGenerateContent() {
                         className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                         disabled={submitting}
                       >
-                        <option value="">-- Chọn template hoặc tự nhập --</option>
+                        <option value="">-- Chọn prompt template hoặc tự nhập --</option>
                         {templates.map((template) => (
                           <option key={template._id} value={template._id}>
                             {template.name}

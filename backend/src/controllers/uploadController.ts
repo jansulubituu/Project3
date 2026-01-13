@@ -136,9 +136,7 @@ export const uploadFileHandler = async (req: Request, res: Response) => {
       error: error instanceof Error ? error.message : 'Unknown error',
     });
   }
-};
-
-// @desc    List all images (Admin only)
+};// @desc    List all images (Admin only)
 // @route   GET /api/uploads/images
 // @access  Private/Admin
 export const listImagesHandler = async (req: Request, res: Response) => {

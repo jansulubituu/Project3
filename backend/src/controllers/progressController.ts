@@ -552,22 +552,17 @@ export const checkUnlockStatus = async (req: AuthRequest, res: Response) => {
     }
 
     // Check exam prerequisites
-    // Logic: If there's an exam in a section with order <= targetSectionOrder that hasn't been passed,
-    // then the target content is locked
+    // Logic: Exam only blocks content AFTER it (based on section order and exam order)
+    // Exam does NOT block content BEFORE it
     for (const section of sections) {
-      // Only check sections that come before or at the target section
-      if (targetSectionOrder !== null && section.order > targetSectionOrder) {
-        break; // Skip sections after target
-      }
-
       // Find exams in this section
       const exams = await Exam.find({
         course: courseId,
         section: section._id,
         status: 'published',
-      });
+      }).sort({ order: 1, createdAt: 1 }); // Sort by order first, then createdAt as fallback
 
-      // Check if any exam is required and not passed
+      // Check if any exam blocks the target content
       for (const exam of exams) {
         const examProgress = await Progress.findOne({
           student: req.user.id,
@@ -575,36 +570,54 @@ export const checkUnlockStatus = async (req: AuthRequest, res: Response) => {
           type: 'exam',
         });
 
-        // If exam exists and not passed, it blocks content
+        // Only check exams that haven't been passed
         if (!examProgress || !examProgress.examPassed) {
-          // If target is in the same section or later, block it
-          if (targetSectionOrder === null || section.order <= targetSectionOrder) {
-            // Additional check: if target is a lesson in the same section,
-            // check if exam order is before lesson order
-            if (lessonId && targetSectionOrder === section.order && targetLessonOrder !== null) {
-              // For now, if exam is in same section, it blocks all lessons in that section
-              // (We could add exam.order field later for more granular control)
-              return res.json({
-                success: true,
-                unlocked: false,
-                reason: 'exam_required',
-                blockingExam: exam._id,
-                examTitle: exam.title,
-                examSection: section.title,
-                message: `You must pass "${exam.title}" in "${section.title}" to continue`,
-              });
-            } else if (!lessonId || targetSectionOrder !== section.order) {
-              // Exam is in a section before target, or target is a section
-              return res.json({
-                success: true,
-                unlocked: false,
-                reason: 'exam_required',
-                blockingExam: exam._id,
-                examTitle: exam.title,
-                examSection: section.title,
-                message: `You must pass "${exam.title}" in "${section.title}" to continue`,
-              });
+          // Use exam.order if available, otherwise use 999 as fallback
+          const examOrder = (exam as any).order !== undefined && (exam as any).order !== null 
+            ? (exam as any).order 
+            : 999; // Default to high number if no order (exam won't block earlier content)
+          
+          // Check if this exam blocks the target content
+          // Exam only blocks content AFTER it (based on section order and item order)
+          let blocksTarget = false;
+          
+          if (lessonId && targetSectionOrder !== null && targetLessonOrder !== null) {
+            // Target is a specific lesson
+            if (section.order < targetSectionOrder) {
+              // Exam is in a section before target section → blocks target
+              blocksTarget = true;
+            } else if (section.order === targetSectionOrder) {
+              // Exam is in same section as target lesson
+              // Only block if exam order < lesson order (exam comes before lesson)
+              // Lessons and exams are at the same level, sorted by order
+              if (examOrder < targetLessonOrder) {
+                blocksTarget = true;
+              }
             }
+            // If exam is in section after target, it doesn't block
+          } else if (sectionId && targetSectionOrder !== null) {
+            // Target is a section
+            // Exam blocks target section if exam's section order < target section order
+            if (section.order < targetSectionOrder) {
+              blocksTarget = true;
+            }
+            // If exam is in same or later section, it doesn't block
+          } else if (!lessonId && !sectionId) {
+            // No specific target, check if exam blocks general progress
+            // For now, don't block if no specific target
+            blocksTarget = false;
+          }
+          
+          if (blocksTarget) {
+            return res.json({
+              success: true,
+              unlocked: false,
+              reason: 'exam_required',
+              blockingExam: exam._id,
+              examTitle: exam.title,
+              examSection: section.title,
+              message: `You must pass "${exam.title}" in "${section.title}" to continue`,
+            });
           }
         }
       }

@@ -221,14 +221,18 @@ function ExamTakeContent() {
   };
 
   const updateAnswer = (questionId: string, answer: Partial<Answer>) => {
-    setAnswers((prev) => ({
-      ...prev,
-      [questionId]: {
-        ...prev[questionId],
-        ...answer,
-        question: questionId,
-      },
-    }));
+    // Use functional update to prevent race conditions
+    setAnswers((prev) => {
+      const currentAnswer = prev[questionId] || { question: questionId };
+      return {
+        ...prev,
+        [questionId]: {
+          ...currentAnswer,
+          ...answer,
+          question: questionId,
+        },
+      };
+    });
   };
 
   const formatTime = (seconds: number) => {
@@ -401,9 +405,10 @@ function ExamTakeContent() {
                             name={`question-${currentQuestion.id}`}
                             value={option.id}
                             checked={answers[currentQuestion.id]?.answerSingle === option.id}
-                            onChange={(e) =>
-                              updateAnswer(currentQuestion.id, { answerSingle: e.target.value })
-                            }
+                            onChange={(e) => {
+                              e.preventDefault();
+                              updateAnswer(currentQuestion.id, { answerSingle: e.target.value });
+                            }}
                             className="mt-1"
                           />
                           <div className="flex-1">
@@ -464,9 +469,9 @@ function ExamTakeContent() {
                     <div>
                       <textarea
                         value={answers[currentQuestion.id]?.answerText || ''}
-                        onChange={(e) =>
-                          updateAnswer(currentQuestion.id, { answerText: e.target.value })
-                        }
+                        onChange={(e) => {
+                          updateAnswer(currentQuestion.id, { answerText: e.target.value });
+                        }}
                         className="w-full rounded-md border border-gray-300 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                         rows={6}
                         placeholder="Nhập câu trả lời của bạn..."

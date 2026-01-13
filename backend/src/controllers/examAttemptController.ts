@@ -756,10 +756,11 @@ export const submitExamAttempt = async (req: AuthRequest, res: Response) => {
 
     // Update or create Progress for exam
     try {
+      // Include both active and completed enrollments to allow progress updates
       const enrollment = await Enrollment.findOne({
         student: req.user.id,
         course: exam.course,
-        status: 'active',
+        status: { $in: ['active', 'completed'] },
       });
 
       if (enrollment) {
@@ -815,18 +816,37 @@ export const submitExamAttempt = async (req: AuthRequest, res: Response) => {
           // Update passed status based on best score
           examProgress.examPassed = (examProgress.examBestScore || 0) >= exam.passingScore;
           examProgress.status = examProgress.examPassed ? 'passed' : 'failed';
+          
+          // Mark fields as modified to ensure they are saved
+          examProgress.markModified('examAttempts');
+          examProgress.markModified('examLatestScore');
+          examProgress.markModified('examBestScore');
+          examProgress.markModified('examPassed');
+          examProgress.markModified('status');
         }
 
         await examProgress.save();
+        
+        console.log(`[Exam Submit] Progress saved for exam ${exam._id}:`, {
+          examId: exam._id.toString(),
+          studentId: req.user.id,
+          examPassed: examProgress.examPassed,
+          examBestScore: examProgress.examBestScore,
+          examLatestScore: examProgress.examLatestScore,
+          status: examProgress.status,
+          attempts: examProgress.examAttempts,
+        });
 
         // Update enrollment if exam passed
         if (examProgress.examPassed && typeof enrollment.markExamComplete === 'function') {
           await enrollment.markExamComplete(exam._id);
         }
+      } else {
+        console.warn(`[Exam Submit] No enrollment found for student ${req.user.id} in course ${exam.course}`);
       }
     } catch (progressError) {
       // Log error but don't fail the submission
-      console.error('Error updating exam progress:', progressError);
+      console.error('[Exam Submit] Error updating exam progress:', progressError);
     }
 
     res.json({

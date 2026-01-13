@@ -278,12 +278,38 @@ export const getLessonDetails = async (req: Request, res: Response) => {
       });
     }
 
-    // If lesson is not free, ensure user is enrolled or instructor/admin
+    // Free lessons can be viewed by anyone (authenticated or not)
+    // Paid lessons require enrollment (for students) or instructor/admin access
     let isEnrolled = false;
     let lessonProgress = null;
 
-    if (req.user) {
-      if (!lesson.isFree && !isInstructor && !isAdmin) {
+    // Free lessons: accessible to everyone (authenticated or not)
+    if (lesson.isFree) {
+      // If user is authenticated, check enrollment for progress tracking
+      if (req.user) {
+        isEnrolled = !!(await Enrollment.findOne({
+          student: req.user.id,
+          course: course?._id,
+          status: { $in: ['active', 'completed'] },
+        }));
+
+        // Load progress for this lesson if exists
+        lessonProgress = await Progress.findOne({
+          student: req.user.id,
+          lesson: lesson._id,
+        }).select('status lastPosition timeSpent updatedAt');
+      }
+      // If not authenticated, free lesson is still accessible (isEnrolled = false, no progress)
+    } else {
+      // Paid lessons: require authentication and enrollment (or instructor/admin)
+      if (!req.user) {
+        return res.status(401).json({
+          success: false,
+          message: 'Authentication required to view this lesson',
+        });
+      }
+
+      if (!isInstructor && !isAdmin) {
         // Check for both active and completed enrollments
         const enrollment = await Enrollment.findOne({
           student: req.user.id,
@@ -299,14 +325,9 @@ export const getLessonDetails = async (req: Request, res: Response) => {
         }
 
         isEnrolled = true;
-      } else if (lesson.isFree) {
-        // Free lessons can be viewed by any authenticated user
-        // Check for both active and completed enrollments
-        isEnrolled = !!(await Enrollment.findOne({
-          student: req.user.id,
-          course: course?._id,
-          status: { $in: ['active', 'completed'] },
-        }));
+      } else {
+        // Instructors and admins can view all lessons
+        isEnrolled = true;
       }
 
       // Load progress for this lesson if exists

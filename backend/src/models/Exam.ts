@@ -22,6 +22,7 @@ export interface IExam extends Document {
   description?: string;
   slug: string;
   status: ExamStatus;
+  order?: number; // Order within section (for sorting with lessons)
   questions: IExamQuestionRef[];
   totalPoints: number;
   passingScore: number;
@@ -155,6 +156,11 @@ const examSchema = new Schema<IExam>(
       type: String,
       enum: ['per_attempt', 'global_window'],
       default: 'per_attempt',
+    },
+    order: {
+      type: Number,
+      default: 0,
+      min: 0,
     },
     createdBy: {
       type: Schema.Types.ObjectId,

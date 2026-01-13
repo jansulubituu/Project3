@@ -98,6 +98,9 @@ export default function CourseCheckoutPage() {
     try {
       const res = await api.post('/enrollments', { course: course._id });
       if (res.data.success) {
+        // Trigger event to refresh my-learning page
+        window.dispatchEvent(new Event('enrollmentUpdated'));
+        localStorage.setItem('enrollment_updated', Date.now().toString());
         router.replace(`/courses/${course.slug}/learn`);
       } else {
         setFreeEnrollError(res.data.message || 'Không thể đăng ký khóa học miễn phí');

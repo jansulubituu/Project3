@@ -53,8 +53,18 @@ const createJobValidation = [
     .isLength({ min: 10 })
     .withMessage('Prompt must be at least 10 characters'),
   body('targetTemplate')
-    .optional()
-    .isMongoId()
+    .optional({ nullable: true, checkFalsy: true })
+    .custom((value) => {
+      // Allow null, undefined, or empty string
+      if (value === null || value === undefined || value === '') {
+        return true;
+      }
+      // If provided, must be a valid MongoDB ObjectId
+      if (typeof value === 'string' && /^[0-9a-fA-F]{24}$/.test(value.trim())) {
+        return true;
+      }
+      throw new Error('Invalid template ID');
+    })
     .withMessage('Invalid template ID'),
   body('targetExam')
     .optional()

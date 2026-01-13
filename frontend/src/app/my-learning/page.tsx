@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import { api } from '@/lib/api';
 import Header from '@/components/layout/Header';
@@ -78,12 +78,7 @@ function MyLearningContent() {
   const [filter, setFilter] = useState<'all' | 'active' | 'completed'>('all');
   const [error, setError] = useState('');
 
-  useEffect(() => {
-    loadEnrollments();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filter]);
-
-  const loadEnrollments = async () => {
+  const loadEnrollments = useCallback(async () => {
     try {
       setLoading(true);
       setError('');
@@ -154,7 +149,33 @@ function MyLearningContent() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [filter]);
+
+  useEffect(() => {
+    loadEnrollments();
+  }, [loadEnrollments]);
+
+  // Listen for storage events to refresh when enrollment happens in another tab/window
+  useEffect(() => {
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'enrollment_updated' || e.key === 'course_enrolled') {
+        loadEnrollments();
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, [loadEnrollments]);
+
+  // Also listen for custom events (same window)
+  useEffect(() => {
+    const handleEnrollmentUpdate = () => {
+      loadEnrollments();
+    };
+
+    window.addEventListener('enrollmentUpdated', handleEnrollmentUpdate);
+    return () => window.removeEventListener('enrollmentUpdated', handleEnrollmentUpdate);
+  }, [loadEnrollments]);
 
   const formatTime = (minutes: number) => {
     if (!minutes || minutes === 0) return '0 phút';

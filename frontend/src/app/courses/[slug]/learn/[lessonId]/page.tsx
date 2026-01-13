@@ -39,6 +39,9 @@ interface ExamListItem {
   maxAttempts?: number | null;
   remainingAttempts?: number | null;
   hasRemainingAttempts?: boolean;
+  order?: number; // Order within section (for sorting with lessons)
+  allowLateSubmission?: boolean; // Allow submission after closeAt
+  latePenaltyPercent?: number; // Penalty percentage for late submission
   progress?: {
     status: 'not_started' | 'in_progress' | 'passed' | 'failed';
     bestScore?: number;
@@ -157,6 +160,8 @@ function LessonPage() {
   const [sections, setSections] = useState<LessonSection[]>([]);
   const [isEnrolled, setIsEnrolled] = useState(false);
   const [progress, setProgress] = useState<LessonProgress | null>(null);
+  const [lockedLessons, setLockedLessons] = useState<Set<string>>(new Set());
+  const [lockedExams, setLockedExams] = useState<Set<string>>(new Set());
 
   const [loading, setLoading] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -165,13 +170,202 @@ function LessonPage() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [markingComplete, setMarkingComplete] = useState(false);
 
-  useEffect(() => {
-    if (!slug || !lessonId) return;
-    const controller = new AbortController();
-    loadPageData(controller.signal);
-    return () => controller.abort();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [slug, lessonId]);
+  // Function to calculate locked state
+  const calculateLockedState = useCallback((sectionsData: LessonSection[], enrolled: boolean, currentUser: any) => {
+    if (!enrolled || !currentUser) {
+      // If not enrolled or no user, lock all non-free lessons
+      const lockedLessonsSet = new Set<string>();
+      const lockedExamsSet = new Set<string>();
+      
+      for (const section of sectionsData) {
+        const lessons = section.lessons || [];
+        const exams = section.exams || [];
+        
+        for (const lesson of lessons) {
+          if (!lesson.isFree) {
+            lockedLessonsSet.add(String(lesson._id));
+          }
+        }
+        
+        for (const exam of exams) {
+          lockedExamsSet.add(String(exam._id));
+        }
+      }
+      
+      setLockedLessons(lockedLessonsSet);
+      setLockedExams(lockedExamsSet);
+      return;
+    }
+
+    const lockedLessonsSet = new Set<string>();
+    const lockedExamsSet = new Set<string>();
+    
+    // Find the first content item across all sections
+    // Merge all content from all sections, then sort to find the true first content
+    const allContentAcrossSections: Array<{ type: 'lesson' | 'exam'; item: LessonListItem | ExamListItem; order: number; sectionOrder: number }> = [];
+    
+    for (const section of sectionsData) {
+      const sectionOrder = section.order || 0;
+      const lessons = section.lessons || [];
+      const exams = section.exams || [];
+      
+      lessons.forEach((l: LessonListItem) => {
+        allContentAcrossSections.push({
+          type: 'lesson',
+          item: l,
+          order: l.order || 0,
+          sectionOrder: sectionOrder,
+        });
+      });
+      
+      exams.forEach((e: ExamListItem) => {
+        allContentAcrossSections.push({
+          type: 'exam',
+          item: e,
+          order: (e as ExamListItem & { order?: number }).order ?? 0,
+          sectionOrder: sectionOrder,
+        });
+      });
+    }
+    
+    // Sort by section order, then by content order
+    allContentAcrossSections.sort((a, b) => {
+      if (a.sectionOrder !== b.sectionOrder) {
+        return a.sectionOrder - b.sectionOrder;
+      }
+      return a.order - b.order;
+    });
+    
+    // Get the first content item ID (if any exists)
+    const firstContentId = allContentAcrossSections.length > 0 ? allContentAcrossSections[0].item._id : null;
+    
+    // Debug: Log first content and all content
+    console.log('[Sidebar Debug] First content ID:', firstContentId);
+    console.log('[Sidebar Debug] All content:', allContentAcrossSections.map(c => ({
+      type: c.type,
+      id: c.item._id,
+      title: c.item.title,
+      sectionOrder: c.sectionOrder,
+      order: c.order
+    })));
+    
+    // Find the first uncompleted content item
+    // This will be the next item to unlock after all completed items
+    let firstUncompletedIndex = -1;
+    for (let i = 0; i < allContentAcrossSections.length; i++) {
+      const content = allContentAcrossSections[i];
+      if (content.type === 'lesson') {
+        const lesson = content.item as LessonListItem;
+        const isCompleted = lesson.progress?.status === 'completed' || lesson.progress?.status === 'in_progress';
+        if (!isCompleted && !lesson.isFree) {
+          firstUncompletedIndex = i;
+          break;
+        }
+      } else if (content.type === 'exam') {
+        const exam = content.item as ExamListItem;
+        const examProgress = exam.progress as any;
+        const isCompleted = examProgress && (examProgress.passed || examProgress.status === 'in_progress' || examProgress.status === 'passed' || examProgress.status === 'failed');
+        if (!isCompleted) {
+          firstUncompletedIndex = i;
+          break;
+        }
+      }
+    }
+    
+    // If all content is completed, unlock everything
+    if (firstUncompletedIndex === -1) {
+      firstUncompletedIndex = allContentAcrossSections.length;
+    }
+    
+    // Process each section to determine locked status
+    for (const section of sectionsData) {
+      const lessons = section.lessons || [];
+      const exams = section.exams || [];
+      
+      // Check lessons
+      for (const lesson of lessons) {
+        const lessonIdStr = String(lesson._id);
+        
+        // Free lessons are always unlocked
+        if (lesson.isFree) {
+          console.log(`[Sidebar Debug] Lesson ${lessonIdStr} (${lesson.title}): UNLOCKED (free)`);
+          continue;
+        }
+        
+        // Find this lesson's index in allContentAcrossSections
+        const lessonIndex = allContentAcrossSections.findIndex(
+          c => c.type === 'lesson' && String(c.item._id) === lessonIdStr
+        );
+        
+        // Unlock if:
+        // 1. It's the first content item
+        // 2. It's completed or in-progress
+        // 3. It's the first uncompleted item (next item to unlock)
+        const isFirstContent = lesson._id && firstContentId && String(lesson._id) === String(firstContentId);
+        const isCompleted = lesson.progress?.status === 'completed' || lesson.progress?.status === 'in_progress';
+        const isNextToUnlock = lessonIndex === firstUncompletedIndex;
+        
+        if (isFirstContent || isCompleted || isNextToUnlock) {
+          console.log(`[Sidebar Debug] Lesson ${lessonIdStr} (${lesson.title}): UNLOCKED (first: ${isFirstContent}, completed: ${isCompleted}, next: ${isNextToUnlock})`);
+          continue;
+        }
+        
+        // All other lessons are locked
+        console.log(`[Sidebar Debug] Lesson ${lessonIdStr} (${lesson.title}): LOCKED`);
+        lockedLessonsSet.add(lessonIdStr);
+      }
+      
+      // Check exams
+      for (const exam of exams) {
+        const examIdStr = String(exam._id);
+        const now = new Date();
+        const examOpenAt = exam.openAt ? new Date(exam.openAt) : null;
+        const examCloseAt = exam.closeAt ? new Date(exam.closeAt) : null;
+        const allowLateSubmission = (exam as ExamListItem & { allowLateSubmission?: boolean }).allowLateSubmission || false;
+        
+        // Lock if not open yet
+        if (examOpenAt && now < examOpenAt) {
+          lockedExamsSet.add(examIdStr);
+          continue;
+        }
+        
+        // Lock if expired AND late submission not allowed
+        if (examCloseAt && now > examCloseAt && !allowLateSubmission) {
+          lockedExamsSet.add(examIdStr);
+          continue;
+        }
+        
+        // Find this exam's index in allContentAcrossSections
+        const examIndex = allContentAcrossSections.findIndex(
+          c => c.type === 'exam' && String(c.item._id) === examIdStr
+        );
+        
+        // Check if exam is completed
+        const examProgress = exam.progress as any;
+        const isCompleted = examProgress && (examProgress.passed || examProgress.status === 'in_progress' || examProgress.status === 'passed' || examProgress.status === 'failed');
+        
+        // Unlock if:
+        // 1. It's the first content item
+        // 2. It's completed or in-progress
+        // 3. It's the first uncompleted item (next item to unlock)
+        const isFirstContent = exam._id && firstContentId && String(exam._id) === String(firstContentId);
+        const isNextToUnlock = examIndex === firstUncompletedIndex;
+        
+        if (isFirstContent || isCompleted || isNextToUnlock) {
+          continue;
+        }
+        
+        // All other exams are locked
+        lockedExamsSet.add(examIdStr);
+      }
+    }
+    
+    console.log('[Sidebar Debug] Locked lessons Set:', Array.from(lockedLessonsSet));
+    console.log('[Sidebar Debug] Locked exams Set:', Array.from(lockedExamsSet));
+    
+    setLockedLessons(lockedLessonsSet);
+    setLockedExams(lockedExamsSet);
+  }, []);
 
   const loadPageData = async (signal?: AbortSignal) => {
     try {
@@ -188,7 +382,8 @@ function LessonPage() {
       }
 
       setCourse(courseResponse.data.course);
-      setIsEnrolled(courseResponse.data.isEnrolled || false);
+      const enrolledStatus = courseResponse.data.isEnrolled || false;
+      setIsEnrolled(enrolledStatus);
 
       const lessonData: LessonDetail = lessonResponse.data.lesson || lessonResponse.data.data || lessonResponse.data;
       setLesson(lessonData);
@@ -202,7 +397,10 @@ function LessonPage() {
       if (courseId) {
         const curriculumRes = await api.get(`/courses/${courseId}/curriculum`, { signal });
         if (curriculumRes.data?.success) {
-          setSections(curriculumRes.data.sections || []);
+          const sectionsData = curriculumRes.data.sections || [];
+          setSections(sectionsData);
+          
+          // Locked state will be calculated by useEffect when sections state updates
         }
       }
     } catch (err) {
@@ -213,6 +411,22 @@ function LessonPage() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (!slug || !lessonId) return;
+    const controller = new AbortController();
+    loadPageData(controller.signal);
+    return () => controller.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slug, lessonId]);
+
+  // Recalculate locked state when sections, isEnrolled, or user changes
+  useEffect(() => {
+    if (sections.length === 0) return;
+    
+    calculateLockedState(sections, isEnrolled, user);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sections, isEnrolled, user, calculateLockedState]);
 
   const flattenedLessons = useMemo(() => {
     return sections.flatMap((section) =>
@@ -266,11 +480,14 @@ function LessonPage() {
             setIsEnrolled(courseResponse.data.isEnrolled || false);
             
             // Reload curriculum to update lesson progress in sidebar
+            // Locked state will be automatically recalculated by useEffect when sections update
             const courseId = courseResponse.data.course?._id;
             if (courseId) {
               const curriculumRes = await api.get(`/courses/${courseId}/curriculum`);
               if (curriculumRes.data?.success) {
-                setSections(curriculumRes.data.sections || []);
+                const sectionsData = curriculumRes.data.sections || [];
+                setSections(sectionsData);
+                // Locked state will be recalculated automatically by useEffect
               }
             }
           }
@@ -350,6 +567,8 @@ function LessonPage() {
                   isEnrolled={isEnrolled}
                   onNavigate={handleNavigateLesson}
                   courseSlug={slug}
+                  lockedLessons={lockedLessons}
+                  lockedExams={lockedExams}
                 />
               ))}
             </div>
@@ -448,14 +667,62 @@ function LessonSectionBlock({
   isEnrolled,
   onNavigate,
   courseSlug,
+  lockedLessons,
+  lockedExams,
 }: {
   section: LessonSection;
   currentLessonId: string;
   isEnrolled: boolean;
   onNavigate: (lessonId?: string, locked?: boolean) => void;
   courseSlug: string;
+  lockedLessons: Set<string>;
+  lockedExams: Set<string>;
 }) {
   const [expanded, setExpanded] = useState(true);
+
+  // Helper function to check if lesson is locked
+  const isLessonLocked = (lesson: LessonListItem): boolean => {
+    // Free lessons are never locked
+    if (lesson.isFree) {
+      console.log(`[Sidebar Render] Lesson ${String(lesson._id)} (${lesson.title}): UNLOCKED (free)`);
+      return false;
+    }
+    // Not enrolled and not free = locked
+    if (!isEnrolled && !lesson.isFree) {
+      console.log(`[Sidebar Render] Lesson ${String(lesson._id)} (${lesson.title}): LOCKED (not enrolled)`);
+      return true;
+    }
+    // Enrolled but unlock check failed = locked
+    // Use string comparison to ensure exact match
+    const lessonIdStr = String(lesson._id);
+    const isLocked = isEnrolled && lockedLessons.has(lessonIdStr);
+    console.log(`[Sidebar Render] Lesson ${lessonIdStr} (${lesson.title}): isLocked=${isLocked}, lockedLessons.has(${lessonIdStr})=${lockedLessons.has(lessonIdStr)}, lockedLessons.size=${lockedLessons.size}, lockedLessons=[${Array.from(lockedLessons).join(', ')}]`);
+    return isLocked;
+  };
+
+  // Helper function to check if exam is locked
+  const isExamLocked = (exam: ExamListItem): boolean => {
+    // Not enrolled = locked
+    if (!isEnrolled) return true;
+    
+    // Check time window
+    const now = new Date();
+    const examOpenAt = exam.openAt ? new Date(exam.openAt) : null;
+    const examCloseAt = exam.closeAt ? new Date(exam.closeAt) : null;
+    const allowLateSubmission = exam.allowLateSubmission || false;
+    
+    // Lock if not open yet
+    if (examOpenAt && now < examOpenAt) return true;
+    
+    // Lock if expired AND late submission not allowed
+    if (examCloseAt && now > examCloseAt && !allowLateSubmission) return true;
+    
+    // Check if locked by unlock check
+    // Use string comparison to ensure exact match
+    if (lockedExams.has(String(exam._id))) return true;
+    
+    return false;
+  };
 
   return (
     <div className="border-b border-gray-100">
@@ -480,7 +747,7 @@ function LessonSectionBlock({
         <div className="divide-y">
           {section.lessons.map((lesson) => {
             const isCurrent = lesson._id === currentLessonId;
-            const isLocked = !isEnrolled && !lesson.isFree;
+            const isLocked = isLessonLocked(lesson);
             return (
               <button
                 key={lesson._id}
@@ -501,9 +768,14 @@ function LessonSectionBlock({
                   <p className={`text-sm font-medium ${isCurrent ? 'text-blue-700' : 'text-gray-900'}`}>{lesson.title}</p>
                   <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-500">
                     <span># {lesson.order}</span>
-                    <span>{formatMinutes(lesson.duration)}</span>
-                    {lesson.isFree && <span className="text-green-600 font-semibold">Miễn phí</span>}
-                    {isLocked && <span className="text-gray-400">🔒 Khóa</span>}
+                    {!isLocked && lesson.duration && <span>{formatMinutes(lesson.duration)}</span>}
+                    {!isLocked && lesson.isFree && <span className="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded">Miễn phí</span>}
+                    {isLocked && (
+                      <span className="px-2 py-0.5 bg-gray-200 text-gray-600 text-xs rounded flex items-center gap-1">
+                        <span>🔒</span>
+                        <span>{!isEnrolled ? 'Khóa' : 'Chưa mở khóa'}</span>
+                      </span>
+                    )}
                     {isEnrolled && lesson.progress && (
                       <>
                         {lesson.progress.status === 'completed' && (
@@ -530,33 +802,57 @@ function LessonSectionBlock({
                 <p className="text-xs font-semibold text-gray-700 mb-2">Bài kiểm tra</p>
               </div>
               {section.exams.map((exam) => {
-                const canTake = exam.hasRemainingAttempts !== false;
+                const examLocked = isExamLocked(exam);
+                const canTake = !examLocked && exam.hasRemainingAttempts !== false;
                 const examProgress = exam.progress;
                 const isPassed = examProgress?.passed === true;
                 const isFailed = examProgress && !examProgress.passed;
                 const hasAttempts = examProgress && (examProgress.attempts || 0) > 0;
                 
+                // Check time window for display
+                const now = new Date();
+                const examOpenAt = exam.openAt ? new Date(exam.openAt) : null;
+                const examCloseAt = exam.closeAt ? new Date(exam.closeAt) : null;
+                const allowLateSubmission = exam.allowLateSubmission || false;
+                const latePenaltyPercent = exam.latePenaltyPercent || 0;
+                const isNotOpenYet = examOpenAt !== null && now < examOpenAt;
+                const isExpired = examCloseAt !== null && now > examCloseAt;
+                const isLateButAllowed = isExpired && allowLateSubmission;
+                
                 return (
                   <Link
                     key={exam._id}
-                    href={`/courses/${courseSlug}/exams/${exam._id}`}
-                    className={`w-full px-4 py-3 flex items-start gap-3 text-left ${
-                      canTake 
-                        ? isPassed
-                          ? 'hover:bg-green-50 bg-green-50/50'
-                          : isFailed
-                          ? 'hover:bg-red-50 bg-red-50/50'
-                          : 'hover:bg-gray-50'
-                        : 'opacity-60 cursor-not-allowed'
+                    href={examLocked ? '#' : `/courses/${courseSlug}/exams/${exam._id}`}
+                    className={`w-full px-4 py-3 flex items-start gap-3 text-left border rounded-lg transition-all ${
+                      examLocked
+                        ? 'border-gray-200 bg-gray-100 opacity-60 cursor-not-allowed'
+                        : canTake 
+                          ? isPassed
+                            ? 'border-green-200 bg-green-50/50 hover:bg-green-50'
+                            : isFailed
+                            ? 'border-red-200 bg-red-50/50 hover:bg-red-50'
+                            : 'border-orange-200 bg-orange-50/50 hover:bg-orange-50'
+                          : 'border-gray-200 bg-gray-100 opacity-60 cursor-not-allowed'
                     }`}
                     onClick={(e) => {
-                      if (!canTake) {
+                      if (examLocked || !canTake) {
                         e.preventDefault();
                       }
                     }}
+                    title={examLocked ? (
+                      isNotOpenYet 
+                        ? `Bài kiểm tra sẽ mở vào ${examOpenAt?.toLocaleString('vi-VN')}`
+                        : isExpired && !allowLateSubmission
+                          ? `Bài kiểm tra đã đóng vào ${examCloseAt?.toLocaleString('vi-VN')}`
+                          : !isEnrolled 
+                            ? 'Đăng ký khóa học để làm bài kiểm tra này'
+                            : 'Hoàn thành các bài học trước để mở khóa'
+                    ) : ''}
                   >
                     <span className={`mt-1 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-white ${
-                      isPassed
+                      examLocked
+                        ? 'bg-gray-400 opacity-50'
+                        : isPassed
                         ? 'bg-green-500'
                         : isFailed
                         ? 'bg-red-500'
@@ -564,7 +860,7 @@ function LessonSectionBlock({
                         ? 'bg-orange-500'
                         : 'bg-gray-400'
                     }`}>
-                      {isPassed ? '✓' : '📝'}
+                      {examLocked ? '🔒' : isPassed ? '✓' : '📝'}
                     </span>
                     <div className="flex-1">
                       <p className={`text-sm font-medium ${
@@ -581,6 +877,26 @@ function LessonSectionBlock({
                       <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-500">
                         <span className="text-orange-600 font-semibold">{exam.totalPoints} điểm</span>
                         {exam.durationMinutes && <span>{formatMinutes(exam.durationMinutes)}</span>}
+                        {/* Lock Status */}
+                        {examLocked && (
+                          <span className="px-2 py-0.5 bg-gray-200 text-gray-600 text-xs rounded flex items-center gap-1">
+                            <span>🔒</span>
+                            <span>
+                              {isNotOpenYet 
+                                ? 'Chưa mở' 
+                                : isExpired && !allowLateSubmission
+                                  ? 'Đã đóng' 
+                                  : !isEnrolled 
+                                    ? 'Khóa' 
+                                    : 'Chưa mở khóa'}
+                            </span>
+                          </span>
+                        )}
+                        {isLateButAllowed && !examLocked && (
+                          <span className="text-yellow-600 font-semibold">
+                            ⚠️ Nộp muộn{latePenaltyPercent > 0 ? ` (-${latePenaltyPercent}%)` : ''}
+                          </span>
+                        )}
                         {/* Exam Progress Status */}
                         {isEnrolled && examProgress && (
                           <>

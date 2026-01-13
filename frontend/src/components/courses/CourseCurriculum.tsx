@@ -34,6 +34,9 @@ interface Exam {
   maxAttempts?: number | null;
   remainingAttempts?: number | null;
   hasRemainingAttempts?: boolean;
+  order?: number; // Order within section (for sorting with lessons)
+  allowLateSubmission?: boolean; // Allow submission after closeAt
+  latePenaltyPercent?: number; // Penalty percentage for late submission
   progress?: {
     status: 'not_started' | 'in_progress' | 'passed' | 'failed';
     bestScore?: number;
@@ -76,11 +79,13 @@ export default function CourseCurriculum({
     examId?: string;
     message?: string;
   }>({ show: false });
+  const [lockedLessons, setLockedLessons] = useState<Set<string>>(new Set());
+  const [lockedExams, setLockedExams] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     fetchCurriculum();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [courseId, isEnrolled]);
+  }, [courseId, isEnrolled, isAuthenticated]);
 
   const fetchCurriculum = async () => {
     try {
@@ -94,11 +99,297 @@ export default function CourseCurriculum({
             console.log(`Section ${section.title} has ${section.exams.length} exams:`, section.exams);
           }
         });
-        setSections(sectionsData);
+        // Clear locked states before checking
+        setLockedLessons(new Set());
+        setLockedExams(new Set());
+        
         // Expand first section by default
         if (sectionsData.length > 0) {
           setExpandedSections(new Set([sectionsData[0]._id]));
         }
+        
+        // Check unlock status for all lessons and exams if enrolled
+        // Lessons and exams are at the same level, sorted by order
+        if (isEnrolled && isAuthenticated) {
+          const lockedLessonsSet = new Set<string>();
+          const lockedExamsSet = new Set<string>();
+          
+          // Process each section
+          for (const section of sectionsData) {
+            const sectionOrder = section.order || 0;
+            const lessons = section.lessons || [];
+            const exams = section.exams || [];
+            
+            // Merge lessons and exams, sort by order (they're at the same level)
+            const allContent: Array<{ type: 'lesson' | 'exam'; item: Lesson | Exam; order: number }> = [];
+            
+            lessons.forEach((lesson: Lesson) => {
+              allContent.push({
+                type: 'lesson',
+                item: lesson,
+                order: lesson.order || 0,
+              });
+            });
+            
+            exams.forEach((exam: Exam) => {
+              allContent.push({
+                type: 'exam',
+                item: exam,
+                order: (exam as Exam & { order?: number }).order || 0,
+              });
+            });
+            
+            // Sort by order
+            allContent.sort((a, b) => a.order - b.order);
+            
+            // Check each content item
+            for (const content of allContent) {
+              if (content.type === 'lesson') {
+                const lesson = content.item as Lesson;
+                
+                // Free lessons are always unlocked
+                if (lesson.isFree) {
+                  continue;
+                }
+                
+                // First lesson (order = 1 in first section) is always unlocked
+                if (sectionOrder === 1 && lesson.order === 1) {
+                  continue;
+                }
+                
+                // Completed lessons are unlocked
+                if (lesson.progress?.status === 'completed') {
+                  continue;
+                }
+                
+                // Check if all previous content (lessons and exams) are completed
+                let allPreviousCompleted = true;
+                
+                for (const prevSection of sectionsData) {
+                  const prevSectionOrder = prevSection.order || 0;
+                  
+                  // Only check sections before or same as current section
+                  if (prevSectionOrder > sectionOrder) {
+                    break;
+                  }
+                  
+                  // Get all content in previous section
+                  const prevLessons = prevSection.lessons || [];
+                  const prevExams = prevSection.exams || [];
+                  const prevAllContent: Array<{ type: 'lesson' | 'exam'; item: Lesson | Exam; order: number }> = [];
+                  
+                  prevLessons.forEach((l: Lesson) => {
+                    prevAllContent.push({ type: 'lesson', item: l, order: l.order || 0 });
+                  });
+                  
+                  prevExams.forEach((e: Exam) => {
+                    prevAllContent.push({ type: 'exam', item: e, order: (e as Exam & { order?: number }).order || 0 });
+                  });
+                  
+                  prevAllContent.sort((a, b) => a.order - b.order);
+                  
+                  // Check all content before current lesson
+                  for (const prevContent of prevAllContent) {
+                    if (prevSectionOrder < sectionOrder) {
+                      // Previous section: check all content
+                      if (prevContent.type === 'lesson') {
+                        const prevLesson = prevContent.item as Lesson;
+                        if (!prevLesson.isFree && prevLesson.progress?.status !== 'completed') {
+                          allPreviousCompleted = false;
+                          break;
+                        }
+                      } else {
+                        const prevExam = prevContent.item as Exam;
+                        const prevExamProgress = prevExam.progress as any;
+                        if (!prevExamProgress || !prevExamProgress.passed) {
+                          allPreviousCompleted = false;
+                          break;
+                        }
+                      }
+                    } else if (prevSectionOrder === sectionOrder) {
+                      // Same section: only check content before current lesson
+                      if (prevContent.order < lesson.order) {
+                        if (prevContent.type === 'lesson') {
+                          const prevLesson = prevContent.item as Lesson;
+                          if (!prevLesson.isFree && prevLesson.progress?.status !== 'completed') {
+                            allPreviousCompleted = false;
+                            break;
+                          }
+                        } else {
+                          const prevExam = prevContent.item as Exam;
+                          const prevExamProgress = prevExam.progress as any;
+                          if (!prevExamProgress || !prevExamProgress.passed) {
+                            allPreviousCompleted = false;
+                            break;
+                          }
+                        }
+                      } else {
+                        break; // Reached current lesson
+                      }
+                    }
+                  }
+                  
+                  if (!allPreviousCompleted) {
+                    break;
+                  }
+                }
+                
+                if (!allPreviousCompleted) {
+                  lockedLessonsSet.add(lesson._id);
+                }
+              } else {
+                // Exam
+                const exam = content.item as Exam;
+                const now = new Date();
+                const examOpenAt = exam.openAt ? new Date(exam.openAt) : null;
+                const examCloseAt = exam.closeAt ? new Date(exam.closeAt) : null;
+                const allowLateSubmission = (exam as Exam & { allowLateSubmission?: boolean }).allowLateSubmission || false;
+                
+                // Lock if not open yet
+                if (examOpenAt && now < examOpenAt) {
+                  lockedExamsSet.add(exam._id);
+                  continue;
+                }
+                
+                // Lock if expired AND late submission not allowed
+                if (examCloseAt && now > examCloseAt && !allowLateSubmission) {
+                  lockedExamsSet.add(exam._id);
+                  continue;
+                }
+                
+                // Get exam order (default to 0 if not set)
+                const examOrder = (exam as Exam & { order?: number }).order ?? 0;
+                
+                // First exam in first section (if no lessons before it) is always unlocked (if time allows)
+                // For exam with order 0 in first section: unlock only if no lessons in first section
+                if (sectionOrder === 1) {
+                  if (examOrder === 1) {
+                    // Exam with order 1: check if there are lessons with order < 1 (should be none)
+                    const lessonsBeforeExam = section.lessons?.filter((l: Lesson) => (l.order || 0) < 1) || [];
+                    if (lessonsBeforeExam.length === 0) {
+                      // No lessons before exam, so it's the first content - unlock it
+                      continue;
+                    }
+                  } else if (examOrder === 0) {
+                    // Exam with order 0: check if there are any lessons in first section
+                    // If no lessons, unlock it (it's the first content)
+                    const lessonsInSection = section.lessons || [];
+                    if (lessonsInSection.length === 0) {
+                      // No lessons in first section, exam is first content - unlock it
+                      continue;
+                    }
+                    // If there are lessons, check if all are completed (exam comes after all lessons)
+                    const allLessonsCompleted = lessonsInSection.every((l: Lesson) => l.isFree || l.progress?.status === 'completed');
+                    if (allLessonsCompleted) {
+                      // All lessons completed, unlock exam
+                      continue;
+                    }
+                  }
+                }
+                
+                // Completed exams are unlocked
+                const examProgress = exam.progress as any;
+                if (examProgress && examProgress.passed) {
+                  continue;
+                }
+                
+                // Check if all previous content (lessons and exams) are completed
+                let allPreviousCompleted = true;
+                
+                for (const prevSection of sectionsData) {
+                  const prevSectionOrder = prevSection.order || 0;
+                  
+                  if (prevSectionOrder > sectionOrder) {
+                    break;
+                  }
+                  
+                  const prevLessons = prevSection.lessons || [];
+                  const prevExams = prevSection.exams || [];
+                  const prevAllContent: Array<{ type: 'lesson' | 'exam'; item: Lesson | Exam; order: number }> = [];
+                  
+                  prevLessons.forEach((l: Lesson) => {
+                    prevAllContent.push({ type: 'lesson', item: l, order: l.order || 0 });
+                  });
+                  
+                  prevExams.forEach((e: Exam) => {
+                    prevAllContent.push({ type: 'exam', item: e, order: (e as Exam & { order?: number }).order ?? 0 });
+                  });
+                  
+                  // Sort by order (0 comes before 1, etc.)
+                  prevAllContent.sort((a, b) => a.order - b.order);
+                  
+                  for (const prevContent of prevAllContent) {
+                    if (prevSectionOrder < sectionOrder) {
+                      // Previous section: check all content
+                      if (prevContent.type === 'lesson') {
+                        const prevLesson = prevContent.item as Lesson;
+                        if (!prevLesson.isFree && prevLesson.progress?.status !== 'completed') {
+                          allPreviousCompleted = false;
+                          break;
+                        }
+                      } else {
+                        const prevExam = prevContent.item as Exam;
+                        const prevExamProgress = prevExam.progress as any;
+                        if (!prevExamProgress || !prevExamProgress.passed) {
+                          allPreviousCompleted = false;
+                          break;
+                        }
+                      }
+                    } else if (prevSectionOrder === sectionOrder) {
+                      // Same section: only check content before current exam
+                      // Use strict comparison: order 0 < order 1, etc.
+                      // If exam has order 0, check all lessons in the same section (since 0 < any lesson order)
+                      if (examOrder === 0) {
+                        // Exam with order 0: check all lessons in same section
+                        if (prevContent.type === 'lesson') {
+                          const prevLesson = prevContent.item as Lesson;
+                          if (!prevLesson.isFree && prevLesson.progress?.status !== 'completed') {
+                            allPreviousCompleted = false;
+                            break;
+                          }
+                        } else {
+                          // Another exam with order 0 or less - skip (can't have order < 0)
+                          break;
+                        }
+                      } else if (prevContent.order < examOrder) {
+                        if (prevContent.type === 'lesson') {
+                          const prevLesson = prevContent.item as Lesson;
+                          if (!prevLesson.isFree && prevLesson.progress?.status !== 'completed') {
+                            allPreviousCompleted = false;
+                            break;
+                          }
+                        } else {
+                          const prevExam = prevContent.item as Exam;
+                          const prevExamProgress = prevExam.progress as any;
+                          if (!prevExamProgress || !prevExamProgress.passed) {
+                            allPreviousCompleted = false;
+                            break;
+                          }
+                        }
+                      } else {
+                        break; // Reached current exam or content after it
+                      }
+                    }
+                  }
+                  
+                  if (!allPreviousCompleted) {
+                    break;
+                  }
+                }
+                
+                if (!allPreviousCompleted) {
+                  lockedExamsSet.add(exam._id);
+                }
+              }
+            }
+          }
+          
+          setLockedLessons(lockedLessonsSet);
+          setLockedExams(lockedExamsSet);
+        }
+        
+        // Set sections after all checks are complete to avoid render issues
+        setSections(sectionsData);
       }
     } catch (error) {
       console.error('Failed to fetch curriculum:', error);
@@ -145,9 +436,43 @@ export default function CourseCurriculum({
   };
 
   const handleLessonClick = async (lesson: Lesson) => {
-    if (!isEnrolled && !lesson.isFree) {
+    // Free lessons can be accessed by anyone (authenticated or not)
+    if (lesson.isFree) {
+      // Free lessons don't require enrollment, but check unlock status if authenticated
+      if (isAuthenticated && isEnrolled) {
+        try {
+          const unlockResponse = await api.get('/progress/unlock-check', {
+            params: {
+              courseId,
+              lessonId: lesson._id,
+            },
+          });
+
+          if (unlockResponse.data.success && !unlockResponse.data.unlocked) {
+            if (unlockResponse.data.reason === 'exam_required') {
+              setUnlockModal({
+                show: true,
+                examTitle: unlockResponse.data.examTitle,
+                examId: unlockResponse.data.blockingExam,
+                message: unlockResponse.data.message,
+              });
+              return;
+            }
+          }
+        } catch (error) {
+          console.error('Failed to check unlock status:', error);
+          // Continue anyway if check fails
+        }
+      }
+      // Navigate to free lesson (no enrollment required)
+      router.push(`/courses/${courseSlug}/learn/${lesson._id}`);
+      return;
+    }
+
+    // Paid lessons: require enrollment
+    if (!isEnrolled) {
       if (!isAuthenticated) {
-        router.push(`/login?redirect=/courses/${courseSlug}`);
+        router.push(`/login?redirect=/courses/${courseSlug}/learn/${lesson._id}`);
       } else {
         // Show enrollment prompt
         alert('Vui lòng đăng ký khóa học để xem bài học này');
@@ -155,7 +480,7 @@ export default function CourseCurriculum({
       return;
     }
 
-    // Check unlock status if enrolled
+    // Check unlock status for enrolled users
     if (isEnrolled) {
       try {
         const unlockResponse = await api.get('/progress/unlock-check', {
@@ -214,7 +539,11 @@ export default function CourseCurriculum({
             <p className="text-sm text-gray-600 mt-1">
               {(() => {
                 const totalLessons = sections.reduce((total, section) => total + (section.lessons?.length || 0), 0);
-                const totalExams = sections.reduce((total, section) => total + (section.exams?.length || 0), 0);
+                // Only count published exams for students
+                const totalExams = sections.reduce((total, section) => {
+                  const publishedExams = section.exams?.filter((exam) => exam.status === 'published') || [];
+                  return total + publishedExams.length;
+                }, 0);
                 const parts = [];
                 if (totalLessons > 0) parts.push(`${totalLessons} bài học`);
                 if (totalExams > 0) parts.push(`${totalExams} bài kiểm tra`);
@@ -237,13 +566,148 @@ export default function CourseCurriculum({
 
       {/* Sections */}
       <div className="divide-y">
-        {sections.map((section) => {
+        {sections.map((section, sectionIdx) => {
           const isExpanded = expandedSections.has(section._id);
-          const freeLessons = section.lessons?.filter((l) => l.isFree) || [];
-          const lockedLessons = section.lessons?.filter((l) => !l.isFree && !isEnrolled) || [];
-          const availableLessons = isEnrolled
-            ? section.lessons || []
-            : freeLessons;
+          // Show ALL lessons, but mark locked ones
+          const allLessons = section.lessons || [];
+          const sectionOrder = section.order && section.order > 0 ? section.order : sectionIdx + 1;
+          
+          // Filter exams: students and non-enrolled users only see published exams
+          // Backend should already filter, but we add an extra safety check here
+          const visibleExams = section.exams?.filter((exam) => exam.status === 'published') || [];
+          
+          // Determine if lessons/exams are locked
+          const isLessonLocked = (lesson: Lesson) => {
+            // Free lessons are never locked (can be viewed by anyone)
+            if (lesson.isFree) return false;
+            // Not enrolled and not free = locked
+            if (!isEnrolled && !lesson.isFree) return true;
+            // Enrolled but unlock check failed = locked
+            if (isEnrolled && lockedLessons.has(lesson._id)) return true;
+            return false;
+          };
+          
+          const isExamLocked = (exam: Exam) => {
+            // Not enrolled = locked
+            if (!isEnrolled) return true;
+            
+            // Check time window
+            const now = new Date();
+            const examOpenAt = exam.openAt ? new Date(exam.openAt) : null;
+            const examCloseAt = exam.closeAt ? new Date(exam.closeAt) : null;
+            const allowLateSubmission = (exam as Exam & { allowLateSubmission?: boolean }).allowLateSubmission || false;
+            
+            // Lock if not open yet
+            if (examOpenAt && now < examOpenAt) return true;
+            
+            // Lock if expired AND late submission not allowed
+            if (examCloseAt && now > examCloseAt && !allowLateSubmission) return true;
+            
+            // Check if locked by unlock check
+            if (lockedExams.has(exam._id)) return true;
+            
+            return false;
+          };
+          
+          const getExamLockReason = (exam: Exam, section: Section): string | null => {
+            if (!isEnrolled) return 'Đăng ký khóa học để làm bài kiểm tra này';
+            
+            const now = new Date();
+            const examOpenAt = exam.openAt ? new Date(exam.openAt) : null;
+            const examCloseAt = exam.closeAt ? new Date(exam.closeAt) : null;
+            const allowLateSubmission = (exam as Exam & { allowLateSubmission?: boolean }).allowLateSubmission || false;
+            const latePenaltyPercent = (exam as Exam & { latePenaltyPercent?: number }).latePenaltyPercent || 0;
+            
+            if (examOpenAt && now < examOpenAt && exam.openAt) {
+              return `Bài kiểm tra sẽ mở vào ${examOpenAt.toLocaleString('vi-VN')}`;
+            }
+            
+            if (examCloseAt && now > examCloseAt && exam.closeAt) {
+              if (allowLateSubmission) {
+                return `Bài kiểm tra đã đóng nhưng vẫn có thể nộp muộn${latePenaltyPercent > 0 ? ` (trừ ${latePenaltyPercent}% điểm)` : ''}`;
+              }
+              return `Bài kiểm tra đã đóng vào ${examCloseAt.toLocaleString('vi-VN')}`;
+            }
+            
+            if (lockedExams.has(exam._id)) {
+              // Check which prerequisites are missing
+              const examOrder = (exam as Exam & { order?: number }).order ?? 0;
+              const examSectionOrder = section.order || 0;
+              
+              const incompleteLessons: string[] = [];
+              const incompleteExams: string[] = [];
+              
+              // Find incomplete prerequisite lessons and exams
+              for (const checkSection of sections) {
+                const checkSectionOrder = checkSection.order || 0;
+                
+                if (checkSectionOrder > examSectionOrder) break;
+                
+                // Check lessons
+                const lessonsToCheck = checkSection.lessons?.filter((l: Lesson) => {
+                  if (checkSectionOrder < examSectionOrder) return true;
+                  if (checkSectionOrder === examSectionOrder) {
+                    // If exam has order 0, check all lessons in same section
+                    if (examOrder === 0) return true;
+                    return (l.order || 0) < examOrder;
+                  }
+                  return false;
+                }) || [];
+                
+                for (const lesson of lessonsToCheck) {
+                  if (!lesson.isFree && lesson.progress?.status !== 'completed') {
+                    incompleteLessons.push(lesson.title);
+                  }
+                }
+                
+                // Check exams before this exam
+                if (checkSectionOrder < examSectionOrder) {
+                  // Previous sections: check all exams
+                  const examsToCheck = checkSection.exams || [];
+                  for (const prevExam of examsToCheck) {
+                    const prevExamProgress = prevExam.progress as any;
+                    if (!prevExamProgress || !prevExamProgress.passed) {
+                      incompleteExams.push(prevExam.title);
+                    }
+                  }
+                } else if (checkSectionOrder === examSectionOrder && examOrder > 0) {
+                  // Same section: only check exams before current exam (if exam order > 0)
+                  const examsToCheck = checkSection.exams?.filter((e: Exam) => {
+                    const eOrder = (e as Exam & { order?: number }).order ?? 0;
+                    return eOrder < examOrder;
+                  }) || [];
+                  
+                  for (const prevExam of examsToCheck) {
+                    const prevExamProgress = prevExam.progress as any;
+                    if (!prevExamProgress || !prevExamProgress.passed) {
+                      incompleteExams.push(prevExam.title);
+                    }
+                  }
+                }
+              }
+              
+              if (incompleteLessons.length > 0) {
+                return `Hoàn thành các bài học trước: ${incompleteLessons.slice(0, 3).join(', ')}${incompleteLessons.length > 3 ? '...' : ''}`;
+              }
+              
+              if (incompleteExams.length > 0) {
+                return `Hoàn thành các bài kiểm tra trước: ${incompleteExams.slice(0, 2).join(', ')}${incompleteExams.length > 2 ? '...' : ''}`;
+              }
+              
+              return 'Hoàn thành các bài học trước để mở khóa';
+            }
+            
+            return null;
+          };
+          
+          const lessonCount = allLessons.length;
+          const examCount = visibleExams.length;
+          const durationText = section.duration && section.duration > 0 ? formatDuration(section.duration) : '';
+          const headerParts: string[] = [];
+          if (lessonCount > 0) headerParts.push(`${lessonCount} bài học`);
+          if (examCount > 0) headerParts.push(`${examCount} bài kiểm tra`);
+          if (durationText) headerParts.push(durationText);
+          const headerSummary = headerParts.length > 0 ? headerParts.join(' • ') : 'Chưa có nội dung';
 
           return (
             <div key={section._id} className="border-b last:border-b-0">
@@ -255,27 +719,14 @@ export default function CourseCurriculum({
                 <div className="flex-1">
                   <div className="flex items-center space-x-3">
                     <span className="text-lg font-semibold text-gray-900">
-                      {section.order}. {section.title}
+                      {sectionOrder}. {section.title}
                     </span>
                     {section.description && (
                       <span className="text-sm text-gray-500">- {section.description}</span>
                     )}
                   </div>
                   <div className="flex items-center space-x-4 mt-1 text-sm text-gray-600">
-                    {section.lessons && section.lessons.length > 0 && (
-                      <span>{section.lessons.length} bài học</span>
-                    )}
-                    {section.exams && section.exams.length > 0 && (
-                      <span>{section.exams.length} bài kiểm tra</span>
-                    )}
-                    {section.duration && section.duration > 0 && (
-                      <span>{formatDuration(section.duration)}</span>
-                    )}
-                    {(!section.lessons || section.lessons.length === 0) && 
-                     (!section.exams || section.exams.length === 0) && 
-                     (!section.duration || section.duration === 0) && (
-                      <span className="text-gray-400">Chưa có nội dung</span>
-                    )}
+                    <span className={headerParts.length === 0 ? 'text-gray-400' : ''}>{headerSummary}</span>
                   </div>
                 </div>
                 <svg
@@ -298,142 +749,160 @@ export default function CourseCurriculum({
               {/* Section Lessons */}
               {isExpanded && (
                 <div className="px-6 pb-4 bg-gray-50">
-                  {availableLessons.length === 0 && (!section.exams || section.exams.length === 0) ? (
+                  {allLessons.length === 0 && (!visibleExams || visibleExams.length === 0) ? (
                     <p className="text-sm text-gray-500 py-4 text-center">Chưa có nội dung trong phần này</p>
                   ) : (
                     <div className="space-y-1">
-                      {availableLessons.map((lesson) => (
-                      <button
-                        key={lesson._id}
-                        onClick={() => handleLessonClick(lesson)}
-                        className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg hover:bg-white transition-colors text-left group"
-                      >
-                        <span className="text-lg">{getLessonIcon(lesson.type)}</span>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center space-x-2">
-                            <span className="font-medium text-gray-900 group-hover:text-blue-600">
-                              {lesson.order}. {lesson.title}
-                            </span>
-                            {lesson.isFree && (
-                              <span className="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded">
-                                Miễn phí
-                              </span>
-                            )}
-                            {isEnrolled && lesson.progress && (
-                              <>
-                                {lesson.progress.status === 'completed' && (
-                                  <span className="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded flex items-center">
-                                    ✓ Hoàn thành
-                                  </span>
-                                )}
-                                {lesson.progress.status === 'in_progress' && (
-                                  <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded">
-                                    Đang học
-                                  </span>
-                                )}
-                              </>
-                            )}
-                          </div>
-                          {lesson.description && (
-                            <p className="text-sm text-gray-600 mt-1 line-clamp-1">
-                              {lesson.description}
-                            </p>
-                          )}
-                        </div>
-                        <div className="flex items-center space-x-2 text-sm text-gray-500">
-                          {lesson.duration && lesson.duration > 0 && (
-                            <span>{formatDuration(lesson.duration)}</span>
-                          )}
-                          <svg
-                            className="w-4 h-4 opacity-0 group-hover:opacity-100 transition-opacity"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M9 5l7 7-7 7"
-                            />
-                          </svg>
-                        </div>
-                      </button>
-                    ))}
-
-                    {/* Locked Lessons Preview */}
-                    {!isEnrolled && lockedLessons.length > 0 && (
-                      <>
-                        {lockedLessons.slice(0, 2).map((lesson) => (
-                          <div
+                      {allLessons.map((lesson, lessonIdx) => {
+                        const lessonOrder = lesson.order && lesson.order > 0 ? lesson.order : lessonIdx + 1;
+                        const locked = isLessonLocked(lesson);
+                        return (
+                          <button
                             key={lesson._id}
-                            className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg bg-gray-100 opacity-60"
+                            onClick={() => !locked && handleLessonClick(lesson)}
+                            disabled={locked}
+                            className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-all text-left group border ${
+                              locked
+                                ? 'border-gray-200 bg-gray-100 opacity-60 cursor-not-allowed'
+                                : 'border-transparent hover:bg-white hover:border-gray-200 cursor-pointer'
+                            }`}
+                            title={locked ? (!isEnrolled ? 'Đăng ký khóa học để xem bài học này' : 'Hoàn thành các bài học trước để mở khóa') : ''}
                           >
-                            <span className="text-lg">{getLessonIcon(lesson.type)}</span>
-                            <div className="flex-1">
-                              <div className="flex items-center space-x-2">
-                                <span className="font-medium text-gray-600">
-                                  {lesson.order}. {lesson.title}
+                            <span className={`text-lg ${locked ? 'opacity-50' : ''}`}>{getLessonIcon(lesson.type)}</span>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center space-x-2 flex-wrap">
+                                <span className={`font-medium ${locked ? 'text-gray-500' : 'text-gray-900 group-hover:text-blue-600'}`}>
+                                  {lessonOrder}. {lesson.title}
                                 </span>
-                                <span className="px-2 py-0.5 bg-gray-200 text-gray-600 text-xs rounded">
-                                  🔒
-                                </span>
+                                {locked && (
+                                  <span className="px-2 py-0.5 bg-gray-200 text-gray-600 text-xs rounded flex items-center gap-1">
+                                    <span>🔒</span>
+                                    <span>{!isEnrolled ? 'Khóa' : 'Chưa mở khóa'}</span>
+                                  </span>
+                                )}
+                                {!locked && lesson.isFree && (
+                                  <span className="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded">
+                                    Miễn phí
+                                  </span>
+                                )}
+                                {!locked && isEnrolled && lesson.progress && (
+                                  <>
+                                    {lesson.progress.status === 'completed' && (
+                                      <span className="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded flex items-center">
+                                        ✓ Hoàn thành
+                                      </span>
+                                    )}
+                                    {lesson.progress.status === 'in_progress' && (
+                                      <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded">
+                                        Đang học
+                                      </span>
+                                    )}
+                                  </>
+                                )}
                               </div>
+                              {lesson.description && (
+                                <p className={`text-sm mt-1 line-clamp-1 ${locked ? 'text-gray-400' : 'text-gray-600'}`}>
+                                  {lesson.description}
+                                </p>
+                              )}
                             </div>
-                          </div>
-                        ))}
-                        {lockedLessons.length > 2 && (
-                          <div className="px-4 py-2 text-sm text-gray-500 text-center">
-                            +{lockedLessons.length - 2} bài học khác (đăng ký để xem)
-                          </div>
-                        )}
-                      </>
-                    )}
+                            <div className="flex items-center space-x-2 text-sm text-gray-500">
+                              {!locked && lesson.duration && lesson.duration > 0 && (
+                                <span>{formatDuration(lesson.duration)}</span>
+                              )}
+                              {!locked && (
+                                <svg
+                                  className="w-4 h-4 opacity-0 group-hover:opacity-100 transition-opacity"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  viewBox="0 0 24 24"
+                                >
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={2}
+                                    d="M9 5l7 7-7 7"
+                                  />
+                                </svg>
+                              )}
+                            </div>
+                          </button>
+                        );
+                      })}
 
                     {/* Exams */}
-                    {section.exams && section.exams.length > 0 && (
+                    {visibleExams && visibleExams.length > 0 && (
                       <div className="mt-4 pt-4 border-t">
                         <h4 className="text-sm font-semibold text-gray-700 mb-3">Bài kiểm tra</h4>
                         <div className="space-y-2">
-                          {section.exams.map((exam) => {
-                            const canTake = exam.hasRemainingAttempts !== false;
+                          {visibleExams.map((exam) => {
+                            const locked = isExamLocked(exam);
+                            const lockReason = getExamLockReason(exam, section);
+                            const canTake = !locked && exam.hasRemainingAttempts !== false;
                             const examProgress = exam.progress;
                             const isPassed = examProgress?.passed === true;
                             const isFailed = examProgress && !examProgress.passed;
                             const hasAttempts = examProgress && (examProgress.attempts || 0) > 0;
                             
+                            // Check time window for display
+                            const now = new Date();
+                            const examOpenAt = exam.openAt ? new Date(exam.openAt) : null;
+                            const examCloseAt = exam.closeAt ? new Date(exam.closeAt) : null;
+                            const allowLateSubmission = (exam as Exam & { allowLateSubmission?: boolean }).allowLateSubmission || false;
+                            const latePenaltyPercent = (exam as Exam & { latePenaltyPercent?: number }).latePenaltyPercent || 0;
+                            const isNotOpenYet = examOpenAt !== null && now < examOpenAt;
+                            const isExpired = examCloseAt !== null && now > examCloseAt;
+                            const isLateButAllowed = isExpired && allowLateSubmission;
+                            
                             return (
-                              <Link
+                              <div
                                 key={exam._id}
-                                href={`/courses/${courseSlug}/exams/${exam._id}`}
-                                className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors text-left group border ${
-                                  canTake
-                                    ? isPassed
-                                      ? 'border-green-200 bg-green-50 hover:bg-white'
-                                      : isFailed
-                                      ? 'border-red-200 bg-red-50 hover:bg-white'
-                                      : 'border-orange-200 bg-orange-50 hover:bg-white'
-                                    : 'border-gray-200 bg-gray-100 opacity-60 cursor-not-allowed'
+                                className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-all text-left group border ${
+                                  locked
+                                    ? 'border-gray-200 bg-gray-100 opacity-60 cursor-not-allowed'
+                                    : canTake
+                                      ? isPassed
+                                        ? 'border-green-200 bg-green-50 hover:bg-white cursor-pointer'
+                                        : isFailed
+                                          ? 'border-red-200 bg-red-50 hover:bg-white cursor-pointer'
+                                          : 'border-orange-200 bg-orange-50 hover:bg-white cursor-pointer'
+                                      : 'border-gray-200 bg-gray-100 opacity-60 cursor-not-allowed'
                                 }`}
-                                onClick={(e) => {
-                                  if (!canTake) {
-                                    e.preventDefault();
-                                  }
-                                }}
+                                title={locked ? (lockReason || 'Bài kiểm tra này đang bị khóa') : (lockReason || '')}
                               >
-                                <span className="text-lg">📝</span>
+                                <span className={`text-lg ${locked ? 'opacity-50' : ''}`}>📝</span>
                                 <div className="flex-1 min-w-0">
                                   <div className="flex items-center space-x-2 flex-wrap">
-                                    <span className={`font-medium ${canTake ? 'text-gray-900 group-hover:text-blue-600' : 'text-gray-500'}`}>
+                                    <span className={`font-medium ${locked ? 'text-gray-500' : canTake ? 'text-gray-900 group-hover:text-blue-600' : 'text-gray-500'}`}>
                                       {exam.title}
                                     </span>
-                                    {exam.totalPoints > 0 && (
+                                    {locked && (
+                                      <span className="px-2 py-0.5 bg-gray-200 text-gray-600 text-xs rounded flex items-center gap-1">
+                                        <span>🔒</span>
+                                        <span>
+                                          {isNotOpenYet 
+                                            ? 'Chưa mở' 
+                                            : isExpired && !allowLateSubmission
+                                              ? 'Đã đóng' 
+                                              : !isEnrolled 
+                                                ? 'Khóa' 
+                                                : 'Chưa mở khóa'}
+                                        </span>
+                                      </span>
+                                    )}
+                                    {isLateButAllowed && !locked && (
+                                      <span className="px-2 py-0.5 bg-yellow-100 text-yellow-700 text-xs rounded flex items-center gap-1">
+                                        <span>⚠️</span>
+                                        <span>Nộp muộn{latePenaltyPercent > 0 ? ` (-${latePenaltyPercent}%)` : ''}</span>
+                                      </span>
+                                    )}
+                                    {!locked && exam.totalPoints > 0 && (
                                       <span className="px-2 py-0.5 bg-orange-100 text-orange-700 text-xs rounded">
                                         {exam.totalPoints} điểm
                                       </span>
                                     )}
                                     {/* Exam Progress Status */}
-                                    {isEnrolled && examProgress && (
+                                    {!locked && isEnrolled && examProgress && (
                                       <>
                                         {isPassed && (
                                           <span className="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded flex items-center">
@@ -457,56 +926,65 @@ export default function CourseCurriculum({
                                         )}
                                       </>
                                     )}
-                                    {exam.status === 'published' && !examProgress && (
+                                    {!locked && exam.status === 'published' && !examProgress && (
                                       <span className="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded">
                                         Đã xuất bản
                                       </span>
                                     )}
-                                    {!canTake && exam.maxAttempts && (
+                                    {!locked && !canTake && exam.maxAttempts && (
                                       <span className="px-2 py-0.5 bg-red-100 text-red-700 text-xs rounded">
                                         Đã hết lần làm bài
                                       </span>
                                     )}
                                   </div>
                                   {exam.description && (
-                                    <p className="text-sm text-gray-600 mt-1 line-clamp-1">
+                                    <p className={`text-sm mt-1 line-clamp-1 ${locked ? 'text-gray-400' : 'text-gray-600'}`}>
                                       {exam.description}
                                     </p>
                                   )}
-                                  <div className="flex items-center space-x-3 mt-1 text-xs text-gray-500">
-                                    {exam.durationMinutes && exam.durationMinutes > 0 && (
-                                      <span>⏱️ {formatDuration(exam.durationMinutes)}</span>
-                                    )}
-                                    {exam.maxAttempts && (
-                                      <span>
-                                        {exam.remainingAttempts !== null && exam.remainingAttempts !== undefined
-                                          ? exam.remainingAttempts > 0
-                                            ? `Còn ${exam.remainingAttempts}/${exam.maxAttempts} lần`
-                                            : `Đã hết lần (${exam.maxAttempts} lần)`
-                                          : `Tối đa ${exam.maxAttempts} lần`}
-                                      </span>
-                                    )}
-                                    {examProgress && examProgress.attempts && examProgress.attempts > 0 && (
-                                      <span>Đã làm: {examProgress.attempts} lần</span>
-                                    )}
-                                  </div>
+                                  {!locked && (
+                                    <div className="flex items-center space-x-3 mt-1 text-xs text-gray-500">
+                                      {exam.durationMinutes && exam.durationMinutes > 0 && (
+                                        <span>⏱️ {formatDuration(exam.durationMinutes)}</span>
+                                      )}
+                                      {exam.maxAttempts && (
+                                        <span>
+                                          {exam.remainingAttempts !== null && exam.remainingAttempts !== undefined
+                                            ? exam.remainingAttempts > 0
+                                              ? `Còn ${exam.remainingAttempts}/${exam.maxAttempts} lần`
+                                              : `Đã hết lần (${exam.maxAttempts} lần)`
+                                            : `Tối đa ${exam.maxAttempts} lần`}
+                                        </span>
+                                      )}
+                                      {examProgress && examProgress.attempts && examProgress.attempts > 0 && (
+                                        <span>Đã làm: {examProgress.attempts} lần</span>
+                                      )}
+                                    </div>
+                                  )}
                                 </div>
-                                {canTake && (
-                                  <svg
-                                    className="w-4 h-4 opacity-0 group-hover:opacity-100 transition-opacity text-gray-400"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    viewBox="0 0 24 24"
+                                {canTake && !locked ? (
+                                  <Link
+                                    href={`/courses/${courseSlug}/exams/${exam._id}`}
+                                    className="flex items-center"
                                   >
-                                    <path
-                                      strokeLinecap="round"
-                                      strokeLinejoin="round"
-                                      strokeWidth={2}
-                                      d="M9 5l7 7-7 7"
-                                    />
-                                  </svg>
-                                )}
-                              </Link>
+                                    <svg
+                                      className="w-4 h-4 opacity-0 group-hover:opacity-100 transition-opacity text-gray-400"
+                                      fill="none"
+                                      stroke="currentColor"
+                                      viewBox="0 0 24 24"
+                                    >
+                                      <path
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        strokeWidth={2}
+                                        d="M9 5l7 7-7 7"
+                                      />
+                                    </svg>
+                                  </Link>
+                                ) : locked ? (
+                                  <span className="text-gray-400 text-lg">🔒</span>
+                                ) : null}
+                              </div>
                             );
                           })}
                         </div>
