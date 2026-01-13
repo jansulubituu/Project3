@@ -35,7 +35,9 @@ router.get('/', protect, adminOnly, getAllUsers);
 router.delete('/:id', protect, adminOnly, deleteUser);
 router.put('/:id/deactivate', protect, adminOnly, deactivateUser);
 router.put('/:id/activate', protect, adminOnly, activateUser);
-router.get('/:id/stats', protect, adminOnly, getUserStats);
+
+// ✅ Updated: Allow own user or admin to view stats
+router.get('/:id/stats', protect, getUserStats);
 
 export default router;
 

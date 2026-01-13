@@ -60,6 +60,7 @@ function ExamTemplatesContent() {
   const [editingTemplate, setEditingTemplate] = useState<ExamTemplate | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [sections, setSections] = useState<{ _id: string; title: string }[]>([]);
 
   const [form, setForm] = useState({

@@ -162,7 +162,7 @@ function NewCourseContent() {
       errors.instructor = 'Vui lòng chọn giảng viên phụ trách.';
     }
 
-    if (form.discountPrice !== undefined && form.discountPrice !== null && form.discountPrice !== '' && form.discountPrice >= form.price) {
+    if (form.discountPrice !== undefined && form.discountPrice !== null && typeof form.discountPrice === 'number' && form.discountPrice >= form.price) {
       errors.discountPrice = 'Giá khuyến mãi phải nhỏ hơn giá gốc.';
     }
 
@@ -688,7 +688,7 @@ function NewCourseContent() {
                           src={form.thumbnail}
                           alt="Course thumbnail preview"
                           className="h-32 w-full object-cover rounded-md border border-gray-200"
-                          onError={(e) => {
+                          onError={() => {
                             setFieldErrors((prev) => ({
                               ...prev,
                               thumbnail: 'URL ảnh không hợp lệ hoặc không thể tải được.',

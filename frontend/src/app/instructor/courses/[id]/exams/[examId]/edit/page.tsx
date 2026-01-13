@@ -21,6 +21,14 @@ interface ExamDetail {
   openAt?: string | null;
   closeAt?: string | null;
   maxAttempts?: number | null;
+  shuffleQuestions?: boolean;
+  shuffleAnswers?: boolean;
+  scoringMethod?: 'highest' | 'latest' | 'average';
+  showCorrectAnswers?: 'never' | 'after_submit' | 'after_close';
+  showScoreToStudent?: boolean;
+  allowLateSubmission?: boolean;
+  latePenaltyPercent?: number;
+  timeLimitType?: 'per_attempt' | 'global_window';
   questions: Array<{
     question: {
       _id: string;
@@ -106,8 +114,10 @@ function ExamEditContent() {
             shuffleAnswers: e.shuffleAnswers ?? false,
             scoringMethod: e.scoringMethod || 'highest',
             showCorrectAnswers: e.showCorrectAnswers || 'after_submit',
+            showScoreToStudent: e.showScoreToStudent !== undefined ? e.showScoreToStudent : true,
             allowLateSubmission: e.allowLateSubmission ?? false,
             latePenaltyPercent: e.latePenaltyPercent ? String(e.latePenaltyPercent) : '0',
+            timeLimitType: e.timeLimitType || 'per_attempt',
           });
         } else {
           setError('Không tìm thấy bài kiểm tra.');

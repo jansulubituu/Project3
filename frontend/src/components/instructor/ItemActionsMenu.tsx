@@ -26,16 +26,6 @@ export default function ItemActionsMenu({
   onViewAnalytics,
   position = 'right',
 }: ItemActionsMenuProps) {
-  const getStatusLabel = () => {
-    if (item.type === 'lesson') {
-      return (item as LessonItem).isPublished ? 'Published' : 'Draft';
-    }
-    if (item.type === 'exam') {
-      return (item as ExamItem).status;
-    }
-    return '';
-  };
-
   return (
     <div
       className={`absolute ${position === 'right' ? 'right-0' : 'left-0'} top-full mt-1 z-50 bg-white border border-gray-200 rounded-lg shadow-lg min-w-[200px] overflow-hidden`}

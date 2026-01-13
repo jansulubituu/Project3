@@ -142,7 +142,7 @@ function EditCourseContent() {
       errors.language = 'Vui lòng nhập ngôn ngữ giảng dạy.';
     }
 
-    if (form.discountPrice !== undefined && form.discountPrice !== null && form.discountPrice !== '' && form.discountPrice >= form.price) {
+    if (form.discountPrice !== undefined && form.discountPrice !== null && typeof form.discountPrice === 'number' && form.discountPrice >= form.price) {
       errors.discountPrice = 'Giá khuyến mãi phải nhỏ hơn giá gốc.';
     }
 
@@ -164,7 +164,7 @@ function EditCourseContent() {
 
       const payload: any = { ...form };
 
-      if (payload.discountPrice === undefined || payload.discountPrice === null || payload.discountPrice === '') {
+      if (payload.discountPrice === undefined || payload.discountPrice === null || payload.discountPrice === '' || (typeof payload.discountPrice === 'number' && isNaN(payload.discountPrice))) {
         delete payload.discountPrice;
       }
       if (!payload.subcategory) {

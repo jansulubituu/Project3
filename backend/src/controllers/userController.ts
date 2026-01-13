@@ -468,9 +468,9 @@ export const activateUser = async (req: Request, res: Response) => {
   }
 };
 
-// @desc    Get user statistics (Admin only)
+// @desc    Get user statistics (Own user or Admin)
 // @route   GET /api/users/:id/stats
-// @access  Private/Admin
+// @access  Private (Own user or Admin)
 export const getUserStats = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
@@ -480,6 +480,24 @@ export const getUserStats = async (req: Request, res: Response) => {
       return res.status(400).json({
         success: false,
         error: 'Invalid user ID',
+      });
+    }
+
+    // ✅ Allow own user or admin to view stats
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        error: 'Authentication required',
+      });
+    }
+
+    const isOwnProfile = req.user.id === id;
+    const isAdmin = req.user.role === 'admin';
+
+    if (!isOwnProfile && !isAdmin) {
+      return res.status(403).json({
+        success: false,
+        error: 'Not authorized to view this user\'s statistics',
       });
     }
 
@@ -517,11 +535,28 @@ export const getUserStats = async (req: Request, res: Response) => {
       stats.totalSpent = totalPayments[0]?.total || 0;
     } else if (user.role === 'instructor') {
       // Instructor stats
-      const courses = await Course.countDocuments({ instructor: id });
-      const totalStudents = await Course.aggregate([
-        { $match: { instructor: new mongoose.Types.ObjectId(id) } },
-        { $group: { _id: null, total: { $sum: '$enrollmentCount' } } },
-      ]);
+      // Get instructor's courses
+      const instructorCourses = await Course.find({ instructor: id }).select('_id');
+      const courseIds = instructorCourses.map((c) => c._id);
+
+      // ✅ FIX: Count unique students from Enrollment model (not sum enrollmentCount)
+      const uniqueStudents = await Enrollment.distinct('student', {
+        course: { $in: courseIds },
+        status: { $in: ['active', 'completed'] },
+      });
+
+      // Count courses by status
+      const totalCourses = instructorCourses.length;
+      const publishedCourses = await Course.countDocuments({
+        instructor: id,
+        status: 'published',
+      });
+      const draftCourses = await Course.countDocuments({
+        instructor: id,
+        status: 'draft',
+      });
+
+      // Calculate total revenue from payments
       const totalRevenue = await Payment.aggregate([
         {
           $lookup: {
@@ -541,9 +576,33 @@ export const getUserStats = async (req: Request, res: Response) => {
         { $group: { _id: null, total: { $sum: '$finalAmount' } } },
       ]);
 
-      stats.totalCourses = courses;
-      stats.totalStudents = totalStudents[0]?.total || 0;
+      // ✅ Calculate weighted average rating
+      const ratingStats = await Course.aggregate([
+        {
+          $match: {
+            instructor: new mongoose.Types.ObjectId(id),
+            status: 'published',
+            averageRating: { $gt: 0 },
+          },
+        },
+        {
+          $group: {
+            _id: null,
+            weightedSum: { $sum: { $multiply: ['$averageRating', '$totalReviews'] } },
+            totalReviews: { $sum: '$totalReviews' },
+          },
+        },
+      ]);
+
+      stats.totalCourses = totalCourses;
+      stats.publishedCourses = publishedCourses;
+      stats.draftCourses = draftCourses;
+      stats.totalStudents = uniqueStudents.length; // ✅ Fixed: unique students count
       stats.totalRevenue = totalRevenue[0]?.total || 0;
+      stats.averageRating =
+        ratingStats[0]?.totalReviews > 0
+          ? Math.round((ratingStats[0].weightedSum / ratingStats[0].totalReviews) * 10) / 10
+          : 0;
     }
 
     res.json({

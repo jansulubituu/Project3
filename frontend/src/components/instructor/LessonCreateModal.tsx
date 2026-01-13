@@ -49,7 +49,7 @@ const lessonTypes: { value: LessonType; label: string; icon: typeof Video; descr
 export default function LessonCreateModal({
   isOpen,
   sectionId,
-  courseId,
+  courseId: _courseId,
   onClose,
   onSuccess,
 }: LessonCreateModalProps) {
@@ -115,7 +115,7 @@ export default function LessonCreateModal({
             if (!q.options || q.options.length < 2) {
               errors[`quizQuestions.${i}.options`] = `Câu hỏi ${i + 1} cần ít nhất 2 lựa chọn.`;
             }
-            if (!q.correctAnswer || !q.options.includes(q.correctAnswer)) {
+            if (!q.correctAnswer || !q.options || !q.options.includes(q.correctAnswer)) {
               errors[`quizQuestions.${i}.correctAnswer`] = `Câu hỏi ${i + 1} cần có đáp án đúng hợp lệ.`;
             }
           } else if (!q.correctAnswer || !q.correctAnswer.trim()) {

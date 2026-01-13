@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, FormEvent } from 'react';
-import { X, Loader2, Calendar, Clock, Target, Settings } from 'lucide-react';
+import { X, Loader2, Calendar, Clock, Settings } from 'lucide-react';
 import { api } from '@/lib/api';
 
 interface ExamCreateModalProps {

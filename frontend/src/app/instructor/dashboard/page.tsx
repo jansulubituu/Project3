@@ -8,6 +8,7 @@ import Footer from '@/components/layout/Footer';
 import Link from 'next/link';
 import Image from 'next/image';
 import { api } from '@/lib/api';
+import { BookOpen, CheckCircle, Users, Star, DollarSign } from 'lucide-react';
 
 interface Course {
   _id: string;
@@ -36,40 +37,49 @@ function InstructorDashboardContent() {
   const [courses, setCourses] = useState<Course[]>([]);
   const [stats, setStats] = useState<InstructorStats | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchDashboardData = async () => {
       if (!user?.id) return;
       try {
         setLoading(true);
+        setError(null);
 
-        const limit = 100;
-        const [recentCoursesRes, allCoursesRes] = await Promise.all([
+        // ✅ Fetch stats from backend endpoint instead of calculating client-side
+        const [statsRes, recentCoursesRes] = await Promise.all([
+          api.get(`/users/${user.id}/stats`),
           api.get(`/users/${user.id}/courses`, { params: { limit: 6 } }),
-          api.get(`/users/${user.id}/courses`, { params: { limit } }),
         ]);
 
+        // Handle stats response
+        if (statsRes.data.success && statsRes.data.stats) {
+          const backendStats = statsRes.data.stats;
+          setStats({
+            totalCourses: backendStats.totalCourses || 0,
+            publishedCourses: backendStats.publishedCourses || 0,
+            draftCourses: backendStats.draftCourses || 0,
+            totalStudents: backendStats.totalStudents || 0, // ✅ From backend (unique students)
+            totalRevenue: backendStats.totalRevenue || 0, // ✅ From backend (payments)
+            averageRating: backendStats.averageRating || 0, // ✅ From backend (weighted)
+          });
+        }
+
+        // Handle recent courses
         if (recentCoursesRes.data.success && recentCoursesRes.data.type === 'courses') {
           setCourses(recentCoursesRes.data.courses || []);
         }
-
-        if (allCoursesRes.data.success && allCoursesRes.data.type === 'courses') {
-          const allCourses: Course[] = allCoursesRes.data.courses || [];
-          const calculatedStats: InstructorStats = {
-            totalCourses: allCourses.length,
-            publishedCourses: allCourses.filter((c) => c.status === 'published').length,
-            draftCourses: allCourses.filter((c) => c.status === 'draft').length,
-            totalStudents: allCourses.reduce((sum, c) => sum + (c.enrollmentCount || 0), 0),
-            totalRevenue: 0, // TODO: Replace with real revenue data when payments ready
-            averageRating:
-              allCourses.length > 0
-                ? allCourses.reduce((sum, c) => sum + (c.averageRating || 0), 0) / allCourses.length
-                : 0,
-          };
-          setStats(calculatedStats);
+      } catch (err: unknown) {
+        console.error('Failed to fetch dashboard data:', err);
+        let errorMessage = 'Không thể tải dữ liệu dashboard';
+        if (err && typeof err === 'object' && 'response' in err) {
+          const axiosError = err as { response?: { data?: { error?: string; message?: string } } };
+          errorMessage =
+            axiosError?.response?.data?.error ||
+            axiosError?.response?.data?.message ||
+            errorMessage;
         }
-      } catch (error) {
-        console.error('Failed to fetch dashboard data:', error);
+        setError(errorMessage);
       } finally {
         setLoading(false);
       }
@@ -89,10 +99,21 @@ function InstructorDashboardContent() {
     return (
       <div className="min-h-screen bg-gray-50 flex flex-col">
         <Header />
-        <main className="flex-1 flex items-center justify-center">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-            <p className="mt-4 text-gray-600">Đang tải...</p>
+        <main className="flex-1">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+            {/* Skeleton Loaders */}
+            <div className="mb-8">
+              <div className="h-8 bg-gray-200 rounded w-64 mb-2 animate-pulse"></div>
+              <div className="h-4 bg-gray-200 rounded w-96 animate-pulse"></div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+              {[1, 2, 3, 4].map((i) => (
+                <div key={i} className="bg-white rounded-lg shadow p-6">
+                  <div className="h-4 bg-gray-200 rounded w-24 mb-4 animate-pulse"></div>
+                  <div className="h-8 bg-gray-200 rounded w-16 animate-pulse"></div>
+                </div>
+              ))}
+            </div>
           </div>
         </main>
         <Footer />
@@ -112,50 +133,118 @@ function InstructorDashboardContent() {
             <p className="text-gray-600 mt-2">Quản lý khóa học và theo dõi hiệu suất</p>
           </div>
 
+          {/* Error Message */}
+          {error && (
+            <div className="mb-6 bg-red-50 border border-red-200 rounded-lg p-4 flex items-center justify-between">
+              <div className="flex items-center">
+                <svg
+                  className="w-5 h-5 text-red-600 mr-2"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                  />
+                </svg>
+                <p className="text-red-800">{error}</p>
+              </div>
+              <button
+                onClick={() => window.location.reload()}
+                className="ml-4 text-sm text-red-600 hover:text-red-800 font-medium underline"
+              >
+                Thử lại
+              </button>
+            </div>
+          )}
+
           {/* Stats Cards */}
           {stats && (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-              <div className="bg-white rounded-lg shadow p-6">
+              {/* Total Courses */}
+              <div className="bg-white rounded-lg shadow p-6 hover:shadow-lg transition-shadow">
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm text-gray-600">Tổng khóa học</p>
                     <p className="text-3xl font-bold text-gray-900 mt-2">{stats.totalCourses}</p>
+                    {stats.draftCourses > 0 && (
+                      <p className="text-xs text-gray-500 mt-1">{stats.draftCourses} bản nháp</p>
+                    )}
                   </div>
-                  <div className="text-4xl">📚</div>
+                  <div className="p-3 bg-blue-100 rounded-full">
+                    <BookOpen className="w-6 h-6 text-blue-600" />
+                  </div>
                 </div>
               </div>
 
-              <div className="bg-white rounded-lg shadow p-6">
+              {/* Published Courses */}
+              <div className="bg-white rounded-lg shadow p-6 hover:shadow-lg transition-shadow">
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm text-gray-600">Đã xuất bản</p>
                     <p className="text-3xl font-bold text-green-600 mt-2">{stats.publishedCourses}</p>
+                    {stats.totalCourses > 0 && (
+                      <p className="text-xs text-gray-500 mt-1">
+                        {Math.round((stats.publishedCourses / stats.totalCourses) * 100)}% tổng số
+                      </p>
+                    )}
                   </div>
-                  <div className="text-4xl">✅</div>
+                  <div className="p-3 bg-green-100 rounded-full">
+                    <CheckCircle className="w-6 h-6 text-green-600" />
+                  </div>
                 </div>
               </div>
 
-              <div className="bg-white rounded-lg shadow p-6">
+              {/* Total Students */}
+              <div className="bg-white rounded-lg shadow p-6 hover:shadow-lg transition-shadow">
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm text-gray-600">Tổng học viên</p>
                     <p className="text-3xl font-bold text-blue-600 mt-2">{stats.totalStudents}</p>
+                    <p className="text-xs text-gray-500 mt-1">Học viên duy nhất</p>
                   </div>
-                  <div className="text-4xl">👥</div>
+                  <div className="p-3 bg-blue-100 rounded-full">
+                    <Users className="w-6 h-6 text-blue-600" />
+                  </div>
                 </div>
               </div>
 
-              <div className="bg-white rounded-lg shadow p-6">
+              {/* Average Rating */}
+              <div className="bg-white rounded-lg shadow p-6 hover:shadow-lg transition-shadow">
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm text-gray-600">Đánh giá TB</p>
                     <p className="text-3xl font-bold text-yellow-600 mt-2">
-                      {stats.averageRating.toFixed(1)}★
+                      {stats.averageRating > 0 ? stats.averageRating.toFixed(1) : '0.0'}
                     </p>
+                    <p className="text-xs text-gray-500 mt-1">Trung bình có trọng số</p>
                   </div>
-                  <div className="text-4xl">⭐</div>
+                  <div className="p-3 bg-yellow-100 rounded-full">
+                    <Star className="w-6 h-6 text-yellow-600" />
+                  </div>
                 </div>
               </div>
+
+              {/* Total Revenue - New Card */}
+              {stats.totalRevenue > 0 && (
+                <div className="bg-white rounded-lg shadow p-6 hover:shadow-lg transition-shadow md:col-span-2">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm text-gray-600">Tổng doanh thu</p>
+                      <p className="text-3xl font-bold text-green-600 mt-2">
+                        {formatPrice(stats.totalRevenue)}
+                      </p>
+                      <p className="text-xs text-gray-500 mt-1">Từ tất cả khóa học</p>
+                    </div>
+                    <div className="p-3 bg-green-100 rounded-full">
+                      <DollarSign className="w-6 h-6 text-green-600" />
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
