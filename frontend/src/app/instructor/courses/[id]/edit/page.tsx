@@ -39,6 +39,7 @@ function EditCourseContent() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [success, setSuccess] = useState<string | null>(null);
   const [thumbnailUploading, setThumbnailUploading] = useState(false);
   const [thumbnailError, setThumbnailError] = useState<string | null>(null);
@@ -107,10 +108,59 @@ function EditCourseContent() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form || !courseId) return;
+
+    setError(null);
+    setFieldErrors({});
+    setSuccess(null);
+
+    // Client-side validation
+    const errors: Record<string, string> = {};
+
+    if (!form.title.trim()) {
+      errors.title = 'Vui lòng nhập tiêu đề khóa học.';
+    }
+
+    if (!form.shortDescription.trim()) {
+      errors.shortDescription = 'Vui lòng nhập mô tả ngắn.';
+    }
+
+    if (!form.description.trim()) {
+      errors.description = 'Vui lòng nhập mô tả chi tiết.';
+    } else if (form.description.trim().length < 50) {
+      errors.description = 'Mô tả chi tiết phải có ít nhất 50 ký tự.';
+    }
+
+    if (!form.category) {
+      errors.category = 'Vui lòng chọn danh mục.';
+    }
+
+    if (!form.thumbnail.trim()) {
+      errors.thumbnail = 'Vui lòng tải lên ảnh thumbnail hoặc nhập URL ảnh.';
+    }
+
+    if (!form.language.trim()) {
+      errors.language = 'Vui lòng nhập ngôn ngữ giảng dạy.';
+    }
+
+    if (form.discountPrice !== undefined && form.discountPrice !== null && form.discountPrice !== '' && form.discountPrice >= form.price) {
+      errors.discountPrice = 'Giá khuyến mãi phải nhỏ hơn giá gốc.';
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
+      // Scroll to first error
+      const firstErrorField = Object.keys(errors)[0];
+      const element = document.querySelector(`[name="${firstErrorField}"]`) || 
+                      document.querySelector(`#${firstErrorField}`);
+      if (element) {
+        element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        (element as HTMLElement).focus();
+      }
+      return;
+    }
+
     try {
       setSaving(true);
-      setError(null);
-      setSuccess(null);
 
       const payload: any = { ...form };
 
@@ -129,11 +179,25 @@ function EditCourseContent() {
       }
     } catch (err: any) {
       console.error('Failed to save course:', err);
-      const message =
-        err?.response?.data?.message ||
-        err?.response?.data?.error ||
-        'Không thể cập nhật khóa học. Vui lòng thử lại.';
-      setError(message);
+      
+      // Parse backend validation errors
+      const backendErrors: Record<string, string> = {};
+      if (err?.response?.data?.errors && Array.isArray(err.response.data.errors)) {
+        err.response.data.errors.forEach((error: any) => {
+          const field = error.path || error.field || 'general';
+          backendErrors[field] = error.message || error.msg || 'Lỗi validation';
+        });
+      }
+
+      if (Object.keys(backendErrors).length > 0) {
+        setFieldErrors(backendErrors);
+      } else {
+        const message =
+          err?.response?.data?.message ||
+          err?.response?.data?.error ||
+          'Không thể cập nhật khóa học. Vui lòng kiểm tra lại thông tin và thử lại.';
+        setError(message);
+      }
     } finally {
       setSaving(false);
     }
@@ -226,22 +290,49 @@ function EditCourseContent() {
               {/* Title */}
               <div>
                 <label className="block text-sm font-medium text-gray-700">
-                  Tiêu đề khóa học
+                  Tiêu đề khóa học <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="text"
                   name="title"
                   value={form.title}
-                  onChange={handleChange}
-                  className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  onChange={(e) => {
+                    handleChange(e);
+                    if (fieldErrors.title) {
+                      setFieldErrors((prev) => {
+                        const newErrors = { ...prev };
+                        delete newErrors.title;
+                        return newErrors;
+                      });
+                    }
+                  }}
+                  className={`mt-1 block w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
+                    fieldErrors.title ? 'border-red-300 bg-red-50' : 'border-gray-300'
+                  }`}
+                  placeholder="Ví dụ: Lập trình React từ cơ bản đến nâng cao"
+                  maxLength={200}
                   required
                 />
+                <div className="mt-1 flex items-center justify-between">
+                  <p className="text-xs text-gray-500">
+                    Tiêu đề hấp dẫn, mô tả rõ nội dung khóa học (tối đa 200 ký tự)
+                  </p>
+                  <span className="text-xs text-gray-400">
+                    {form.title.length}/200
+                  </span>
+                </div>
+                {fieldErrors.title && (
+                  <p className="mt-1 text-xs text-red-600 flex items-center">
+                    <span className="mr-1">⚠️</span>
+                    {fieldErrors.title}
+                  </p>
+                )}
               </div>
 
               {/* Short Description */}
               <div>
                 <label className="block text-sm font-medium text-gray-700">
-                  Mô tả ngắn
+                  Mô tả ngắn <span className="text-red-500">*</span>
                 </label>
                 <textarea
                   name="shortDescription"
@@ -249,14 +340,24 @@ function EditCourseContent() {
                   onChange={handleChange}
                   rows={2}
                   className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="Mô tả ngắn gọn về khóa học trong 1-2 câu..."
+                  maxLength={200}
                   required
                 />
+                <div className="mt-1 flex items-center justify-between">
+                  <p className="text-xs text-gray-500">
+                    Mô tả ngắn gọn, hấp dẫn để hiển thị trong danh sách khóa học (tối đa 200 ký tự)
+                  </p>
+                  <span className="text-xs text-gray-400">
+                    {form.shortDescription.length}/200
+                  </span>
+                </div>
               </div>
 
               {/* Description */}
               <div>
                 <label className="block text-sm font-medium text-gray-700">
-                  Mô tả chi tiết
+                  Mô tả chi tiết <span className="text-red-500">*</span>
                 </label>
                 <textarea
                   name="description"
@@ -264,21 +365,36 @@ function EditCourseContent() {
                   onChange={handleChange}
                   rows={6}
                   className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="Mô tả chi tiết về nội dung khóa học, mục tiêu học tập, đối tượng phù hợp..."
                   required
                 />
+                <p className="mt-1 text-xs text-gray-500">
+                  Mô tả chi tiết giúp học viên hiểu rõ về khóa học. Tối thiểu 50 ký tự, không giới hạn tối đa.
+                </p>
               </div>
 
               {/* Category & Level */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700">
-                    Danh mục
+                    Danh mục <span className="text-red-500">*</span>
                   </label>
                   <select
                     name="category"
                     value={form.category}
-                    onChange={handleChange}
-                    className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    onChange={(e) => {
+                      handleChange(e);
+                      if (fieldErrors.category) {
+                        setFieldErrors((prev) => {
+                          const newErrors = { ...prev };
+                          delete newErrors.category;
+                          return newErrors;
+                        });
+                      }
+                    }}
+                    className={`mt-1 block w-full rounded-lg border px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
+                      fieldErrors.category ? 'border-red-300 bg-red-50' : 'border-gray-300'
+                    }`}
                     required
                   >
                     <option value="">Chọn danh mục</option>
@@ -288,10 +404,19 @@ function EditCourseContent() {
                       </option>
                     ))}
                   </select>
+                  {fieldErrors.category && (
+                    <p className="mt-1 text-xs text-red-600 flex items-center">
+                      <span className="mr-1">⚠️</span>
+                      {fieldErrors.category}
+                    </p>
+                  )}
+                  <p className="mt-1 text-xs text-gray-500">
+                    Chọn danh mục phù hợp để học viên dễ tìm thấy khóa học của bạn
+                  </p>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700">
-                    Cấp độ
+                    Cấp độ <span className="text-xs text-gray-500 font-normal">(Tùy chọn)</span>
                   </label>
                   <select
                     name="level"
@@ -299,11 +424,14 @@ function EditCourseContent() {
                     onChange={handleChange}
                     className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   >
+                    <option value="all_levels">Mọi cấp độ (Mặc định)</option>
                     <option value="beginner">Cơ bản</option>
                     <option value="intermediate">Trung bình</option>
                     <option value="advanced">Nâng cao</option>
-                    <option value="all_levels">Mọi cấp độ</option>
                   </select>
+                  <p className="mt-1 text-xs text-gray-500">
+                    Cấp độ phù hợp với khóa học. Chọn "Mọi cấp độ" nếu khóa học phù hợp với tất cả học viên.
+                  </p>
                 </div>
               </div>
 
@@ -342,8 +470,11 @@ function EditCourseContent() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700">
-                    Ảnh thumbnail
+                    Ảnh thumbnail <span className="text-red-500">*</span>
                   </label>
+                  <p className="mt-1 mb-2 text-xs text-gray-500">
+                    Tải lên ảnh thumbnail hoặc nhập URL ảnh. Ảnh thumbnail giúp khóa học của bạn thu hút học viên hơn.
+                  </p>
                   <div className="mt-1 space-y-2">
                     <input
                       type="file"
@@ -352,26 +483,56 @@ function EditCourseContent() {
                       className="block w-full text-sm text-gray-700 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
                     />
                     {thumbnailUploading && (
-                      <p className="text-xs text-gray-500">Đang upload thumbnail...</p>
+                      <p className="text-xs text-blue-600 flex items-center">
+                        <span className="mr-1">⏳</span>
+                        Đang upload thumbnail...
+                      </p>
                     )}
                     {thumbnailError && (
-                      <p className="text-xs text-red-600">{thumbnailError}</p>
+                      <p className="text-xs text-red-600 flex items-center">
+                        <span className="mr-1">⚠️</span>
+                        {thumbnailError}
+                      </p>
                     )}
                     <input
                       type="text"
                       name="thumbnail"
+                      id="thumbnail"
                       value={form.thumbnail}
-                      onChange={handleChange}
-                      className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      onChange={(e) => {
+                        handleChange(e);
+                        if (fieldErrors.thumbnail) {
+                          setFieldErrors((prev) => {
+                            const newErrors = { ...prev };
+                            delete newErrors.thumbnail;
+                            return newErrors;
+                          });
+                        }
+                      }}
+                      className={`mt-1 block w-full rounded-lg border px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
+                        fieldErrors.thumbnail ? 'border-red-300 bg-red-50' : 'border-gray-300'
+                      }`}
                       placeholder="Hoặc dán URL thumbnail thủ công"
                     />
-                    {form.thumbnail && (
+                    {fieldErrors.thumbnail && (
+                      <p className="mt-1 text-xs text-red-600 flex items-center">
+                        <span className="mr-1">⚠️</span>
+                        {fieldErrors.thumbnail}
+                      </p>
+                    )}
+                    {form.thumbnail && !fieldErrors.thumbnail && (
                       <div className="mt-2">
                         <p className="text-xs text-gray-500 mb-1">Preview:</p>
                         <img
                           src={form.thumbnail}
                           alt="Course thumbnail preview"
                           className="h-32 w-full object-cover rounded-md border border-gray-200"
+                          onError={() => {
+                            setFieldErrors((prev) => ({
+                              ...prev,
+                              thumbnail: 'URL ảnh không hợp lệ hoặc không thể tải được.',
+                            }));
+                          }}
                         />
                       </div>
                     )}
@@ -379,22 +540,44 @@ function EditCourseContent() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700">
-                    Ngôn ngữ
+                    Ngôn ngữ <span className="text-red-500">*</span>
                   </label>
                   <input
                     type="text"
                     name="language"
                     value={form.language}
-                    onChange={handleChange}
-                    className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    onChange={(e) => {
+                      handleChange(e);
+                      if (fieldErrors.language) {
+                        setFieldErrors((prev) => {
+                          const newErrors = { ...prev };
+                          delete newErrors.language;
+                          return newErrors;
+                        });
+                      }
+                    }}
+                    className={`mt-1 block w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
+                      fieldErrors.language ? 'border-red-300 bg-red-50' : 'border-gray-300'
+                    }`}
+                    placeholder="Ví dụ: Tiếng Việt, English, 中文"
+                    required
                   />
+                  {fieldErrors.language && (
+                    <p className="mt-1 text-xs text-red-600 flex items-center">
+                      <span className="mr-1">⚠️</span>
+                      {fieldErrors.language}
+                    </p>
+                  )}
+                  <p className="mt-1 text-xs text-gray-500">
+                    Ngôn ngữ giảng dạy chính của khóa học. Mặc định là "English".
+                  </p>
                 </div>
               </div>
 
               {/* Status (readonly for instructor if needed – backend vẫn enforce) */}
               <div>
                 <label className="block text-sm font-medium text-gray-700">
-                  Trạng thái
+                  Trạng thái <span className="text-xs text-gray-500 font-normal">(Tùy chọn)</span>
                 </label>
                 <select
                   name="status"
@@ -402,12 +585,12 @@ function EditCourseContent() {
                   onChange={handleChange}
                   className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 >
-                  <option value="draft">Bản nháp</option>
+                  <option value="draft">Bản nháp (Mặc định)</option>
                   <option value="published">Đã xuất bản</option>
                   <option value="archived">Đã lưu trữ</option>
                 </select>
                 <p className="mt-1 text-xs text-gray-500">
-                  Lưu ý: Publish/Archive cũng có thể được điều khiển qua action riêng, backend vẫn kiểm tra quyền.
+                  <strong>Bản nháp:</strong> Chỉ bạn có thể xem và chỉnh sửa. <strong>Đã xuất bản:</strong> Khóa học hiển thị công khai cho học viên. <strong>Đã lưu trữ:</strong> Ẩn khỏi danh sách nhưng vẫn giữ dữ liệu. Lưu ý: Backend sẽ kiểm tra quyền khi thay đổi trạng thái.
                 </p>
               </div>
 

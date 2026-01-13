@@ -162,9 +162,7 @@ export const listImagesHandler = async (req: Request, res: Response) => {
       nextCursor?: string;
       tags?: string[];
       prefix?: string;
-    } = {};
-
-    if (folder) {
+    } = {};    if (folder) {
       options.folder = folder as string;
     }    if (maxResults) {
       options.maxResults = Number(maxResults);

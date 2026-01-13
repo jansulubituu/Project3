@@ -331,7 +331,21 @@ function InstructorNotificationsManageContent() {
       await fetchNotifications();
     } catch (err: any) {
       console.error('Failed to submit:', err);
-      alert(err.response?.data?.message || 'Có lỗi xảy ra. Vui lòng thử lại.');
+      
+      // Parse backend validation errors
+      const backendErrors: Record<string, string> = {};
+      if (err?.response?.data?.errors && Array.isArray(err.response.data.errors)) {
+        err.response.data.errors.forEach((error: any) => {
+          const field = error.path || error.field || 'general';
+          backendErrors[field] = error.message || error.msg || 'Lỗi validation';
+        });
+      }
+
+      if (Object.keys(backendErrors).length > 0) {
+        setFormErrors(backendErrors);
+      } else {
+        alert(err.response?.data?.message || 'Có lỗi xảy ra. Vui lòng thử lại.');
+      }
     } finally {
       setSubmitting(false);
     }
@@ -672,7 +686,7 @@ function InstructorNotificationsManageContent() {
 
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Loại thông báo *
+                          Loại thông báo <span className="text-red-500">*</span>
                         </label>
                         <select
                           value={formData.type}
@@ -689,41 +703,51 @@ function InstructorNotificationsManageContent() {
                               </option>
                             ))}
                         </select>
+                        <p className="mt-1 text-xs text-gray-500">
+                          Chọn loại thông báo phù hợp. Loại thông báo giúp học viên phân loại và quản lý thông báo dễ dàng hơn.
+                        </p>
                       </div>
 
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Học viên *
+                          Học viên <span className="text-red-500">*</span>
                         </label>
+                        <p className="text-xs text-gray-500 mb-2">
+                          Tìm kiếm và chọn ít nhất một học viên để gửi thông báo. Bạn có thể tìm theo tên hoặc email.
+                        </p>
                         <div className="space-y-2">
                           <input
                             type="text"
-                            placeholder="Tìm kiếm học viên..."
+                            placeholder="Tìm kiếm học viên theo tên hoặc email..."
                             value={studentSearchTerm}
                             onChange={(e) => setStudentSearchTerm(e.target.value)}
                             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                           />
                           <div className="border border-gray-300 rounded-lg max-h-40 overflow-y-auto">
-                            {filteredStudents.slice(0, 10).map((student) => (
-                              <label
-                                key={student._id}
-                                className="flex items-center gap-2 px-4 py-2 hover:bg-gray-50 cursor-pointer"
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={selectedStudents.some((s) => s._id === student._id)}
-                                  onChange={() => handleStudentToggle(student)}
-                                  className="rounded"
-                                />
-                                <span className="text-sm">
-                                  {student.fullName} ({student.email})
-                                </span>
-                              </label>
-                            ))}
+                            {filteredStudents.length === 0 ? (
+                              <p className="px-4 py-2 text-sm text-gray-500">Không tìm thấy học viên nào</p>
+                            ) : (
+                              filteredStudents.slice(0, 10).map((student) => (
+                                <label
+                                  key={student._id}
+                                  className="flex items-center gap-2 px-4 py-2 hover:bg-gray-50 cursor-pointer"
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={selectedStudents.some((s) => s._id === student._id)}
+                                    onChange={() => handleStudentToggle(student)}
+                                    className="rounded"
+                                  />
+                                  <span className="text-sm">
+                                    {student.fullName} ({student.email})
+                                  </span>
+                                </label>
+                              ))
+                            )}
                           </div>
                           {selectedStudents.length > 0 && (
-                            <p className="text-sm text-gray-600">
-                              Đã chọn: {selectedStudents.length} học viên
+                            <p className="text-sm text-green-600">
+                              ✓ Đã chọn: {selectedStudents.length} học viên
                             </p>
                           )}
                           {formErrors.userIds && (
@@ -786,7 +810,7 @@ function InstructorNotificationsManageContent() {
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Link (tùy chọn)
+                      Link <span className="text-xs text-gray-500 font-normal">(Tùy chọn)</span>
                     </label>
                     <input
                       type="text"
@@ -794,9 +818,18 @@ function InstructorNotificationsManageContent() {
                       onChange={(e) =>
                         setFormData((prev) => ({ ...prev, link: e.target.value }))
                       }
-                      placeholder="/courses/example"
+                      placeholder="/courses/example hoặc https://example.com"
+                      maxLength={500}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     />
+                    <div className="mt-1 flex items-center justify-between">
+                      <p className="text-xs text-gray-500">
+                        Link để học viên có thể truy cập khi click vào thông báo. Có thể là đường dẫn nội bộ (ví dụ: /courses/123) hoặc URL đầy đủ (ví dụ: https://example.com)
+                      </p>
+                      <span className="text-xs text-gray-400">
+                        {formData.link.length}/500
+                      </span>
+                    </div>
                   </div>
 
                   <div className="flex items-center justify-end gap-3 pt-4">

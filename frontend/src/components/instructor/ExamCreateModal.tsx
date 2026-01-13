@@ -15,6 +15,7 @@ interface ExamCreateModalProps {
 type ExamStatus = 'draft' | 'published' | 'archived';
 type ScoringMethod = 'highest' | 'latest' | 'average';
 type ShowAnswers = 'never' | 'after_submit' | 'after_close';
+type TimeLimitType = 'per_attempt' | 'global_window';
 
 interface ExamFormState {
   title: string;
@@ -34,6 +35,7 @@ interface ExamFormState {
   showScoreToStudent: boolean;
   allowLateSubmission: boolean;
   latePenaltyPercent: string;
+  timeLimitType: TimeLimitType;
 }
 
 export default function ExamCreateModal({
@@ -46,6 +48,7 @@ export default function ExamCreateModal({
   const [activeTab, setActiveTab] = useState<'basic' | 'settings' | 'advanced'>('basic');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [formState, setFormState] = useState<ExamFormState>({
     title: '',
     description: '',
@@ -63,6 +66,7 @@ export default function ExamCreateModal({
     showScoreToStudent: true,
     allowLateSubmission: false,
     latePenaltyPercent: '0',
+    timeLimitType: 'per_attempt',
   });
 
   if (!isOpen) return null;
@@ -70,26 +74,26 @@ export default function ExamCreateModal({
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
+    setFieldErrors({});
 
-    // Validation
+    // Client-side validation
+    const errors: Record<string, string> = {};
+
     if (!formState.title.trim()) {
-      setError('Tiêu đề bài kiểm tra là bắt buộc.');
-      return;
+      errors.title = 'Tiêu đề bài kiểm tra là bắt buộc.';
     }
 
     if (formState.totalPoints) {
       const total = Number(formState.totalPoints);
       if (Number.isNaN(total) || total < 0) {
-        setError('Tổng điểm phải là số không âm.');
-        return;
+        errors.totalPoints = 'Tổng điểm phải là số không âm.';
       }
     }
 
     if (formState.passingScore) {
       const passing = Number(formState.passingScore);
       if (Number.isNaN(passing) || passing < 0) {
-        setError('Điểm đạt phải là số không âm.');
-        return;
+        errors.passingScore = 'Điểm đạt phải là số không âm.';
       }
     }
 
@@ -98,24 +102,21 @@ export default function ExamCreateModal({
       const total = Number(formState.totalPoints);
       const passing = Number(formState.passingScore);
       if (passing > total) {
-        setError('Điểm đạt không thể lớn hơn tổng điểm.');
-        return;
+        errors.passingScore = 'Điểm đạt không thể lớn hơn tổng điểm.';
       }
     }
 
     if (formState.durationMinutes) {
       const duration = Number(formState.durationMinutes);
       if (Number.isNaN(duration) || duration < 1) {
-        setError('Thời lượng tối thiểu là 1 phút.');
-        return;
+        errors.durationMinutes = 'Thời lượng tối thiểu là 1 phút.';
       }
     }
 
     if (formState.maxAttempts) {
       const maxAttempts = Number(formState.maxAttempts);
       if (Number.isNaN(maxAttempts) || maxAttempts < 1) {
-        setError('Số lần làm tối thiểu là 1.');
-        return;
+        errors.maxAttempts = 'Số lần làm tối thiểu là 1.';
       }
     }
 
@@ -124,17 +125,36 @@ export default function ExamCreateModal({
       const openDate = new Date(formState.openAt);
       const closeDate = new Date(formState.closeAt);
       if (openDate >= closeDate) {
-        setError('Thời gian mở phải trước thời gian đóng.');
-        return;
+        errors.closeAt = 'Thời gian mở phải trước thời gian đóng.';
       }
     }
 
     if (formState.latePenaltyPercent) {
       const penalty = Number(formState.latePenaltyPercent);
       if (Number.isNaN(penalty) || penalty < 0 || penalty > 100) {
-        setError('Phần trăm phạt muộn phải từ 0 đến 100.');
-        return;
+        errors.latePenaltyPercent = 'Phần trăm phạt muộn phải từ 0 đến 100.';
       }
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
+      // Scroll to first error
+      const firstErrorField = Object.keys(errors)[0];
+      // Switch to appropriate tab if needed
+      if (['totalPoints', 'passingScore', 'durationMinutes', 'maxAttempts', 'openAt', 'closeAt'].includes(firstErrorField)) {
+        setActiveTab('settings');
+      } else if (['latePenaltyPercent', 'timeLimitType'].includes(firstErrorField)) {
+        setActiveTab('advanced');
+      }
+      setTimeout(() => {
+        const element = document.querySelector(`[name="${firstErrorField}"]`) || 
+                        document.querySelector(`#${firstErrorField}`);
+        if (element) {
+          element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          (element as HTMLElement).focus();
+        }
+      }, 100);
+      return;
     }
 
     try {
@@ -180,7 +200,7 @@ export default function ExamCreateModal({
       payload.showScoreToStudent = formState.showScoreToStudent;
       payload.allowLateSubmission = formState.allowLateSubmission;
       payload.latePenaltyPercent = formState.latePenaltyPercent ? Number(formState.latePenaltyPercent) : 0;
-      payload.timeLimitType = 'per_attempt';
+      payload.timeLimitType = formState.timeLimitType;
 
       const res = await api.post('/exams', payload);
 
@@ -191,11 +211,25 @@ export default function ExamCreateModal({
       }
     } catch (err: any) {
       console.error('Failed to create exam:', err);
-      const message =
-        err?.response?.data?.message ||
-        err?.response?.data?.errors?.[0]?.message ||
-        'Không thể tạo bài kiểm tra, vui lòng thử lại.';
-      setError(message);
+      
+      // Parse backend validation errors
+      const backendErrors: Record<string, string> = {};
+      if (err?.response?.data?.errors && Array.isArray(err.response.data.errors)) {
+        err.response.data.errors.forEach((error: any) => {
+          const field = error.path || error.field || 'general';
+          backendErrors[field] = error.message || error.msg || 'Lỗi validation';
+        });
+      }
+
+      if (Object.keys(backendErrors).length > 0) {
+        setFieldErrors(backendErrors);
+      } else {
+        const message =
+          err?.response?.data?.message ||
+          err?.response?.data?.errors?.[0]?.message ||
+          'Không thể tạo bài kiểm tra, vui lòng thử lại.';
+        setError(message);
+      }
     } finally {
       setSubmitting(false);
     }
@@ -268,33 +302,58 @@ export default function ExamCreateModal({
                     value={formState.title}
                     onChange={(e) => setFormState((prev) => ({ ...prev, title: e.target.value }))}
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="Nhập tiêu đề bài kiểm tra"
+                    placeholder="Ví dụ: Kiểm tra cuối kỳ - React Fundamentals"
+                    maxLength={200}
                     required
                   />
+                  <div className="mt-1 flex items-center justify-between">
+                    <p className="text-xs text-gray-500">
+                      Tiêu đề rõ ràng, mô tả nội dung bài kiểm tra (tối đa 200 ký tự)
+                    </p>
+                    <span className="text-xs text-gray-400">
+                      {formState.title.length}/200
+                    </span>
+                  </div>
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Mô Tả</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Mô Tả <span className="text-xs text-gray-500 font-normal">(Tùy chọn)</span>
+                  </label>
                   <textarea
                     value={formState.description}
                     onChange={(e) => setFormState((prev) => ({ ...prev, description: e.target.value }))}
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                     rows={4}
-                    placeholder="Mô tả về bài kiểm tra"
+                    placeholder="Mô tả về nội dung, yêu cầu và cách thức làm bài kiểm tra..."
+                    maxLength={2000}
                   />
+                  <div className="mt-1 flex items-center justify-between">
+                    <p className="text-xs text-gray-500">
+                      Mô tả giúp học viên hiểu rõ yêu cầu và cách làm bài (tối đa 2000 ký tự)
+                    </p>
+                    <span className="text-xs text-gray-400">
+                      {formState.description.length}/2000
+                    </span>
+                  </div>
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Trạng Thái</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Trạng Thái <span className="text-xs text-gray-500 font-normal">(Tùy chọn)</span>
+                  </label>
                   <select
                     value={formState.status}
                     onChange={(e) => setFormState((prev) => ({ ...prev, status: e.target.value as ExamStatus }))}
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
-                    <option value="draft">Bản nháp</option>
+                    <option value="draft">Bản nháp (Mặc định)</option>
                     <option value="published">Đã xuất bản</option>
                     <option value="archived">Đã lưu trữ</option>
                   </select>
+                  <p className="mt-1 text-xs text-gray-500">
+                    <strong>Bản nháp:</strong> Chỉ bạn có thể xem và chỉnh sửa. <strong>Đã xuất bản:</strong> Học viên có thể làm bài. <strong>Đã lưu trữ:</strong> Ẩn khỏi danh sách nhưng vẫn giữ dữ liệu.
+                  </p>
                 </div>
               </div>
             )}
@@ -305,30 +364,72 @@ export default function ExamCreateModal({
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Tổng Điểm
+                      Tổng Điểm <span className="text-xs text-gray-500 font-normal">(Tùy chọn)</span>
                     </label>
                     <input
                       type="number"
+                      name="totalPoints"
                       value={formState.totalPoints}
-                      onChange={(e) => setFormState((prev) => ({ ...prev, totalPoints: e.target.value }))}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      onChange={(e) => {
+                        setFormState((prev) => ({ ...prev, totalPoints: e.target.value }));
+                        if (fieldErrors.totalPoints) {
+                          setFieldErrors((prev) => {
+                            const newErrors = { ...prev };
+                            delete newErrors.totalPoints;
+                            return newErrors;
+                          });
+                        }
+                      }}
+                      className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                        fieldErrors.totalPoints ? 'border-red-300 bg-red-50' : 'border-gray-300'
+                      }`}
                       placeholder="100"
                       min="0"
                     />
+                    {fieldErrors.totalPoints && (
+                      <p className="mt-1 text-xs text-red-600 flex items-center">
+                        <span className="mr-1">⚠️</span>
+                        {fieldErrors.totalPoints}
+                      </p>
+                    )}
+                    <p className="mt-1 text-xs text-gray-500">
+                      Tổng điểm của bài kiểm tra. Nếu để trống, hệ thống sẽ tự động tính từ tổng điểm các câu hỏi.
+                    </p>
                   </div>
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Điểm Đạt
+                      Điểm Đạt <span className="text-xs text-gray-500 font-normal">(Tùy chọn)</span>
                     </label>
                     <input
                       type="number"
+                      name="passingScore"
                       value={formState.passingScore}
-                      onChange={(e) => setFormState((prev) => ({ ...prev, passingScore: e.target.value }))}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      onChange={(e) => {
+                        setFormState((prev) => ({ ...prev, passingScore: e.target.value }));
+                        if (fieldErrors.passingScore) {
+                          setFieldErrors((prev) => {
+                            const newErrors = { ...prev };
+                            delete newErrors.passingScore;
+                            return newErrors;
+                          });
+                        }
+                      }}
+                      className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                        fieldErrors.passingScore ? 'border-red-300 bg-red-50' : 'border-gray-300'
+                      }`}
                       placeholder="60"
                       min="0"
                     />
+                    {fieldErrors.passingScore && (
+                      <p className="mt-1 text-xs text-red-600 flex items-center">
+                        <span className="mr-1">⚠️</span>
+                        {fieldErrors.passingScore}
+                      </p>
+                    )}
+                    <p className="mt-1 text-xs text-gray-500">
+                      Điểm tối thiểu để đạt bài kiểm tra. Phải nhỏ hơn hoặc bằng Tổng điểm.
+                    </p>
                   </div>
                 </div>
 
@@ -337,7 +438,7 @@ export default function ExamCreateModal({
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       <div className="flex items-center gap-2">
                         <Clock className="w-4 h-4" />
-                        Thời Lượng (phút)
+                        Thời Lượng (phút) <span className="text-xs text-gray-500 font-normal">(Tùy chọn)</span>
                       </div>
                     </label>
                     <input
@@ -348,11 +449,14 @@ export default function ExamCreateModal({
                       placeholder="60"
                       min="1"
                     />
+                    <p className="mt-1 text-xs text-gray-500">
+                      Thời gian làm bài tính bằng phút. Mặc định là 60 phút nếu để trống.
+                    </p>
                   </div>
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Số Lần Làm Tối Đa
+                      Số Lần Làm Tối Đa <span className="text-xs text-gray-500 font-normal">(Tùy chọn)</span>
                     </label>
                     <input
                       type="number"
@@ -362,7 +466,9 @@ export default function ExamCreateModal({
                       placeholder="Không giới hạn"
                       min="1"
                     />
-                    <p className="mt-1 text-xs text-gray-500">Để trống nếu không giới hạn</p>
+                    <p className="mt-1 text-xs text-gray-500">
+                      Giới hạn số lần học viên có thể làm bài. Để trống nếu không giới hạn. Ví dụ: Nhập "3" để cho phép làm tối đa 3 lần.
+                    </p>
                   </div>
                 </div>
 
@@ -371,30 +477,68 @@ export default function ExamCreateModal({
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       <div className="flex items-center gap-2">
                         <Calendar className="w-4 h-4" />
-                        Thời Gian Mở
+                        Thời Gian Mở <span className="text-xs text-gray-500 font-normal">(Tùy chọn)</span>
                       </div>
                     </label>
                     <input
                       type="datetime-local"
+                      name="openAt"
                       value={formState.openAt}
-                      onChange={(e) => setFormState((prev) => ({ ...prev, openAt: e.target.value }))}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      onChange={(e) => {
+                        setFormState((prev) => ({ ...prev, openAt: e.target.value }));
+                        if (fieldErrors.openAt || fieldErrors.closeAt) {
+                          setFieldErrors((prev) => {
+                            const newErrors = { ...prev };
+                            delete newErrors.openAt;
+                            delete newErrors.closeAt;
+                            return newErrors;
+                          });
+                        }
+                      }}
+                      className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                        fieldErrors.openAt || fieldErrors.closeAt ? 'border-red-300 bg-red-50' : 'border-gray-300'
+                      }`}
                     />
+                    <p className="mt-1 text-xs text-gray-500">
+                      Thời điểm bài kiểm tra bắt đầu mở cho học viên. Để trống nếu mở ngay lập tức.
+                    </p>
                   </div>
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       <div className="flex items-center gap-2">
                         <Calendar className="w-4 h-4" />
-                        Thời Gian Đóng
+                        Thời Gian Đóng <span className="text-xs text-gray-500 font-normal">(Tùy chọn)</span>
                       </div>
                     </label>
                     <input
                       type="datetime-local"
+                      name="closeAt"
                       value={formState.closeAt}
-                      onChange={(e) => setFormState((prev) => ({ ...prev, closeAt: e.target.value }))}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      onChange={(e) => {
+                        setFormState((prev) => ({ ...prev, closeAt: e.target.value }));
+                        if (fieldErrors.openAt || fieldErrors.closeAt) {
+                          setFieldErrors((prev) => {
+                            const newErrors = { ...prev };
+                            delete newErrors.openAt;
+                            delete newErrors.closeAt;
+                            return newErrors;
+                          });
+                        }
+                      }}
+                      className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                        fieldErrors.openAt || fieldErrors.closeAt ? 'border-red-300 bg-red-50' : 'border-gray-300'
+                      }`}
                     />
+                    {fieldErrors.closeAt && (
+                      <p className="mt-1 text-xs text-red-600 flex items-center">
+                        <span className="mr-1">⚠️</span>
+                        {fieldErrors.closeAt}
+                      </p>
+                    )}
+                    <p className="mt-1 text-xs text-gray-500">
+                      Thời điểm bài kiểm tra đóng. Phải sau thời gian mở. Để trống nếu không giới hạn thời gian đóng.
+                    </p>
                   </div>
                 </div>
               </div>
@@ -403,6 +547,13 @@ export default function ExamCreateModal({
             {/* Advanced Tab */}
             {activeTab === 'advanced' && (
               <div className="space-y-6">
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <h3 className="text-sm font-medium text-blue-900 mb-2">Cài đặt nâng cao</h3>
+                  <p className="text-xs text-blue-800">
+                    Các cài đặt này giúp bạn tùy chỉnh cách thức làm bài và chấm điểm. Bạn có thể chỉnh sửa sau khi tạo bài kiểm tra.
+                  </p>
+                </div>
+
                 <div className="space-y-4">
                   <h3 className="font-medium text-gray-900">Tùy Chọn Hiển Thị</h3>
 
@@ -410,6 +561,9 @@ export default function ExamCreateModal({
                     <div>
                       <label className="font-medium text-gray-900">Xáo Trộn Câu Hỏi</label>
                       <p className="text-sm text-gray-500">Thứ tự câu hỏi sẽ khác nhau cho mỗi lần làm</p>
+                      <p className="text-xs text-gray-400 mt-1">
+                        Giúp đảm bảo tính công bằng khi học viên làm bài nhiều lần. Mỗi lần làm bài sẽ có thứ tự câu hỏi khác nhau.
+                      </p>
                     </div>
                     <label className="relative inline-flex items-center cursor-pointer">
                       <input
@@ -426,6 +580,9 @@ export default function ExamCreateModal({
                     <div>
                       <label className="font-medium text-gray-900">Xáo Trộn Đáp Án</label>
                       <p className="text-sm text-gray-500">Thứ tự đáp án sẽ khác nhau cho mỗi lần làm</p>
+                      <p className="text-xs text-gray-400 mt-1">
+                        Xáo trộn thứ tự các lựa chọn (A, B, C, D) để tránh học viên nhớ vị trí đáp án đúng.
+                      </p>
                     </div>
                     <label className="relative inline-flex items-center cursor-pointer">
                       <input
@@ -442,6 +599,9 @@ export default function ExamCreateModal({
                     <div>
                       <label className="font-medium text-gray-900">Hiển Thị Điểm Cho Học Viên</label>
                       <p className="text-sm text-gray-500">Học viên có thể xem điểm sau khi làm bài</p>
+                      <p className="text-xs text-gray-400 mt-1">
+                        Nếu bật, học viên sẽ thấy điểm số ngay sau khi nộp bài. Nếu tắt, chỉ bạn mới thấy điểm.
+                      </p>
                     </div>
                     <label className="relative inline-flex items-center cursor-pointer">
                       <input
@@ -467,10 +627,13 @@ export default function ExamCreateModal({
                       onChange={(e) => setFormState((prev) => ({ ...prev, scoringMethod: e.target.value as ScoringMethod }))}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                     >
-                      <option value="highest">Điểm cao nhất</option>
+                      <option value="highest">Điểm cao nhất (Mặc định)</option>
                       <option value="latest">Lần làm gần nhất</option>
                       <option value="average">Điểm trung bình</option>
                     </select>
+                    <p className="mt-1 text-xs text-gray-500">
+                      <strong>Điểm cao nhất:</strong> Lấy điểm cao nhất trong các lần làm. <strong>Lần làm gần nhất:</strong> Lấy điểm của lần làm cuối cùng. <strong>Điểm trung bình:</strong> Tính trung bình tất cả các lần làm.
+                    </p>
                   </div>
 
                   <div>
@@ -483,9 +646,31 @@ export default function ExamCreateModal({
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                     >
                       <option value="never">Không bao giờ</option>
-                      <option value="after_submit">Sau khi nộp bài</option>
+                      <option value="after_submit">Sau khi nộp bài (Mặc định)</option>
                       <option value="after_close">Sau khi đóng bài</option>
                     </select>
+                    <p className="mt-1 text-xs text-gray-500">
+                      <strong>Không bao giờ:</strong> Học viên không bao giờ thấy đáp án đúng. <strong>Sau khi nộp bài:</strong> Hiển thị ngay sau khi nộp. <strong>Sau khi đóng bài:</strong> Chỉ hiển thị sau khi bài kiểm tra đã đóng.
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Loại Giới Hạn Thời Gian
+                    </label>
+                    <select
+                      value={formState.timeLimitType}
+                      onChange={(e) => setFormState((prev) => ({ ...prev, timeLimitType: e.target.value as TimeLimitType }))}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="per_attempt">Giới hạn cho mỗi lần làm</option>
+                      <option value="global_window">Giới hạn trong khoảng thời gian chung</option>
+                    </select>
+                    <p className="mt-1 text-xs text-gray-500">
+                      {formState.timeLimitType === 'per_attempt'
+                        ? 'Mỗi lần làm bài có thời gian riêng. Học viên có thể làm nhiều lần, mỗi lần có thời gian độc lập.'
+                        : 'Tất cả các lần làm bài chia sẻ một khoảng thời gian chung. Khi hết thời gian, không thể làm thêm lần nào nữa.'}
+                    </p>
                   </div>
                 </div>
 
@@ -515,13 +700,31 @@ export default function ExamCreateModal({
                       </label>
                       <input
                         type="number"
+                        name="latePenaltyPercent"
                         value={formState.latePenaltyPercent}
-                        onChange={(e) => setFormState((prev) => ({ ...prev, latePenaltyPercent: e.target.value }))}
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        onChange={(e) => {
+                          setFormState((prev) => ({ ...prev, latePenaltyPercent: e.target.value }));
+                          if (fieldErrors.latePenaltyPercent) {
+                            setFieldErrors((prev) => {
+                              const newErrors = { ...prev };
+                              delete newErrors.latePenaltyPercent;
+                              return newErrors;
+                            });
+                          }
+                        }}
+                        className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                          fieldErrors.latePenaltyPercent ? 'border-red-300 bg-red-50' : 'border-gray-300'
+                        }`}
                         placeholder="0"
                         min="0"
                         max="100"
                       />
+                      {fieldErrors.latePenaltyPercent && (
+                        <p className="mt-1 text-xs text-red-600 flex items-center">
+                          <span className="mr-1">⚠️</span>
+                          {fieldErrors.latePenaltyPercent}
+                        </p>
+                      )}
                       <p className="mt-1 text-xs text-gray-500">Điểm sẽ bị trừ theo phần trăm này khi nộp muộn</p>
                     </div>
                   )}

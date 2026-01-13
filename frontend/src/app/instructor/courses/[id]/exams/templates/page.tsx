@@ -179,16 +179,43 @@ function ExamTemplatesContent() {
     e.preventDefault();
     if (!courseId) return;
 
+    setSaveError(null);
+    setFieldErrors({});
+
+    // Client-side validation
+    const errors: Record<string, string> = {};
+
+    if (!form.title.trim()) {
+      errors.title = 'Tiêu đề template là bắt buộc.';
+    }
+
+    if (!form.numberOfQuestions || Number(form.numberOfQuestions) < 1) {
+      errors.numberOfQuestions = 'Số câu hỏi phải lớn hơn 0.';
+    }
+
     // Validate distributions sum to 100
     const difficultySum = form.difficultyDistribution.reduce((sum, r) => sum + r.ratio, 0);
-    if (difficultySum !== 100) {
-      setSaveError(`Difficulty distribution must sum to 100 (current: ${difficultySum})`);
-      return;
+    if (difficultySum !== 0 && difficultySum !== 100) {
+      errors.difficultyDistribution = `Phân bố độ khó phải bằng 100% (hiện tại: ${difficultySum}%).`;
     }
 
     const typeSum = form.typeDistribution.reduce((sum, r) => sum + r.ratio, 0);
-    if (typeSum !== 100) {
-      setSaveError(`Type distribution must sum to 100 (current: ${typeSum})`);
+    if (typeSum !== 0 && typeSum !== 100) {
+      errors.typeDistribution = `Phân bố loại câu hỏi phải bằng 100% (hiện tại: ${typeSum}%).`;
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
+      // Scroll to first error
+      const firstErrorField = Object.keys(errors)[0];
+      setTimeout(() => {
+        const element = document.querySelector(`[name="${firstErrorField}"]`) || 
+                        document.querySelector(`#${firstErrorField}`);
+        if (element) {
+          element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          (element as HTMLElement).focus();
+        }
+      }, 100);
       return;
     }
 
@@ -218,7 +245,21 @@ function ExamTemplatesContent() {
       loadTemplates();
     } catch (err: any) {
       console.error('Failed to save template:', err);
-      setSaveError(err?.response?.data?.message || 'Không thể lưu template.');
+      
+      // Parse backend validation errors
+      const backendErrors: Record<string, string> = {};
+      if (err?.response?.data?.errors && Array.isArray(err.response.data.errors)) {
+        err.response.data.errors.forEach((error: any) => {
+          const field = error.path || error.field || 'general';
+          backendErrors[field] = error.message || error.msg || 'Lỗi validation';
+        });
+      }
+
+      if (Object.keys(backendErrors).length > 0) {
+        setFieldErrors(backendErrors);
+      } else {
+        setSaveError(err?.response?.data?.message || 'Không thể lưu template.');
+      }
     } finally {
       setSaving(false);
     }
@@ -431,8 +472,18 @@ function ExamTemplatesContent() {
 
             <form onSubmit={handleSubmit} className="px-6 py-4 space-y-4">
               {saveError && (
-                <div className="p-3 bg-red-50 border border-red-200 rounded-md">
-                  <p className="text-sm text-red-800">{saveError}</p>
+                <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3">
+                  <div className="flex items-start">
+                    <div className="flex-shrink-0">
+                      <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                      </svg>
+                    </div>
+                    <div className="ml-3">
+                      <h3 className="text-sm font-medium text-red-800">Có lỗi xảy ra</h3>
+                      <p className="mt-1 text-sm text-red-700">{saveError}</p>
+                    </div>
+                  </div>
                 </div>
               )}
 
@@ -443,28 +494,66 @@ function ExamTemplatesContent() {
                 </label>
                 <input
                   type="text"
+                  name="title"
                   value={form.title}
-                  onChange={(e) => setForm({ ...form, title: e.target.value })}
-                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                  onChange={(e) => {
+                    setForm({ ...form, title: e.target.value });
+                    if (fieldErrors.title) {
+                      setFieldErrors((prev) => {
+                        const newErrors = { ...prev };
+                        delete newErrors.title;
+                        return newErrors;
+                      });
+                    }
+                  }}
+                  className={`w-full rounded-md border px-3 py-2 text-sm ${
+                    fieldErrors.title ? 'border-red-300 bg-red-50' : 'border-gray-300'
+                  }`}
+                  placeholder="Ví dụ: Template kiểm tra giữa kỳ - React Fundamentals"
+                  maxLength={200}
                   required
                 />
+                <div className="mt-1 flex items-center justify-between">
+                  <p className="text-xs text-gray-500">
+                    Tên template giúp bạn nhận biết và quản lý dễ dàng (tối đa 200 ký tự)
+                  </p>
+                  <span className="text-xs text-gray-400">
+                    {form.title.length}/200
+                  </span>
+                </div>
+                {fieldErrors.title && (
+                  <p className="mt-1 text-xs text-red-600 flex items-center">
+                    <span className="mr-1">⚠️</span>
+                    {fieldErrors.title}
+                  </p>
+                )}
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Mô tả
+                  Mô tả <span className="text-xs text-gray-500 font-normal">(Tùy chọn)</span>
                 </label>
                 <textarea
                   value={form.description}
                   onChange={(e) => setForm({ ...form, description: e.target.value })}
                   className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
                   rows={3}
+                  placeholder="Mô tả về mục đích và cách sử dụng template này..."
+                  maxLength={1000}
                 />
+                <div className="mt-1 flex items-center justify-between">
+                  <p className="text-xs text-gray-500">
+                    Mô tả giúp bạn nhớ cách sử dụng template (tối đa 1000 ký tự)
+                  </p>
+                  <span className="text-xs text-gray-400">
+                    {form.description.length}/1000
+                  </span>
+                </div>
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Section (Optional)
+                  Section <span className="text-xs text-gray-500 font-normal">(Tùy chọn)</span>
                 </label>
                 <select
                   value={form.section}
@@ -478,6 +567,9 @@ function ExamTemplatesContent() {
                     </option>
                   ))}
                 </select>
+                <p className="mt-1 text-xs text-gray-500">
+                  Chọn section nếu bạn muốn template này chỉ áp dụng cho một section cụ thể. Để trống nếu áp dụng cho toàn bộ khóa học.
+                </p>
               </div>
 
               <div>
@@ -486,12 +578,34 @@ function ExamTemplatesContent() {
                 </label>
                 <input
                   type="number"
+                  name="numberOfQuestions"
                   min="1"
                   value={form.numberOfQuestions}
-                  onChange={(e) => setForm({ ...form, numberOfQuestions: e.target.value })}
-                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                  onChange={(e) => {
+                    setForm({ ...form, numberOfQuestions: e.target.value });
+                    if (fieldErrors.numberOfQuestions) {
+                      setFieldErrors((prev) => {
+                        const newErrors = { ...prev };
+                        delete newErrors.numberOfQuestions;
+                        return newErrors;
+                      });
+                    }
+                  }}
+                  className={`w-full rounded-md border px-3 py-2 text-sm ${
+                    fieldErrors.numberOfQuestions ? 'border-red-300 bg-red-50' : 'border-gray-300'
+                  }`}
+                  placeholder="10"
                   required
                 />
+                {fieldErrors.numberOfQuestions && (
+                  <p className="mt-1 text-xs text-red-600 flex items-center">
+                    <span className="mr-1">⚠️</span>
+                    {fieldErrors.numberOfQuestions}
+                  </p>
+                )}
+                <p className="mt-1 text-xs text-gray-500">
+                  Tổng số câu hỏi sẽ được tạo khi sử dụng template này. Ví dụ: Nhập "20" để tạo exam với 20 câu hỏi.
+                </p>
               </div>
 
               {/* Difficulty Distribution */}
@@ -571,25 +685,35 @@ function ExamTemplatesContent() {
               </div>
 
               {/* Shuffle Options */}
-              <div className="space-y-2">
-                <label className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={form.shuffleQuestions}
-                    onChange={(e) => setForm({ ...form, shuffleQuestions: e.target.checked })}
-                    className="rounded border-gray-300 text-blue-600"
-                  />
-                  <span className="text-sm font-medium text-gray-700">Xáo trộn câu hỏi</span>
-                </label>
-                <label className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={form.shuffleAnswers}
-                    onChange={(e) => setForm({ ...form, shuffleAnswers: e.target.checked })}
-                    className="rounded border-gray-300 text-blue-600"
-                  />
-                  <span className="text-sm font-medium text-gray-700">Xáo trộn đáp án</span>
-                </label>
+              <div className="space-y-3">
+                <div>
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={form.shuffleQuestions}
+                      onChange={(e) => setForm({ ...form, shuffleQuestions: e.target.checked })}
+                      className="rounded border-gray-300 text-blue-600"
+                    />
+                    <span className="text-sm font-medium text-gray-700">Xáo trộn câu hỏi</span>
+                  </label>
+                  <p className="text-xs text-gray-500 ml-6">
+                    Thứ tự câu hỏi sẽ khác nhau cho mỗi lần tạo exam từ template này. Giúp đảm bảo tính công bằng.
+                  </p>
+                </div>
+                <div>
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={form.shuffleAnswers}
+                      onChange={(e) => setForm({ ...form, shuffleAnswers: e.target.checked })}
+                      className="rounded border-gray-300 text-blue-600"
+                    />
+                    <span className="text-sm font-medium text-gray-700">Xáo trộn đáp án</span>
+                  </label>
+                  <p className="text-xs text-gray-500 ml-6">
+                    Thứ tự các lựa chọn (A, B, C, D) sẽ khác nhau cho mỗi lần tạo exam. Tránh học viên nhớ vị trí đáp án đúng.
+                  </p>
+                </div>
               </div>
 
               <div className="flex justify-end gap-2 pt-4 border-t">

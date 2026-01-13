@@ -1851,12 +1851,37 @@ interface EditPanelProps {
 function EditPanel({ item, onUpdate }: EditPanelProps) {
   const [formData, setFormData] = useState<any>(item);
   const [saving, setSaving] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
   useEffect(() => {
     setFormData(item);
   }, [item]);
 
   const handleSave = async () => {
+    setFieldErrors({});
+
+    // Client-side validation
+    const errors: Record<string, string> = {};
+
+    if (!formData.title || !formData.title.trim()) {
+      errors.title = 'Tiêu đề là bắt buộc.';
+    } else if (formData.title.length > 200) {
+      errors.title = 'Tiêu đề không được vượt quá 200 ký tự.';
+    }
+
+    if (item.type === 'section' && formData.description && formData.description.length > 500) {
+      errors.description = 'Mô tả không được vượt quá 500 ký tự.';
+    } else if (item.type === 'lesson' && formData.description && formData.description.length > 1000) {
+      errors.description = 'Mô tả không được vượt quá 1000 ký tự.';
+    } else if (item.type === 'exam' && formData.description && formData.description.length > 2000) {
+      errors.description = 'Mô tả không được vượt quá 2000 ký tự.';
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
+      return;
+    }
+
     try {
       setSaving(true);
       let endpoint = '';
@@ -1883,7 +1908,20 @@ function EditPanel({ item, onUpdate }: EditPanelProps) {
         onUpdate();
       }
     } catch (err: any) {
-      alert(err.response?.data?.message || 'Không thể cập nhật.');
+      // Parse backend validation errors
+      const backendErrors: Record<string, string> = {};
+      if (err?.response?.data?.errors && Array.isArray(err.response.data.errors)) {
+        err.response.data.errors.forEach((error: any) => {
+          const field = error.path || error.field || 'general';
+          backendErrors[field] = error.message || error.msg || 'Lỗi validation';
+        });
+      }
+
+      if (Object.keys(backendErrors).length > 0) {
+        setFieldErrors(backendErrors);
+      } else {
+        alert(err.response?.data?.message || 'Không thể cập nhật.');
+      }
     } finally {
       setSaving(false);
     }
@@ -1891,26 +1929,89 @@ function EditPanel({ item, onUpdate }: EditPanelProps) {
 
   return (
     <div className="space-y-4">
-      <h3 className="font-semibold text-gray-900">Chỉnh sửa {item.type}</h3>
+      <h3 className="font-semibold text-gray-900">Chỉnh sửa {item.type === 'section' ? 'Section' : item.type === 'lesson' ? 'Lesson' : 'Exam'}</h3>
 
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Tiêu đề</label>
+        <label className="block text-sm font-medium text-gray-700 mb-1">
+          Tiêu đề <span className="text-red-500">*</span>
+        </label>
         <input
           type="text"
+          name="title"
           value={formData.title || ''}
-          onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-          className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+          onChange={(e) => {
+            setFormData({ ...formData, title: e.target.value });
+            if (fieldErrors.title) {
+              setFieldErrors((prev) => {
+                const newErrors = { ...prev };
+                delete newErrors.title;
+                return newErrors;
+              });
+            }
+          }}
+          className={`w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+            fieldErrors.title ? 'border-red-300 bg-red-50' : 'border-gray-300'
+          }`}
+          maxLength={200}
+          required
         />
+        <div className="mt-1 flex items-center justify-between">
+          <p className="text-xs text-gray-500">
+            Tiêu đề ngắn gọn, mô tả rõ nội dung (tối đa 200 ký tự)
+          </p>
+          <span className="text-xs text-gray-400">
+            {(formData.title || '').length}/200
+          </span>
+        </div>
+        {fieldErrors.title && (
+          <p className="mt-1 text-xs text-red-600 flex items-center">
+            <span className="mr-1">⚠️</span>
+            {fieldErrors.title}
+          </p>
+        )}
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Mô tả</label>
+        <label className="block text-sm font-medium text-gray-700 mb-1">
+          Mô tả <span className="text-xs text-gray-500 font-normal">(Tùy chọn)</span>
+        </label>
         <textarea
+          name="description"
           value={formData.description || ''}
-          onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+          onChange={(e) => {
+            setFormData({ ...formData, description: e.target.value });
+            if (fieldErrors.description) {
+              setFieldErrors((prev) => {
+                const newErrors = { ...prev };
+                delete newErrors.description;
+                return newErrors;
+              });
+            }
+          }}
           rows={3}
-          className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+          className={`w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+            fieldErrors.description ? 'border-red-300 bg-red-50' : 'border-gray-300'
+          }`}
+          maxLength={item.type === 'section' ? 500 : item.type === 'lesson' ? 1000 : 2000}
+          placeholder="Mô tả chi tiết..."
         />
+        <div className="mt-1 flex items-center justify-between">
+          <p className="text-xs text-gray-500">
+            Mô tả giúp học viên hiểu rõ nội dung
+            {item.type === 'section' && ' (tối đa 500 ký tự)'}
+            {item.type === 'lesson' && ' (tối đa 1000 ký tự)'}
+            {item.type === 'exam' && ' (tối đa 2000 ký tự)'}
+          </p>
+          <span className="text-xs text-gray-400">
+            {(formData.description || '').length}/{item.type === 'section' ? 500 : item.type === 'lesson' ? 1000 : 2000}
+          </span>
+        </div>
+        {fieldErrors.description && (
+          <p className="mt-1 text-xs text-red-600 flex items-center">
+            <span className="mr-1">⚠️</span>
+            {fieldErrors.description}
+          </p>
+        )}
       </div>
 
       {item.type === 'exam' && (

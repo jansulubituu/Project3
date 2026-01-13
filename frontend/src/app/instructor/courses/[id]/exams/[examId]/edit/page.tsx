@@ -50,6 +50,7 @@ function ExamEditContent() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
   const [form, setForm] = useState({
     title: '',
@@ -67,8 +68,10 @@ function ExamEditContent() {
     shuffleAnswers: false,
     scoringMethod: 'highest' as 'highest' | 'latest' | 'average',
     showCorrectAnswers: 'after_submit' as 'never' | 'after_submit' | 'after_close',
+    showScoreToStudent: true,
     allowLateSubmission: false,
     latePenaltyPercent: '0',
+    timeLimitType: 'per_attempt' as 'per_attempt' | 'global_window',
   });
 
   useEffect(() => {
@@ -132,15 +135,88 @@ function ExamEditContent() {
     e.preventDefault();
     if (!examId) return;
 
+    setSaveError(null);
+    setFieldErrors({});
+
+    // Client-side validation
+    const errors: Record<string, string> = {};
+
+    if (!form.title.trim()) {
+      errors.title = 'Tiêu đề bài kiểm tra là bắt buộc.';
+    }
+
+    if (!form.section) {
+      errors.section = 'Vui lòng chọn section.';
+    }
+
+    if (form.totalPoints) {
+      const total = Number(form.totalPoints);
+      if (Number.isNaN(total) || total < 0) {
+        errors.totalPoints = 'Tổng điểm phải là số không âm.';
+      }
+    }
+
+    if (form.passingScore) {
+      const passing = Number(form.passingScore);
+      if (Number.isNaN(passing) || passing < 0) {
+        errors.passingScore = 'Điểm đạt phải là số không âm.';
+      }
+    }
+
+    // Validate passingScore <= totalPoints
+    if (form.totalPoints && form.passingScore) {
+      const total = Number(form.totalPoints);
+      const passing = Number(form.passingScore);
+      if (!Number.isNaN(total) && !Number.isNaN(passing) && passing > total) {
+        errors.passingScore = 'Điểm đạt không thể lớn hơn tổng điểm.';
+      }
+    }
+
+    if (form.durationMinutes) {
+      const duration = Number(form.durationMinutes);
+      if (Number.isNaN(duration) || duration < 1) {
+        errors.durationMinutes = 'Thời lượng tối thiểu là 1 phút.';
+      }
+    }
+
+    if (form.maxAttempts) {
+      const attempts = Number(form.maxAttempts);
+      if (Number.isNaN(attempts) || attempts < 1) {
+        errors.maxAttempts = 'Số lần làm tối thiểu là 1.';
+      }
+    }
+
+    // Validate dates
+    if (form.openAt && form.closeAt) {
+      const openDate = new Date(form.openAt);
+      const closeDate = new Date(form.closeAt);
+      if (openDate >= closeDate) {
+        errors.closeAt = 'Thời gian mở phải trước thời gian đóng.';
+      }
+    }
+
+    if (form.latePenaltyPercent) {
+      const penalty = Number(form.latePenaltyPercent);
+      if (Number.isNaN(penalty) || penalty < 0 || penalty > 100) {
+        errors.latePenaltyPercent = 'Phần trăm phạt muộn phải từ 0 đến 100.';
+      }
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
+      // Scroll to first error
+      const firstErrorField = Object.keys(errors)[0];
+      const element = document.querySelector(`[name="${firstErrorField}"]`) || 
+                      document.querySelector(`#${firstErrorField}`);
+      if (element) {
+        element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        (element as HTMLElement).focus();
+      }
+      return;
+    }
+
     try {
       setSaving(true);
-      setSaveError(null);
-
-      if (!form.section) {
-        setSaveError('Vui lòng chọn section.');
-        setSaving(false);
-        return;
-      }
 
       const payload: any = {
         section: form.section,
@@ -160,15 +236,6 @@ function ExamEditContent() {
         const passing = Number(form.passingScore);
         if (!Number.isNaN(passing) && passing >= 0) {
           payload.passingScore = passing;
-        }
-      }
-
-      // Validate passingScore <= totalPoints
-      if (payload.totalPoints && payload.passingScore) {
-        if (payload.passingScore > payload.totalPoints) {
-          setSaveError('Điểm đạt không thể lớn hơn tổng điểm.');
-          setSaving(false);
-          return;
         }
       }
 
@@ -198,7 +265,9 @@ function ExamEditContent() {
       payload.shuffleAnswers = form.shuffleAnswers;
       payload.scoringMethod = form.scoringMethod;
       payload.showCorrectAnswers = form.showCorrectAnswers;
+      payload.showScoreToStudent = form.showScoreToStudent;
       payload.allowLateSubmission = form.allowLateSubmission;
+      payload.timeLimitType = form.timeLimitType;
       
       if (form.latePenaltyPercent) {
         const penalty = Number(form.latePenaltyPercent);
@@ -209,18 +278,32 @@ function ExamEditContent() {
 
       const res = await api.put(`/exams/${examId}`, payload);
       if (res.data?.success) {
-        router.push(`/instructor/courses/${courseId}/exams`);
+        router.push(`/instructor/courses/${courseId}/curriculum`);
       } else {
         setSaveError(res.data?.message || 'Không thể cập nhật bài kiểm tra.');
       }
     } catch (err: any) {
       console.error('Failed to update exam:', err);
-      setSaveError(
-        err?.response?.data?.message ||
-          (Array.isArray(err?.response?.data?.errors) &&
-            err.response.data.errors[0]?.message) ||
-          'Không thể cập nhật bài kiểm tra, vui lòng thử lại.'
-      );
+      
+      // Parse backend validation errors
+      const backendErrors: Record<string, string> = {};
+      if (err?.response?.data?.errors && Array.isArray(err.response.data.errors)) {
+        err.response.data.errors.forEach((error: any) => {
+          const field = error.path || error.field || 'general';
+          backendErrors[field] = error.message || error.msg || 'Lỗi validation';
+        });
+      }
+
+      if (Object.keys(backendErrors).length > 0) {
+        setFieldErrors(backendErrors);
+      } else {
+        setSaveError(
+          err?.response?.data?.message ||
+            (Array.isArray(err?.response?.data?.errors) &&
+              err.response.data.errors[0]?.message) ||
+            'Không thể cập nhật bài kiểm tra, vui lòng thử lại.'
+        );
+      }
     } finally {
       setSaving(false);
     }
@@ -290,7 +373,7 @@ function ExamEditContent() {
                 href={`/instructor/courses/${courseId}/curriculum`}
                 className="inline-flex items-center px-4 py-2 rounded-lg border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50"
               >
-                ← Quay lại
+                ← Quay lại quản lý khóa học
               </Link>
             </div>
           </div>
@@ -302,14 +385,43 @@ function ExamEditContent() {
             </div>
 
             <form onSubmit={handleSubmit} className="px-5 py-4 space-y-4">
+              {/* Error Display */}
+              {saveError && (
+                <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3">
+                  <div className="flex items-start">
+                    <div className="flex-shrink-0">
+                      <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                      </svg>
+                    </div>
+                    <div className="ml-3">
+                      <h3 className="text-sm font-medium text-red-800">Có lỗi xảy ra</h3>
+                      <p className="mt-1 text-sm text-red-700">{saveError}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Section <span className="text-red-500">*</span>
                 </label>
                 <select
+                  name="section"
                   value={form.section}
-                  onChange={(e) => setForm((s) => ({ ...s, section: e.target.value }))}
-                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  onChange={(e) => {
+                    setForm((s) => ({ ...s, section: e.target.value }));
+                    if (fieldErrors.section) {
+                      setFieldErrors((prev) => {
+                        const newErrors = { ...prev };
+                        delete newErrors.section;
+                        return newErrors;
+                      });
+                    }
+                  }}
+                  className={`w-full rounded-md border px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                    fieldErrors.section ? 'border-red-300 bg-red-50' : 'border-gray-300'
+                  }`}
                   disabled={saving || sections.length === 0}
                   required
                 >
@@ -326,6 +438,12 @@ function ExamEditContent() {
                     </>
                   )}
                 </select>
+                {fieldErrors.section && (
+                  <p className="mt-1 text-xs text-red-600 flex items-center">
+                    <span className="mr-1">⚠️</span>
+                    {fieldErrors.section}
+                  </p>
+                )}
               </div>
 
               <div>
@@ -334,12 +452,30 @@ function ExamEditContent() {
                 </label>
                 <input
                   type="text"
+                  name="title"
                   value={form.title}
-                  onChange={(e) => setForm((s) => ({ ...s, title: e.target.value }))}
-                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  onChange={(e) => {
+                    setForm((s) => ({ ...s, title: e.target.value }));
+                    if (fieldErrors.title) {
+                      setFieldErrors((prev) => {
+                        const newErrors = { ...prev };
+                        delete newErrors.title;
+                        return newErrors;
+                      });
+                    }
+                  }}
+                  className={`w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                    fieldErrors.title ? 'border-red-300 bg-red-50' : 'border-gray-300'
+                  }`}
                   disabled={saving}
                   required
                 />
+                {fieldErrors.title && (
+                  <p className="mt-1 text-xs text-red-600 flex items-center">
+                    <span className="mr-1">⚠️</span>
+                    {fieldErrors.title}
+                  </p>
+                )}
               </div>
 
               <div>
@@ -356,85 +492,192 @@ function ExamEditContent() {
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Tổng điểm
+                    Tổng điểm <span className="text-xs text-gray-500 font-normal">(Tùy chọn)</span>
                   </label>
                   <input
                     type="number"
+                    name="totalPoints"
                     min={0}
                     value={form.totalPoints}
-                    onChange={(e) => setForm((s) => ({ ...s, totalPoints: e.target.value }))}
-                    className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    onChange={(e) => {
+                      setForm((s) => ({ ...s, totalPoints: e.target.value }));
+                      if (fieldErrors.totalPoints || fieldErrors.passingScore) {
+                        setFieldErrors((prev) => {
+                          const newErrors = { ...prev };
+                          delete newErrors.totalPoints;
+                          delete newErrors.passingScore;
+                          return newErrors;
+                        });
+                      }
+                    }}
+                    className={`w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                      fieldErrors.totalPoints ? 'border-red-300 bg-red-50' : 'border-gray-300'
+                    }`}
                     disabled={saving}
                   />
+                  {fieldErrors.totalPoints && (
+                    <p className="mt-1 text-xs text-red-600 flex items-center">
+                      <span className="mr-1">⚠️</span>
+                      {fieldErrors.totalPoints}
+                    </p>
+                  )}
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Điểm đạt</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Điểm đạt <span className="text-xs text-gray-500 font-normal">(Tùy chọn)</span>
+                  </label>
                   <input
                     type="number"
+                    name="passingScore"
                     min={0}
                     value={form.passingScore}
-                    onChange={(e) => setForm((s) => ({ ...s, passingScore: e.target.value }))}
-                    className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    onChange={(e) => {
+                      setForm((s) => ({ ...s, passingScore: e.target.value }));
+                      if (fieldErrors.passingScore || fieldErrors.totalPoints) {
+                        setFieldErrors((prev) => {
+                          const newErrors = { ...prev };
+                          delete newErrors.passingScore;
+                          delete newErrors.totalPoints;
+                          return newErrors;
+                        });
+                      }
+                    }}
+                    className={`w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                      fieldErrors.passingScore ? 'border-red-300 bg-red-50' : 'border-gray-300'
+                    }`}
                     disabled={saving}
                   />
+                  {fieldErrors.passingScore && (
+                    <p className="mt-1 text-xs text-red-600 flex items-center">
+                      <span className="mr-1">⚠️</span>
+                      {fieldErrors.passingScore}
+                    </p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Thời lượng (phút)
+                    Thời lượng (phút) <span className="text-xs text-gray-500 font-normal">(Tùy chọn)</span>
                   </label>
                   <input
                     type="number"
+                    name="durationMinutes"
                     min={1}
                     value={form.durationMinutes}
-                    onChange={(e) => setForm((s) => ({ ...s, durationMinutes: e.target.value }))}
-                    className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    onChange={(e) => {
+                      setForm((s) => ({ ...s, durationMinutes: e.target.value }));
+                      if (fieldErrors.durationMinutes) {
+                        setFieldErrors((prev) => {
+                          const newErrors = { ...prev };
+                          delete newErrors.durationMinutes;
+                          return newErrors;
+                        });
+                      }
+                    }}
+                    className={`w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                      fieldErrors.durationMinutes ? 'border-red-300 bg-red-50' : 'border-gray-300'
+                    }`}
                     disabled={saving}
-                    required
                   />
+                  {fieldErrors.durationMinutes && (
+                    <p className="mt-1 text-xs text-red-600 flex items-center">
+                      <span className="mr-1">⚠️</span>
+                      {fieldErrors.durationMinutes}
+                    </p>
+                  )}
                 </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Thời gian mở
+                    Thời gian mở <span className="text-xs text-gray-500 font-normal">(Tùy chọn)</span>
                   </label>
                   <input
                     type="datetime-local"
+                    name="openAt"
                     value={form.openAt}
-                    onChange={(e) => setForm((s) => ({ ...s, openAt: e.target.value }))}
-                    className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    onChange={(e) => {
+                      setForm((s) => ({ ...s, openAt: e.target.value }));
+                      if (fieldErrors.openAt || fieldErrors.closeAt) {
+                        setFieldErrors((prev) => {
+                          const newErrors = { ...prev };
+                          delete newErrors.openAt;
+                          delete newErrors.closeAt;
+                          return newErrors;
+                        });
+                      }
+                    }}
+                    className={`w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                      fieldErrors.openAt || fieldErrors.closeAt ? 'border-red-300 bg-red-50' : 'border-gray-300'
+                    }`}
                     disabled={saving}
                   />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Thời gian đóng
+                    Thời gian đóng <span className="text-xs text-gray-500 font-normal">(Tùy chọn)</span>
                   </label>
                   <input
                     type="datetime-local"
+                    name="closeAt"
                     value={form.closeAt}
-                    onChange={(e) => setForm((s) => ({ ...s, closeAt: e.target.value }))}
-                    className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    onChange={(e) => {
+                      setForm((s) => ({ ...s, closeAt: e.target.value }));
+                      if (fieldErrors.openAt || fieldErrors.closeAt) {
+                        setFieldErrors((prev) => {
+                          const newErrors = { ...prev };
+                          delete newErrors.openAt;
+                          delete newErrors.closeAt;
+                          return newErrors;
+                        });
+                      }
+                    }}
+                    className={`w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                      fieldErrors.openAt || fieldErrors.closeAt ? 'border-red-300 bg-red-50' : 'border-gray-300'
+                    }`}
                     disabled={saving}
                   />
+                  {fieldErrors.closeAt && (
+                    <p className="mt-1 text-xs text-red-600 flex items-center">
+                      <span className="mr-1">⚠️</span>
+                      {fieldErrors.closeAt}
+                    </p>
+                  )}
                 </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Số lần làm tối đa
+                    Số lần làm tối đa <span className="text-xs text-gray-500 font-normal">(Tùy chọn)</span>
                   </label>
                   <input
                     type="number"
+                    name="maxAttempts"
                     min={1}
                     value={form.maxAttempts}
-                    onChange={(e) => setForm((s) => ({ ...s, maxAttempts: e.target.value }))}
-                    className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    onChange={(e) => {
+                      setForm((s) => ({ ...s, maxAttempts: e.target.value }));
+                      if (fieldErrors.maxAttempts) {
+                        setFieldErrors((prev) => {
+                          const newErrors = { ...prev };
+                          delete newErrors.maxAttempts;
+                          return newErrors;
+                        });
+                      }
+                    }}
+                    className={`w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                      fieldErrors.maxAttempts ? 'border-red-300 bg-red-50' : 'border-gray-300'
+                    }`}
                     placeholder="Không giới hạn nếu để trống"
                     disabled={saving}
                   />
+                  {fieldErrors.maxAttempts && (
+                    <p className="mt-1 text-xs text-red-600 flex items-center">
+                      <span className="mr-1">⚠️</span>
+                      {fieldErrors.maxAttempts}
+                    </p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Trạng thái</label>
@@ -575,6 +818,51 @@ function ExamEditContent() {
                     </select>
                   </div>
 
+                  {/* Show Score To Student */}
+                  <div>
+                    <label className="flex items-center">
+                      <input
+                        type="checkbox"
+                        checked={form.showScoreToStudent}
+                        onChange={(e) =>
+                          setForm((s) => ({ ...s, showScoreToStudent: e.target.checked }))
+                        }
+                        className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        disabled={saving}
+                      />
+                      <span className="ml-2 text-sm text-gray-700">Hiển thị điểm cho học viên</span>
+                    </label>
+                    <p className="mt-1 ml-6 text-xs text-gray-500">
+                      Học viên có thể xem điểm sau khi làm bài
+                    </p>
+                  </div>
+
+                  {/* Time Limit Type */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Loại giới hạn thời gian
+                    </label>
+                    <select
+                      value={form.timeLimitType}
+                      onChange={(e) =>
+                        setForm((s) => ({
+                          ...s,
+                          timeLimitType: e.target.value as 'per_attempt' | 'global_window',
+                        }))
+                      }
+                      className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      disabled={saving}
+                    >
+                      <option value="per_attempt">Giới hạn cho mỗi lần làm</option>
+                      <option value="global_window">Giới hạn trong khoảng thời gian chung</option>
+                    </select>
+                    <p className="mt-1 text-xs text-gray-500">
+                      {form.timeLimitType === 'per_attempt'
+                        ? 'Mỗi lần làm bài có thời gian riêng. Học viên có thể làm nhiều lần, mỗi lần có thời gian độc lập.'
+                        : 'Tất cả các lần làm bài chia sẻ một khoảng thời gian chung. Khi hết thời gian, không thể làm thêm lần nào nữa.'}
+                    </p>
+                  </div>
+
                   {/* Late Submission */}
                   <div className="space-y-2">
                     <label className="flex items-center">
@@ -626,7 +914,7 @@ function ExamEditContent() {
                   href={`/instructor/courses/${courseId}/curriculum`}
                   className="px-4 py-2 rounded-md border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50"
                 >
-                  Hủy
+                  Quay lại
                 </Link>
                 <button
                   type="submit"

@@ -57,11 +57,12 @@ function EditLessonContent() {
   const lessonId = params?.id;
 
   const [form, setForm] = useState<LessonEditForm | null>(null);
-  const [courseSlug, setCourseSlug] = useState<string | null>(null);
+  const [courseId, setCourseId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
   const [videoSource, setVideoSource] = useState<'upload' | 'url'>('url');
   const [videoUploading, setVideoUploading] = useState(false);
@@ -85,7 +86,7 @@ function EditLessonContent() {
         }
 
         const lesson = res.data.lesson;
-        setCourseSlug(lesson.course?.slug || null);
+        setCourseId(lesson.course?._id || lesson.course || null);
 
         const quizQuestions: QuizQuestionForm[] =
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -260,10 +261,57 @@ function EditLessonContent() {
     e.preventDefault();
     if (!form || !lessonId) return;
 
+    setError(null);
+    setFieldErrors({});
+    setSuccess(null);
+
+    // Client-side validation
+    const errors: Record<string, string> = {};
+
+    if (!form.title.trim()) {
+      errors.title = 'Tiêu đề bài học là bắt buộc.';
+    }
+
+    if (form.type === 'video' && !form.videoUrl.trim()) {
+      errors.videoUrl = 'Video URL là bắt buộc với bài học video.';
+    }
+
+    if (form.type === 'article' && !form.articleContent.trim()) {
+      errors.articleContent = 'Nội dung bài viết là bắt buộc với bài học article.';
+    }
+
+    if (form.type === 'quiz') {
+      if (form.quizQuestions.length === 0) {
+        errors.quizQuestions = 'Quiz cần ít nhất một câu hỏi.';
+      } else {
+        form.quizQuestions.forEach((q, i) => {
+          if (!q.question.trim()) {
+            errors[`quizQuestions.${i}.question`] = `Câu hỏi ${i + 1} không được để trống.`;
+          }
+          if (q.type === 'multiple_choice' && (!q.options || q.options.length < 2)) {
+            errors[`quizQuestions.${i}.options`] = `Câu hỏi ${i + 1} cần ít nhất 2 lựa chọn.`;
+          }
+        });
+      }
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
+      // Scroll to first error
+      const firstErrorField = Object.keys(errors)[0];
+      setTimeout(() => {
+        const element = document.querySelector(`[name="${firstErrorField}"]`) || 
+                        document.querySelector(`#${firstErrorField}`);
+        if (element) {
+          element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          (element as HTMLElement).focus();
+        }
+      }, 100);
+      return;
+    }
+
     try {
       setSaving(true);
-      setError(null);
-      setSuccess(null);
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const payload: any = {
@@ -317,16 +365,38 @@ function EditLessonContent() {
       }
     } catch (err) {
       console.error('Failed to save lesson:', err);
-      let message = 'Không thể cập nhật bài học. Vui lòng thử lại.';
+      
+      // Parse backend validation errors
+      const backendErrors: Record<string, string> = {};
       if (typeof err === 'object' && err !== null) {
         const anyErr = err as {
-          response?: { data?: { errors?: { message?: string }[]; message?: string; error?: string } };
+          response?: { 
+            data?: { 
+              errors?: Array<{ path?: string; field?: string; message?: string; msg?: string }>; 
+              message?: string; 
+              error?: string 
+            } 
+          };
         };
         const data = anyErr.response?.data;
-        message =
-          data?.errors?.[0]?.message || data?.message || (data?.error as string | undefined) || message;
+        
+        if (data?.errors && Array.isArray(data.errors)) {
+          data.errors.forEach((error) => {
+            const field = error.path || error.field || 'general';
+            backendErrors[field] = error.message || error.msg || 'Lỗi validation';
+          });
+        }
+        
+        if (Object.keys(backendErrors).length > 0) {
+          setFieldErrors(backendErrors);
+        } else {
+          const message =
+            data?.errors?.[0]?.message || data?.message || (data?.error as string | undefined) || 'Không thể cập nhật bài học. Vui lòng thử lại.';
+          setError(message);
+        }
+      } else {
+        setError('Không thể cập nhật bài học. Vui lòng thử lại.');
       }
-      setError(message);
     } finally {
       setSaving(false);
     }
@@ -356,13 +426,13 @@ function EditLessonContent() {
           <button
             type="button"
             onClick={() =>
-              courseSlug
-                ? router.push(`/courses/${courseSlug}/learn/${lessonId}`)
+              courseId
+                ? router.push(`/instructor/courses/${courseId}/curriculum`)
                 : router.back()
             }
             className="mb-4 text-sm text-gray-600 hover:text-gray-800"
           >
-            ← Quay lại bài học
+            ← Quay lại quản lý khóa học
           </button>
 
           <div className="bg-white rounded-xl shadow p-6">
@@ -396,13 +466,32 @@ function EditLessonContent() {
             </p>
 
             {error && (
-              <div className="mb-4 rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
-                {error}
+              <div className="mb-4 rounded-lg bg-red-50 border border-red-200 px-4 py-3">
+                <div className="flex items-start">
+                  <div className="flex-shrink-0">
+                    <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                    </svg>
+                  </div>
+                  <div className="ml-3">
+                    <h3 className="text-sm font-medium text-red-800">Có lỗi xảy ra</h3>
+                    <p className="mt-1 text-sm text-red-700">{error}</p>
+                  </div>
+                </div>
               </div>
             )}
             {success && (
-              <div className="mb-4 rounded-lg bg-green-50 border border-green-200 px-4 py-3 text-sm text-green-700">
-                {success}
+              <div className="mb-4 rounded-lg bg-green-50 border border-green-200 px-4 py-3">
+                <div className="flex items-start">
+                  <div className="flex-shrink-0">
+                    <svg className="h-5 w-5 text-green-400" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                    </svg>
+                  </div>
+                  <div className="ml-3">
+                    <p className="text-sm font-medium text-green-800">{success}</p>
+                  </div>
+                </div>
               </div>
             )}
 
@@ -411,16 +500,33 @@ function EditLessonContent() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Tiêu đề bài học
+                    Tiêu đề bài học <span className="text-red-500">*</span>
                   </label>
                   <input
                     type="text"
                     name="title"
                     value={form.title}
-                    onChange={handleBasicChange}
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    onChange={(e) => {
+                      handleBasicChange(e);
+                      if (fieldErrors.title) {
+                        setFieldErrors((prev) => {
+                          const newErrors = { ...prev };
+                          delete newErrors.title;
+                          return newErrors;
+                        });
+                      }
+                    }}
+                    className={`w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
+                      fieldErrors.title ? 'border-red-300 bg-red-50' : 'border-gray-300'
+                    }`}
                     required
                   />
+                  {fieldErrors.title && (
+                    <p className="mt-1 text-xs text-red-600 flex items-center">
+                      <span className="mr-1">⚠️</span>
+                      {fieldErrors.title}
+                    </p>
+                  )}
                 </div>
                 <div className="grid grid-cols-3 gap-3 items-end">
                   <div>
@@ -598,16 +704,34 @@ function EditLessonContent() {
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div className="md:col-span-2">
                           <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Video URL
+                            Video URL <span className="text-red-500">*</span>
                           </label>
                           <input
                             type="text"
                             name="videoUrl"
                             value={form.videoUrl}
-                            onChange={handleBasicChange}
-                            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            onChange={(e) => {
+                              handleBasicChange(e);
+                              if (fieldErrors.videoUrl) {
+                                setFieldErrors((prev) => {
+                                  const newErrors = { ...prev };
+                                  delete newErrors.videoUrl;
+                                  return newErrors;
+                                });
+                              }
+                            }}
+                            className={`w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
+                              fieldErrors.videoUrl ? 'border-red-300 bg-red-50' : 'border-gray-300'
+                            }`}
                             placeholder="https://www.youtube.com/watch?... hoặc URL video trực tiếp"
+                            required
                           />
+                          {fieldErrors.videoUrl && (
+                            <p className="mt-1 text-xs text-red-600 flex items-center">
+                              <span className="mr-1">⚠️</span>
+                              {fieldErrors.videoUrl}
+                            </p>
+                          )}
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -747,7 +871,9 @@ function EditLessonContent() {
               {form.type === 'quiz' && (
                 <div className="space-y-4 border-t border-gray-200 pt-4">
                   <div className="flex items-center justify-between">
-                    <h2 className="text-lg font-semibold text-gray-900">Câu hỏi quiz</h2>
+                    <h2 className="text-lg font-semibold text-gray-900">
+                      Câu hỏi quiz <span className="text-red-500">*</span>
+                    </h2>
                     <button
                       type="button"
                       onClick={handleAddQuizQuestion}
@@ -756,6 +882,14 @@ function EditLessonContent() {
                       + Thêm câu hỏi
                     </button>
                   </div>
+                  {fieldErrors.quizQuestions && (
+                    <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3">
+                      <p className="text-sm text-red-700 flex items-center">
+                        <span className="mr-1">⚠️</span>
+                        {fieldErrors.quizQuestions}
+                      </p>
+                    </div>
+                  )}
                   {form.quizQuestions.length === 0 ? (
                     <p className="text-sm text-gray-500">
                       Chưa có câu hỏi nào. Thêm ít nhất 1 câu hỏi để bài quiz hợp lệ.
@@ -990,11 +1124,15 @@ function EditLessonContent() {
               <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
                 <button
                   type="button"
-                  onClick={() => router.back()}
+                  onClick={() =>
+                    courseId
+                      ? router.push(`/instructor/courses/${courseId}/curriculum`)
+                      : router.back()
+                  }
                   className="px-4 py-2 rounded-lg border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50"
                   disabled={saving}
                 >
-                  Hủy
+                  Quay lại
                 </button>
                 <button
                   type="submit"

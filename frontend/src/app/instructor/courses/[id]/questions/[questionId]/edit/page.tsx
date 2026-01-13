@@ -42,6 +42,7 @@ function QuestionEditContentInner() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
   const [form, setForm] = useState({
     type: 'single_choice' as QuestionType,
@@ -111,53 +112,59 @@ function QuestionEditContentInner() {
     e.preventDefault();
     if (!questionId) return;
 
-    try {
-      setSaving(true);
-      setSaveError(null);
+    setSaveError(null);
+    setFieldErrors({});
 
-      // Validate
-      if (!form.text.trim()) {
-        setSaveError('Vui lòng nhập nội dung câu hỏi.');
-        setSaving(false);
-        return;
-      }
+    // Client-side validation
+    const errors: Record<string, string> = {};
 
-      if (form.type === 'single_choice' || form.type === 'multiple_choice') {
-        if (form.options.length < 2) {
-          setSaveError('Câu hỏi trắc nghiệm cần ít nhất 2 lựa chọn.');
-          setSaving(false);
-          return;
-        }
+    if (!form.text.trim()) {
+      errors.text = 'Vui lòng nhập nội dung câu hỏi.';
+    }
 
+    if (form.type === 'single_choice' || form.type === 'multiple_choice') {
+      if (form.options.length < 2) {
+        errors.options = 'Câu hỏi trắc nghiệm cần ít nhất 2 lựa chọn.';
+      } else {
         const validOptions = form.options.filter((opt) => opt.text.trim());
         if (validOptions.length < 2) {
-          setSaveError('Vui lòng điền đầy đủ ít nhất 2 lựa chọn.');
-          setSaving(false);
-          return;
-        }
-
-        const correctCount = validOptions.filter((opt) => opt.isCorrect).length;
-        if (correctCount === 0) {
-          setSaveError('Vui lòng chọn ít nhất một đáp án đúng.');
-          setSaving(false);
-          return;
-        }
-
-        if (form.type === 'single_choice' && correctCount > 1) {
-          setSaveError('Câu hỏi trắc nghiệm một đáp án chỉ được có một đáp án đúng.');
-          setSaving(false);
-          return;
+          errors.options = 'Vui lòng điền đầy đủ ít nhất 2 lựa chọn.';
+        } else {
+          const correctCount = validOptions.filter((opt) => opt.isCorrect).length;
+          if (correctCount === 0) {
+            errors.options = 'Vui lòng chọn ít nhất một đáp án đúng.';
+          } else if (form.type === 'single_choice' && correctCount > 1) {
+            errors.options = 'Câu hỏi trắc nghiệm một đáp án chỉ được có một đáp án đúng.';
+          }
         }
       }
+    }
 
-      if (form.type === 'short_answer') {
-        const validAnswers = form.expectedAnswers.filter((ans) => ans.trim());
-        if (validAnswers.length === 0) {
-          setSaveError('Vui lòng nhập ít nhất một đáp án mong đợi.');
-          setSaving(false);
-          return;
-        }
+    if (form.type === 'short_answer') {
+      const validAnswers = form.expectedAnswers.filter((ans) => ans.trim());
+      if (validAnswers.length === 0) {
+        errors.expectedAnswers = 'Vui lòng nhập ít nhất một đáp án mong đợi.';
       }
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
+      // Scroll to first error
+      const firstErrorField = Object.keys(errors)[0];
+      setTimeout(() => {
+        const element = document.querySelector(`[name="${firstErrorField}"]`) || 
+                        document.querySelector(`#${firstErrorField}`) ||
+                        document.querySelector('textarea[name="text"]');
+        if (element) {
+          element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          (element as HTMLElement).focus();
+        }
+      }, 100);
+      return;
+    }
+
+    try {
+      setSaving(true);
 
       const payload: any = {
         type: form.type,
@@ -273,11 +280,25 @@ function QuestionEditContentInner() {
       }
     } catch (err: any) {
       console.error('Failed to update question:', err);
-      setSaveError(
-        err?.response?.data?.message ||
+      
+      // Parse backend validation errors
+      const backendErrors: Record<string, string> = {};
+      if (err?.response?.data?.errors && Array.isArray(err.response.data.errors)) {
+        err.response.data.errors.forEach((error: any) => {
+          const field = error.path || error.field || 'general';
+          backendErrors[field] = error.message || error.msg || 'Lỗi validation';
+        });
+      }
+
+      if (Object.keys(backendErrors).length > 0) {
+        setFieldErrors(backendErrors);
+      } else {
+        const message =
+          err?.response?.data?.message ||
           (Array.isArray(err?.response?.data?.errors) && err.response.data.errors[0]?.message) ||
-          'Không thể cập nhật câu hỏi, vui lòng thử lại.'
-      );
+          'Không thể cập nhật câu hỏi, vui lòng thử lại.';
+        setSaveError(message);
+      }
     } finally {
       setSaving(false);
     }
@@ -444,6 +465,9 @@ function QuestionEditContentInner() {
                   <option value="multiple_choice">Trắc nghiệm (nhiều đáp án)</option>
                   <option value="short_answer">Tự luận</option>
                 </select>
+                <p className="mt-1 text-xs text-gray-500">
+                  <strong>Trắc nghiệm (1 đáp án):</strong> Học viên chỉ có thể chọn một đáp án đúng. <strong>Trắc nghiệm (nhiều đáp án):</strong> Học viên có thể chọn nhiều đáp án đúng. <strong>Tự luận:</strong> Học viên nhập câu trả lời bằng văn bản.
+                </p>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
@@ -492,16 +516,35 @@ function QuestionEditContentInner() {
                   Nội dung câu hỏi <span className="text-red-500">*</span>
                 </label>
                 <textarea
+                  name="text"
                   value={form.text}
-                  onChange={(e) =>
-                    setForm((prev) => ({ ...prev, text: e.target.value }))
-                  }
-                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  onChange={(e) => {
+                    setForm((prev) => ({ ...prev, text: e.target.value }));
+                    if (fieldErrors.text) {
+                      setFieldErrors((prev) => {
+                        const newErrors = { ...prev };
+                        delete newErrors.text;
+                        return newErrors;
+                      });
+                    }
+                  }}
+                  className={`w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                    fieldErrors.text ? 'border-red-300 bg-red-50' : 'border-gray-300'
+                  }`}
                   rows={4}
                   disabled={saving}
                   required
-                  placeholder="Nhập nội dung câu hỏi..."
+                  placeholder="Ví dụ: React là một thư viện JavaScript được phát triển bởi Facebook để xây dựng giao diện người dùng..."
                 />
+                {fieldErrors.text && (
+                  <p className="mt-1 text-xs text-red-600 flex items-center">
+                    <span className="mr-1">⚠️</span>
+                    {fieldErrors.text}
+                  </p>
+                )}
+                <p className="mt-1 text-xs text-gray-500">
+                  Viết câu hỏi rõ ràng, dễ hiểu. Có thể sử dụng định dạng Markdown để làm nổi bật các phần quan trọng.
+                </p>
               </div>
 
               {/* Options for choice questions */}
@@ -585,7 +628,7 @@ function QuestionEditContentInner() {
                             setForm((prev) => ({ ...prev, expectedAnswers: newAnswers }));
                           }}
                           className="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          placeholder={`Đáp án ${index + 1}`}
+                          placeholder={`Ví dụ: React, React.js, ReactJS`}
                           disabled={saving}
                         />
                         {form.expectedAnswers.length > 1 && (
@@ -594,12 +637,21 @@ function QuestionEditContentInner() {
                             onClick={() => removeExpectedAnswer(index)}
                             disabled={saving}
                             className="text-red-600 hover:text-red-700 p-1"
+                            title="Xóa đáp án này"
                           >
                             <X className="w-4 h-4" />
                           </button>
                         )}
                       </div>
                     ))}
+                  </div>
+                  <div className="mt-2 space-y-1">
+                    <p className="text-xs text-gray-500">
+                      Nhập các đáp án có thể chấp nhận được. Hệ thống sẽ tự động so sánh với câu trả lời của học viên (không phân biệt hoa thường).
+                    </p>
+                    <p className="text-xs text-gray-400">
+                      💡 Tip: Thêm nhiều biến thể của đáp án (ví dụ: "React", "React.js", "ReactJS") để chấp nhận nhiều cách viết khác nhau.
+                    </p>
                   </div>
                   <p className="text-xs text-gray-500 mt-1">
                     Có thể thêm nhiều đáp án đúng (phân cách bằng dấu phẩy hoặc từng dòng)
@@ -653,9 +705,19 @@ function QuestionEditContentInner() {
               </div>
 
               {saveError && (
-                <p className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-md px-3 py-2">
-                  {saveError}
-                </p>
+                <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3">
+                  <div className="flex items-start">
+                    <div className="flex-shrink-0">
+                      <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                      </svg>
+                    </div>
+                    <div className="ml-3">
+                      <h3 className="text-sm font-medium text-red-800">Có lỗi xảy ra</h3>
+                      <p className="mt-1 text-sm text-red-700">{saveError}</p>
+                    </div>
+                  </div>
+                </div>
               )}
 
               <div className="flex justify-end gap-2 pt-4 border-t">

@@ -79,6 +79,7 @@ function AiExamGenerateContent() {
   // Job state
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [currentJob, setCurrentJob] = useState<GenerationJob | null>(null);
   const [polling, setPolling] = useState(false);
 
@@ -260,40 +261,50 @@ function AiExamGenerateContent() {
     e.preventDefault();
     if (!courseId) return;
 
+    setSubmitError(null);
+    setFieldErrors({});
+
+    // Client-side validation
+    const errors: Record<string, string> = {};
+
+    if (!prompt.trim()) {
+      errors.prompt = 'Vui lòng nhập prompt hoặc chọn template.';
+    }
+
+    if (inputType === 'course_material' && selectedLessons.length === 0) {
+      errors.selectedLessons = 'Vui lòng chọn ít nhất một bài học.';
+    }
+
+    if (inputType === 'uploaded_file' && !uploadedFile) {
+      errors.uploadedFile = 'Vui lòng tải lên file.';
+    }
+
+    if (inputType === 'uploaded_file' && !fileContent && !isProcessingFile) {
+      errors.uploadedFile = 'Không thể đọc nội dung file hoặc file rỗng.';
+    }
+
+    if (isProcessingFile) {
+      errors.uploadedFile = 'Đang xử lý file, vui lòng đợi...';
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
+      // Scroll to first error
+      const firstErrorField = Object.keys(errors)[0];
+      setTimeout(() => {
+        const element = document.querySelector(`[name="${firstErrorField}"]`) || 
+                        document.querySelector(`#${firstErrorField}`) ||
+                        document.querySelector('textarea');
+        if (element) {
+          element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          (element as HTMLElement).focus();
+        }
+      }, 100);
+      return;
+    }
+
     try {
       setSubmitting(true);
-      setSubmitError(null);
-
-      // Validate inputs
-      if (!prompt.trim()) {
-        setSubmitError('Vui lòng nhập prompt hoặc chọn template.');
-        setSubmitting(false);
-        return;
-      }
-
-      if (inputType === 'course_material' && selectedLessons.length === 0) {
-        setSubmitError('Vui lòng chọn ít nhất một bài học.');
-        setSubmitting(false);
-        return;
-      }
-
-      if (inputType === 'uploaded_file' && !uploadedFile) {
-        setSubmitError('Vui lòng tải lên file.');
-        setSubmitting(false);
-        return;
-      }
-
-      if (inputType === 'uploaded_file' && !fileContent && !isProcessingFile) {
-          setSubmitError('Không thể đọc nội dung file hoặc file rỗng.');
-          setSubmitting(false);
-          return;
-      }
-
-      if (isProcessingFile) {
-          setSubmitError('Đang xử lý file, vui lòng đợi...');
-          setSubmitting(false);
-          return;
-      }
 
       // Build sources
       const sources: any[] = [];
@@ -346,9 +357,23 @@ function AiExamGenerateContent() {
       }
     } catch (err: any) {
       console.error('Failed to create generation job:', err);
-      setSubmitError(
-        err?.response?.data?.message || 'Không thể tạo job, vui lòng thử lại.'
-      );
+      
+      // Parse backend validation errors
+      const backendErrors: Record<string, string> = {};
+      if (err?.response?.data?.errors && Array.isArray(err.response.data.errors)) {
+        err.response.data.errors.forEach((error: any) => {
+          const field = error.path || error.field || 'general';
+          backendErrors[field] = error.message || error.msg || 'Lỗi validation';
+        });
+      }
+
+      if (Object.keys(backendErrors).length > 0) {
+        setFieldErrors(backendErrors);
+      } else {
+        setSubmitError(
+          err?.response?.data?.message || 'Không thể tạo job, vui lòng thử lại.'
+        );
+      }
     } finally {
       setSubmitting(false);
     }
@@ -578,10 +603,13 @@ function AiExamGenerateContent() {
                       <label className="block text-sm font-medium text-gray-700 mb-2">
                         Tải lên file <span className="text-red-500">*</span>
                       </label>
-                      <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
+                      <div className={`border-2 border-dashed rounded-lg p-6 text-center ${
+                        fieldErrors.uploadedFile ? 'border-red-300 bg-red-50' : 'border-gray-300'
+                      }`}>
                         <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
                         <input
                           type="file"
+                          name="uploadedFile"
                           onChange={handleFileChange}
                           className="hidden"
                           id="file-upload"
@@ -601,9 +629,19 @@ function AiExamGenerateContent() {
                         )}
                         {fileContent && (
                             <p className="mt-1 text-xs text-green-600">
-                                Đã trích xuất nội dung ({fileContent.length} ký tự)
-                                {fileContent.length > 50000 && <span className="text-orange-500 ml-1">(Sẽ lấy 50k ký tự đầu)</span>}
+                                ✓ Đã trích xuất nội dung ({fileContent.length.toLocaleString()} ký tự)
+                                {fileContent.length > 50000 && (
+                                  <span className="text-orange-600 ml-1">
+                                    (Hệ thống sẽ chỉ sử dụng 50,000 ký tự đầu tiên)
+                                  </span>
+                                )}
                             </p>
+                        )}
+                        {fieldErrors.uploadedFile && (
+                          <p className="mt-2 text-xs text-red-600 flex items-center justify-center">
+                            <span className="mr-1">⚠️</span>
+                            {fieldErrors.uploadedFile}
+                          </p>
                         )}
                         <p className="mt-2 text-xs text-gray-500">
                           Hỗ trợ: PDF, DOC, DOCX, TXT (tối đa 10MB)
@@ -616,7 +654,7 @@ function AiExamGenerateContent() {
                   {examTemplates.length > 0 && (
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Exam Template (Optional)
+                        Exam Template <span className="text-xs text-gray-500 font-normal">(Tùy chọn)</span>
                       </label>
                       <select
                         value={selectedExamTemplate}
@@ -635,15 +673,20 @@ function AiExamGenerateContent() {
                           </option>
                         ))}
                       </select>
-                      {selectedExamTemplate && (
-                        <div className="mt-2 p-2 bg-blue-50 rounded text-xs text-gray-700">
-                          <p className="font-medium">Template: {examTemplates.find((t) => t._id === selectedExamTemplate)?.title}</p>
-                          <p>Số câu hỏi: {examTemplates.find((t) => t._id === selectedExamTemplate)?.numberOfQuestions}</p>
-                          {examTemplates.find((t) => t._id === selectedExamTemplate)?.description && (
-                            <p className="mt-1">{examTemplates.find((t) => t._id === selectedExamTemplate)?.description}</p>
-                          )}
-                        </div>
-                      )}
+                      <div className="mt-2 space-y-1">
+                        <p className="text-xs text-gray-500">
+                          Template giúp bạn định sẵn số lượng câu hỏi, phân bố độ khó, và loại câu hỏi. Nếu chọn template, AI sẽ tuân theo các thiết lập này.
+                        </p>
+                        {selectedExamTemplate && (
+                          <div className="p-2 bg-blue-50 rounded text-xs text-gray-700 border border-blue-200">
+                            <p className="font-medium">✓ Đã chọn template: {examTemplates.find((t) => t._id === selectedExamTemplate)?.title}</p>
+                            <p>Số câu hỏi: {examTemplates.find((t) => t._id === selectedExamTemplate)?.numberOfQuestions}</p>
+                            {examTemplates.find((t) => t._id === selectedExamTemplate)?.description && (
+                              <p className="mt-1 text-gray-600">{examTemplates.find((t) => t._id === selectedExamTemplate)?.description}</p>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   )}
 
@@ -680,23 +723,56 @@ function AiExamGenerateContent() {
                       Prompt <span className="text-red-500">*</span>
                     </label>
                     <textarea
+                      name="prompt"
                       value={prompt}
-                      onChange={(e) => setPrompt(e.target.value)}
-                      className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      rows={6}
-                      placeholder="Ví dụ: Tạo 10 câu hỏi trắc nghiệm về lập trình React với độ khó trung bình..."
+                      onChange={(e) => {
+                        setPrompt(e.target.value);
+                        if (fieldErrors.prompt) {
+                          setFieldErrors((prev) => {
+                            const newErrors = { ...prev };
+                            delete newErrors.prompt;
+                            return newErrors;
+                          });
+                        }
+                      }}
+                      className={`w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                        fieldErrors.prompt ? 'border-red-300 bg-red-50' : 'border-gray-300'
+                      }`}
+                      rows={8}
+                      placeholder="Ví dụ: Tạo 10 câu hỏi trắc nghiệm về lập trình React với độ khó trung bình. Các chủ đề bao gồm: React Hooks, State Management, Component Lifecycle. Mỗi câu hỏi có 4 lựa chọn và một đáp án đúng."
                       disabled={submitting}
                       required
                     />
-                    <p className="mt-1 text-xs text-gray-500">
-                      Mô tả chi tiết yêu cầu của bạn: số lượng câu hỏi, độ khó, chủ đề, định dạng...
-                    </p>
+                    {fieldErrors.prompt && (
+                      <p className="mt-1 text-xs text-red-600 flex items-center">
+                        <span className="mr-1">⚠️</span>
+                        {fieldErrors.prompt}
+                      </p>
+                    )}
+                    <div className="mt-2 space-y-1">
+                      <p className="text-xs text-gray-500">
+                        <strong>Mô tả chi tiết yêu cầu của bạn:</strong> Số lượng câu hỏi, độ khó (dễ/trung bình/khó), chủ đề cụ thể, loại câu hỏi (trắc nghiệm/tự luận), và bất kỳ yêu cầu đặc biệt nào khác.
+                      </p>
+                      <p className="text-xs text-gray-400">
+                        💡 <strong>Tip:</strong> Càng chi tiết prompt, kết quả càng chính xác. Ví dụ: "Tạo 15 câu hỏi về React Hooks, trong đó 10 câu trắc nghiệm (single choice) và 5 câu tự luận, độ khó phân bố: 30% dễ, 50% trung bình, 20% khó."
+                      </p>
+                    </div>
                   </div>
 
                   {submitError && (
-                    <p className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-md px-3 py-2">
-                      {submitError}
-                    </p>
+                    <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3">
+                      <div className="flex items-start">
+                        <div className="flex-shrink-0">
+                          <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                          </svg>
+                        </div>
+                        <div className="ml-3">
+                          <h3 className="text-sm font-medium text-red-800">Có lỗi xảy ra</h3>
+                          <p className="mt-1 text-sm text-red-700">{submitError}</p>
+                        </div>
+                      </div>
+                    </div>
                   )}
 
                   <div className="flex justify-end gap-2 pt-2">
