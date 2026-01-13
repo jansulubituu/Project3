@@ -17,6 +17,7 @@ import {
   getPlatformStats,
   syncEnrollmentCount,
   batchReorder,
+  getInstructorCoursesPerformance,
 } from '../controllers/courseController';
 import { createReview } from '../controllers/reviewController';
 import { protect, optionalAuth } from '../middleware/auth';
@@ -147,6 +148,7 @@ router.post('/:courseId/reviews', protect, createReviewValidation, createReview)
 // Management routes
 router.get('/mine/list', protect, instructorOrAdmin, getMyCourses);
 router.get('/admin/list', protect, adminOnly, getAdminCourses);
+router.get('/instructor/performance', protect, instructorOrAdmin, getInstructorCoursesPerformance);
 router.post('/:id/thumbnail', protect, instructorOrAdmin, uploadSingle, uploadCourseThumbnail);
 
 // Protected routes - Instructor or Admin

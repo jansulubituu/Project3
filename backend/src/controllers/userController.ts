@@ -603,6 +603,97 @@ export const getUserStats = async (req: Request, res: Response) => {
         ratingStats[0]?.totalReviews > 0
           ? Math.round((ratingStats[0].weightedSum / ratingStats[0].totalReviews) * 10) / 10
           : 0;
+
+      // Calculate monthly revenue and enrollments (last 6 months)
+      const now = new Date();
+      const sixMonthsAgo = new Date();
+      sixMonthsAgo.setMonth(now.getMonth() - 6);
+      sixMonthsAgo.setDate(1);
+      sixMonthsAgo.setHours(0, 0, 0, 0);
+
+      // Generate array of last 6 months
+      const months: string[] = [];
+      for (let i = 5; i >= 0; i--) {
+        const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        months.push(`${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`);
+      }
+
+      // Monthly revenue aggregation
+      const monthlyRevenueData = await Payment.aggregate([
+        {
+          $lookup: {
+            from: 'courses',
+            localField: 'course',
+            foreignField: '_id',
+            as: 'courseInfo',
+          },
+        },
+        { $unwind: '$courseInfo' },
+        {
+          $match: {
+            'courseInfo.instructor': new mongoose.Types.ObjectId(id),
+            status: 'completed',
+            createdAt: { $gte: sixMonthsAgo },
+          },
+        },
+        {
+          $group: {
+            _id: {
+              year: { $year: '$createdAt' },
+              month: { $month: '$createdAt' },
+            },
+            total: { $sum: '$finalAmount' },
+          },
+        },
+        {
+          $sort: { '_id.year': 1, '_id.month': 1 },
+        },
+      ]);
+
+      // Monthly enrollments aggregation
+      const monthlyEnrollmentData = await Enrollment.aggregate([
+        {
+          $match: {
+            course: { $in: courseIds },
+            createdAt: { $gte: sixMonthsAgo },
+          },
+        },
+        {
+          $group: {
+            _id: {
+              year: { $year: '$createdAt' },
+              month: { $month: '$createdAt' },
+            },
+            count: { $sum: 1 },
+          },
+        },
+        {
+          $sort: { '_id.year': 1, '_id.month': 1 },
+        },
+      ]);
+
+      // Format monthly data
+      const revenueMap = new Map<string, number>();
+      monthlyRevenueData.forEach((item) => {
+        const monthKey = `${item._id.year}-${String(item._id.month).padStart(2, '0')}`;
+        revenueMap.set(monthKey, item.total);
+      });
+
+      const enrollmentMap = new Map<string, number>();
+      monthlyEnrollmentData.forEach((item) => {
+        const monthKey = `${item._id.year}-${String(item._id.month).padStart(2, '0')}`;
+        enrollmentMap.set(monthKey, item.count);
+      });
+
+      stats.monthlyRevenue = months.map((month) => ({
+        month,
+        value: revenueMap.get(month) || 0,
+      }));
+
+      stats.monthlyEnrollments = months.map((month) => ({
+        month,
+        value: enrollmentMap.get(month) || 0,
+      }));
     }
 
     res.json({

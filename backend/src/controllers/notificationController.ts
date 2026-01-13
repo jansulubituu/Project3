@@ -150,11 +150,13 @@ export const markAsRead = async (req: AuthRequest, res: Response) => {
     let isCreatorOfNotification = false;
 
     if (isCreator && notification.data) {
-      const dataObj = notification.data instanceof Map 
-        ? Object.fromEntries(notification.data) 
-        : notification.data;
-      const createdBy = dataObj?.createdBy || dataObj?.get?.('createdBy');
-      if (createdBy && createdBy.toString() === currentUserId) {
+      let createdBy: string | undefined;
+      if (notification.data instanceof Map) {
+        createdBy = notification.data.get('createdBy')?.toString();
+      } else if (typeof notification.data === 'object' && notification.data !== null) {
+        createdBy = (notification.data as any).createdBy?.toString();
+      }
+      if (createdBy && createdBy === currentUserId) {
         isCreatorOfNotification = true;
       }
     }
@@ -814,9 +816,18 @@ export const createNotificationForUsers = async (req: AuthRequest, res: Response
     // Get users from groups
     let groupUserIds: mongoose.Types.ObjectId[] = [];
     if (hasGroupIds) {
+      if (!req.user) {
+        return res.status(401).json({
+          success: false,
+          message: 'Authentication required',
+        });
+      }
+      
+      const currentUser = req.user; // Store in local variable for TypeScript
+      
       // Validate group access
       for (const groupId of groupIds) {
-        if (!validateGroupAccess(req.user.role, req.user.id, groupId)) {
+        if (!validateGroupAccess(currentUser.role, currentUser.id, groupId)) {
           return res.status(403).json({
             success: false,
             message: `You do not have access to group: ${groupId}`,
@@ -826,7 +837,7 @@ export const createNotificationForUsers = async (req: AuthRequest, res: Response
 
       // Get users from all groups
       const groupUserPromises = groupIds.map((groupId: string) =>
-        getGroupUsers(groupId, req.user.id, req.user.role)
+        getGroupUsers(groupId, currentUser.id, currentUser.role)
       );
       const groupUsersArrays = await Promise.all(groupUserPromises);
       groupUserIds = groupUsersArrays.flat();

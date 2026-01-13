@@ -71,6 +71,7 @@ interface RecentUser {
   isActive: boolean;
 }
 
+
 function AdminDashboardContent() {
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [recentUsers, setRecentUsers] = useState<RecentUser[]>([]);

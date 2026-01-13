@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { Course, Category, Section, Lesson, Review, Enrollment, User, Progress, Exam } from '../models';
+import { Course, Category, Section, Lesson, Review, Enrollment, User, Progress, Exam, Payment } from '../models';
 import mongoose from 'mongoose';
 import { uploadImageFromBuffer, deleteImage } from '../config/cloudinary';
 
@@ -1683,5 +1683,129 @@ export const batchReorder = async (req: Request, res: Response) => {
     });
   } finally {
     session.endSession();
+  }
+};
+
+// @desc    Get instructor courses performance
+// @route   GET /api/instructor/courses/performance
+// @access  Private/Instructor
+export const getInstructorCoursesPerformance = async (req: Request, res: Response) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        error: 'Authentication required',
+      });
+    }
+
+    const instructorId = req.user.id;
+
+    // Get all courses for this instructor
+    const courses = await Course.find({ instructor: instructorId })
+      .select('_id title thumbnail enrollmentCount averageRating totalReviews')
+      .lean();
+
+    // Get performance data for each course
+    const courseIds = courses.map((c) => c._id);
+
+    // Get enrollment counts
+    const enrollmentCounts = await Enrollment.aggregate([
+      {
+        $match: {
+          course: { $in: courseIds },
+          status: { $in: ['active', 'completed'] },
+        },
+      },
+      {
+        $group: {
+          _id: '$course',
+          count: { $sum: 1 },
+        },
+      },
+    ]);
+
+    // Get revenue per course
+    const revenueData = await Payment.aggregate([
+      {
+        $match: {
+          course: { $in: courseIds },
+          status: 'completed',
+        },
+      },
+      {
+        $group: {
+          _id: '$course',
+          revenue: { $sum: '$finalAmount' },
+        },
+      },
+    ]);
+
+    // Get completion rates
+    const completionData = await Enrollment.aggregate([
+      {
+        $match: {
+          course: { $in: courseIds },
+          status: { $in: ['active', 'completed'] },
+        },
+      },
+      {
+        $group: {
+          _id: '$course',
+          total: { $sum: 1 },
+          completed: {
+            $sum: {
+              $cond: [{ $eq: ['$status', 'completed'] }, 1, 0],
+            },
+          },
+        },
+      },
+    ]);
+
+    // Create maps for quick lookup
+    const enrollmentMap = new Map<string, number>();
+    enrollmentCounts.forEach((item: { _id: mongoose.Types.ObjectId; count: number }) => {
+      enrollmentMap.set(item._id.toString(), item.count);
+    });
+
+    const revenueMap = new Map<string, number>();
+    revenueData.forEach((item: { _id: mongoose.Types.ObjectId; revenue: number }) => {
+      revenueMap.set(item._id.toString(), item.revenue);
+    });
+
+    const completionMap = new Map<string, number>();
+    completionData.forEach((item: { _id: mongoose.Types.ObjectId; total: number; completed: number }) => {
+      const rate = item.total > 0 ? Math.round((item.completed / item.total) * 100) : 0;
+      completionMap.set(item._id.toString(), rate);
+    });
+
+    // Build response
+    const coursesWithPerformance = courses.map((course) => {
+      const courseId = course._id.toString();
+      return {
+        _id: course._id,
+        title: course.title,
+        thumbnail: course.thumbnail,
+        enrollmentCount: enrollmentMap.get(courseId) || 0,
+        revenue: revenueMap.get(courseId) || 0,
+        averageRating: course.averageRating || 0,
+        totalReviews: course.totalReviews || 0,
+        completionRate: completionMap.get(courseId) || 0,
+      };
+    });
+
+    // Sort by enrollment count (descending)
+    coursesWithPerformance.sort((a, b) => b.enrollmentCount - a.enrollmentCount);
+
+    res.json({
+      success: true,
+      courses: coursesWithPerformance,
+    });
+  } catch (error) {
+    console.error('Get instructor courses performance error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching courses performance',
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
   }
 };

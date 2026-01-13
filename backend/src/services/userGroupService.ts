@@ -1,7 +1,5 @@
 import mongoose from 'mongoose';
-import { User } from '../models/User';
-import { Course } from '../models/Course';
-import { Enrollment } from '../models/Enrollment';
+import { User, Course, Enrollment } from '../models';
 
 export interface UserGroup {
   id: string;
@@ -26,7 +24,7 @@ export async function getGroupUsers(groupId: string, userId?: string, userRole?:
     }
     
     const users = await User.find({ role, isActive: true }).select('_id');
-    return users.map((u) => u._id);
+    return users.map((u: { _id: mongoose.Types.ObjectId }) => u._id);
   }
 
   if (groupId.startsWith('course_')) {
@@ -45,8 +43,9 @@ export async function getGroupUsers(groupId: string, userId?: string, userRole?:
     }
 
     const enrollments = await Enrollment.find({ course: courseId }).select('student');
-    const studentIds = enrollments.map((e) => e.student);
-    return [...new Set(studentIds.map((id) => id.toString()))].map((id) => new mongoose.Types.ObjectId(id));
+    const studentIds = enrollments.map((e: { student: mongoose.Types.ObjectId }) => e.student);
+    const uniqueIds = [...new Set(studentIds.map((id: mongoose.Types.ObjectId) => id.toString()))];
+    return uniqueIds.map((id: string) => new mongoose.Types.ObjectId(id));
   }
 
   if (groupId.startsWith('instructor_')) {
@@ -62,15 +61,16 @@ export async function getGroupUsers(groupId: string, userId?: string, userRole?:
     }
 
     const courses = await Course.find({ instructor: instructorId }).select('_id');
-    const courseIds = courses.map((c) => c._id);
+    const courseIds = courses.map((c: { _id: mongoose.Types.ObjectId }) => c._id);
 
     if (courseIds.length === 0) {
       return [];
     }
 
     const enrollments = await Enrollment.find({ course: { $in: courseIds } }).select('student');
-    const studentIds = enrollments.map((e) => e.student);
-    return [...new Set(studentIds.map((id) => id.toString()))].map((id) => new mongoose.Types.ObjectId(id));
+    const studentIds = enrollments.map((e: { student: mongoose.Types.ObjectId }) => e.student);
+    const uniqueIds = [...new Set(studentIds.map((id: mongoose.Types.ObjectId) => id.toString()))];
+    return uniqueIds.map((id: string) => new mongoose.Types.ObjectId(id));
   }
 
   throw new Error(`Invalid group ID format: ${groupId}`);
@@ -147,7 +147,7 @@ export async function getAvailableGroups(userRole: string, userId?: string): Pro
 
     // All students in instructor's courses
     const allCourses = await Course.find({ instructor: userId }).select('_id');
-    const courseIds = allCourses.map((c) => c._id);
+    const courseIds = allCourses.map((c: { _id: mongoose.Types.ObjectId }) => c._id);
     
     if (courseIds.length > 0) {
       const uniqueStudents = await Enrollment.distinct('student', { course: { $in: courseIds } });

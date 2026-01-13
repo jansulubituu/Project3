@@ -6,7 +6,6 @@ import ProtectedRoute from '@/components/ProtectedRoute';
 import Header from '@/components/layout/Header';
 import Footer from '@/components/layout/Footer';
 import ErrorState from '@/components/notifications/ErrorState';
-import EmptyState from '@/components/ui/EmptyState';
 import { api } from '@/lib/api';
 import { NotificationType, getNotificationIcon } from '@/lib/notificationUtils';
 import { ChevronLeft, Plus, Edit2, Trash2, Filter, X, Save } from 'lucide-react';
@@ -73,17 +72,7 @@ function InstructorNotificationsManageContent() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [confirmDialog, setConfirmDialog] = useState<{
-    isOpen: boolean;
-    notificationId: string | null;
-  }>({
-    isOpen: false,
-    notificationId: null,
-  });
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [notificationToDelete, setNotificationToDelete] = useState<string | null>(null);
   const [pagination, setPagination] = useState<Pagination>({
     currentPage: 1,
     totalPages: 1,
@@ -125,6 +114,13 @@ function InstructorNotificationsManageContent() {
   const [selectedNotificationIds, setSelectedNotificationIds] = useState<Set<string>>(new Set());
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [bulkMarkingRead, setBulkMarkingRead] = useState(false);
+  const [deleteConfirmDialog, setDeleteConfirmDialog] = useState<{
+    isOpen: boolean;
+    notificationId: string | null;
+  }>({
+    isOpen: false,
+    notificationId: null,
+  });
 
   const fetchNotifications = useCallback(async () => {
     setLoading(true);
@@ -290,24 +286,110 @@ function InstructorNotificationsManageContent() {
     setShowEditModal(true);
   };
 
-  const handleDelete = async (notificationId: string) => {
-    if (!confirm('Bạn có chắc chắn muốn xóa thông báo này?')) {
-      return;
-    }
+  const handleDeleteClick = (notificationId: string) => {
+    setDeleteConfirmDialog({
+      isOpen: true,
+      notificationId,
+    });
+  };
 
-    if (deletingId) return; // Prevent multiple deletions
+  const handleDeleteConfirm = async () => {
+    if (!deleteConfirmDialog.notificationId || deletingId) return;
 
     try {
-      setDeletingId(notificationId);
-      await api.delete(`/notifications/${notificationId}`);
+      setDeletingId(deleteConfirmDialog.notificationId);
+      await api.delete(`/notifications/${deleteConfirmDialog.notificationId}/instructor`);
       await fetchNotifications();
       setError(null);
       setSelectedNotificationIds(new Set()); // Clear selection after delete
+      toast.success('Đã xóa thông báo thành công');
     } catch (err: any) {
       console.error('Failed to delete notification:', err);
-      setError(err.response?.data?.message || 'Không thể xóa thông báo. Vui lòng thử lại.');
+      toast.error(err.response?.data?.message || 'Không thể xóa thông báo. Vui lòng thử lại.');
     } finally {
       setDeletingId(null);
+      setDeleteConfirmDialog({ isOpen: false, notificationId: null });
+    }
+  };
+
+  const handleDeleteCancel = () => {
+    setDeleteConfirmDialog({ isOpen: false, notificationId: null });
+  };
+
+  const handleBulkMarkAsRead = async () => {
+    if (selectedNotificationIds.size === 0) return;
+
+    try {
+      setBulkMarkingRead(true);
+      const markPromises = Array.from(selectedNotificationIds).map((id) => {
+        const notification = notifications.find((n) => n._id === id);
+        if (notification && !notification.isRead) {
+          return api.put(`/notifications/${id}/read`).catch((err) => {
+            console.error(`Failed to mark notification ${id} as read:`, err);
+            return null;
+          });
+        }
+        return Promise.resolve(null);
+      });
+
+      await Promise.all(markPromises);
+      await fetchNotifications();
+      setSelectedNotificationIds(new Set());
+      setError(null);
+      toast.success(`Đã đánh dấu ${selectedNotificationIds.size} thông báo là đã đọc`);
+    } catch (err: any) {
+      console.error('Failed to bulk mark as read:', err);
+      toast.error('Không thể đánh dấu một số thông báo. Vui lòng thử lại.');
+    } finally {
+      setBulkMarkingRead(false);
+    }
+  };
+
+  const handleSelectAll = () => {
+    if (selectedNotificationIds.size === notifications.length) {
+      setSelectedNotificationIds(new Set());
+    } else {
+      setSelectedNotificationIds(new Set(notifications.map((n) => n._id)));
+    }
+  };
+
+   const handleToggleSelect = (notificationId: string) => {
+    setSelectedNotificationIds((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(notificationId)) {
+        newSet.delete(notificationId);
+      } else {
+        newSet.add(notificationId);
+      }
+      return newSet;
+    });
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedNotificationIds.size === 0) return;
+
+    const message = `Bạn có chắc chắn muốn xóa ${selectedNotificationIds.size} thông báo đã chọn?`;
+    if (!confirm(message)) return;
+
+    try {
+      setBulkDeleting(true);
+      const deletePromises = Array.from(selectedNotificationIds).map((id) =>
+        api.delete(`/notifications/${id}/instructor`).catch((err) => {
+          console.error(`Failed to delete notification ${id}:`, err);
+          return null;
+        })
+      );
+
+      await Promise.all(deletePromises);
+      await fetchNotifications();
+      setSelectedNotificationIds(new Set());
+      setError(null);
+      toast.success(`Đã xóa ${selectedNotificationIds.size} thông báo thành công`);
+    } catch (err: any) {
+      console.error('Failed to bulk delete notifications:', err);
+      toast.error('Không thể xóa một số thông báo. Vui lòng thử lại.');
+    } finally {
+      setBulkDeleting(false);
     }
   };
 
@@ -392,7 +474,6 @@ function InstructorNotificationsManageContent() {
     try {
       setSubmitting(true);
       setError(null);
-      setSuccess(null);
       const userIds = recipientType === 'admin' 
         ? selectedAdmins.map((a) => a._id)
         : selectedStudents.map((s) => s._id);
@@ -419,6 +500,7 @@ function InstructorNotificationsManageContent() {
           title: '',
           message: '',
           link: '',
+          userIds: [],
         });
         setSelectedStudents([]);
         setSelectedAdmins([]);
@@ -435,7 +517,6 @@ function InstructorNotificationsManageContent() {
         });
 
         const successMessage = 'Thông báo đã được cập nhật thành công!';
-        setSuccess(successMessage);
         toast.success(successMessage);
       }
 
@@ -444,8 +525,7 @@ function InstructorNotificationsManageContent() {
       setEditingNotification(null);
       await fetchNotifications();
 
-      // Clear success message after 3 seconds
-      setTimeout(() => setSuccess(null), 3000);
+      // Success message is shown via toast
     } catch (err: any) {
       console.error('Failed to submit:', err);
       
@@ -1203,9 +1283,9 @@ function InstructorNotificationsManageContent() {
         )}
 
         {/* Delete Confirmation Dialog */}
-        {showDeleteConfirm && notificationToDelete && (
+        {deleteConfirmDialog.isOpen && deleteConfirmDialog.notificationId && (
           <ConfirmDialog
-            isOpen={showDeleteConfirm}
+            isOpen={deleteConfirmDialog.isOpen}
             title="Xác nhận xóa"
             message="Bạn có chắc chắn muốn xóa thông báo này?"
             confirmText="Xóa"
