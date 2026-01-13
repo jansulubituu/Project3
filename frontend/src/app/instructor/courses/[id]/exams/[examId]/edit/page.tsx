@@ -251,7 +251,7 @@ function ExamEditContent() {
             <p className="text-gray-600 mb-4">{error || 'Bài kiểm tra không tồn tại.'}</p>
             <button
               type="button"
-              onClick={() => router.push(`/instructor/courses/${courseId}/exams`)}
+              onClick={() => router.push(`/instructor/courses/${courseId}/curriculum`)}
               className="inline-flex items-center px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
             >
               Quay lại
@@ -287,7 +287,7 @@ function ExamEditContent() {
                 Preview
               </Link>
               <Link
-                href={`/instructor/courses/${courseId}/exams`}
+                href={`/instructor/courses/${courseId}/curriculum`}
                 className="inline-flex items-center px-4 py-2 rounded-lg border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50"
               >
                 ← Quay lại
@@ -623,7 +623,7 @@ function ExamEditContent() {
 
               <div className="flex justify-end gap-2 pt-4 border-t">
                 <Link
-                  href={`/instructor/courses/${courseId}/exams`}
+                  href={`/instructor/courses/${courseId}/curriculum`}
                   className="px-4 py-2 rounded-md border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50"
                 >
                   Hủy

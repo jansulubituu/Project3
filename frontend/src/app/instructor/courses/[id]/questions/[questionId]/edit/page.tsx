@@ -264,7 +264,7 @@ function QuestionEditContentInner() {
           } catch (err) {
             console.error('Failed to find exam using question:', err);
           }
-          router.push(`/instructor/courses/${courseId}/exams`);
+          router.push(`/instructor/courses/${courseId}/curriculum`);
         } else {
           router.push('/instructor/courses');
         }
@@ -386,7 +386,7 @@ function QuestionEditContentInner() {
             </div>
             {courseId && (
               <Link
-                href={`/instructor/courses/${courseId}/exams`}
+                href={`/instructor/courses/${courseId}/curriculum`}
                 className="inline-flex items-center px-4 py-2 rounded-lg border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50"
               >
                 ← Quay lại
@@ -661,7 +661,7 @@ function QuestionEditContentInner() {
               <div className="flex justify-end gap-2 pt-4 border-t">
                 {courseId && (
                   <Link
-                    href={`/instructor/courses/${courseId}/exams`}
+                    href={`/instructor/courses/${courseId}/curriculum`}
                     className="px-4 py-2 rounded-md border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50"
                   >
                     Hủy

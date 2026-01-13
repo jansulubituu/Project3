@@ -393,19 +393,7 @@ function InstructorCourseDetailContent() {
                     href={`/instructor/courses/${course._id}/curriculum`}
                     className="inline-flex items-center px-4 py-2 rounded-lg bg-purple-600 text-white text-sm font-medium hover:bg-purple-700"
                   >
-                    Quản lý nội dung (Drag & Drop)
-                  </Link>
-                  <Link
-                    href={`/instructor/courses/${course._id}/lessons`}
-                    className="inline-flex items-center px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700"
-                  >
-                    Quản lý bài học
-                  </Link>
-                  <Link
-                    href={`/instructor/courses/${course._id}/exams`}
-                  className="inline-flex items-center px-4 py-2 rounded-lg bg-purple-600 text-white text-sm font-medium hover:bg-purple-700"
-                >
-                  Quản lý bài kiểm tra
+                    Quản lý nội dung (Curriculum)
                   </Link>
                 </div>
               </div>

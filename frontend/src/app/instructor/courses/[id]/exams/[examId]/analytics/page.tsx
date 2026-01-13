@@ -216,7 +216,7 @@ function ExamAnalyticsContent() {
             <h2 className="text-2xl font-bold text-gray-900 mb-2">Không thể tải analytics</h2>
             <p className="text-gray-600 mb-4">{error || 'Dữ liệu không tồn tại'}</p>
             <Link
-              href={`/instructor/courses/${courseId}/exams`}
+              href={`/instructor/courses/${courseId}/curriculum`}
               className="inline-flex items-center px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
             >
               Quay lại
@@ -252,7 +252,7 @@ function ExamAnalyticsContent() {
           {/* Header */}
           <div className="mb-6">
             <Link
-              href={`/instructor/courses/${courseId}/exams`}
+              href={`/instructor/courses/${courseId}/curriculum`}
               className="inline-flex items-center text-sm text-blue-600 hover:text-blue-700 mb-4"
             >
               <ArrowLeft className="w-4 h-4 mr-1" />

@@ -260,7 +260,7 @@ function ExamTemplatesContent() {
           {/* Header */}
           <div className="mb-6">
             <Link
-              href={`/instructor/courses/${courseId}/exams`}
+              href={`/instructor/courses/${courseId}/curriculum`}
               className="inline-flex items-center text-sm text-blue-600 hover:text-blue-700 mb-4"
             >
               <ArrowLeft className="w-4 h-4 mr-1" />
