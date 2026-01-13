@@ -7,6 +7,10 @@ import Header from '@/components/layout/Header';
 import Footer from '@/components/layout/Footer';
 import { api } from '@/lib/api';
 import Link from 'next/link';
+import CourseValidationChecklist from '@/components/instructor/CourseValidationChecklist';
+import CourseStatusBadge from '@/components/instructor/CourseStatusBadge';
+import { Clock, XCircle } from 'lucide-react';
+import toast from 'react-hot-toast';
 
 interface InstructorCourseDetail {
   _id: string;
@@ -62,6 +66,8 @@ function InstructorCourseDetailContent() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [canSubmit, setCanSubmit] = useState(false);
+  const [missingRequirements, setMissingRequirements] = useState<string[]>([]);
 
   useEffect(() => {
     const loadData = async () => {
@@ -162,7 +168,7 @@ function InstructorCourseDetailContent() {
       setSubmitting(true);
       const response = await api.post(`/courses/${course._id}/submit`);
       if (response.data.success) {
-        alert('Đã gửi khóa học để Admin duyệt thành công!');
+        toast.success('Đã gửi khóa học để Admin duyệt thành công!');
         // Reload course data
         const courseRes = await api.get(`/courses/${courseId}`);
         if (courseRes.data?.success) {
@@ -248,72 +254,109 @@ function InstructorCourseDetailContent() {
       <main className="flex-1">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           {/* Header */}
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
-            <div>
-              <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-1">
-                Quản lý khóa học: {course.title}
-              </h1>
-              <p className="text-sm text-gray-600">
-                Trạng thái:{' '}
-                <span
-                  className={
-                    course.status === 'published'
-                      ? 'text-green-700 font-semibold'
-                      : course.status === 'pending'
-                      ? 'text-blue-700 font-semibold'
-                      : course.status === 'rejected'
-                      ? 'text-red-700 font-semibold'
-                      : course.status === 'draft'
-                      ? 'text-yellow-700 font-semibold'
-                      : 'text-gray-700 font-semibold'
-                  }
-                >
-                  {course.status === 'published'
-                    ? 'Đã xuất bản'
-                    : course.status === 'pending'
-                    ? 'Chờ Admin duyệt'
-                    : course.status === 'rejected'
-                    ? 'Đã bị từ chối'
-                    : course.status === 'draft'
-                    ? 'Bản nháp'
-                    : 'Đã lưu trữ'}
-                </span>{' '}
-                · Tạo: {formatDate(course.createdAt)}
-                {course.publishedAt && ` · Publish: ${formatDate(course.publishedAt)}`}
-                {course.submittedAt && ` · Gửi duyệt: ${formatDate(course.submittedAt)}`}
-                {course.rejectedAt && ` · Từ chối: ${formatDate(course.rejectedAt)}`}
-              </p>
-              {course.status === 'rejected' && course.rejectionReason && (
-                <div className="mt-2 p-3 bg-red-50 border border-red-200 rounded-lg">
-                  <p className="text-sm font-semibold text-red-800 mb-1">Lý do từ chối:</p>
-                  <p className="text-sm text-red-700">{course.rejectionReason}</p>
+          <div className="mb-6">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
+              <div>
+                <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-2">
+                  Quản lý khóa học: {course.title}
+                </h1>
+                <div className="flex items-center gap-3 flex-wrap">
+                  <CourseStatusBadge status={course.status} />
+                  <span className="text-sm text-gray-600">
+                    Tạo: {formatDate(course.createdAt)}
+                    {course.publishedAt && ` · Publish: ${formatDate(course.publishedAt)}`}
+                    {course.submittedAt && ` · Gửi duyệt: ${formatDate(course.submittedAt)}`}
+                    {course.rejectedAt && ` · Từ chối: ${formatDate(course.rejectedAt)}`}
+                  </span>
                 </div>
-              )}
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {(course.status === 'draft' || course.status === 'rejected') && (
-                <button
-                  onClick={handleSubmitForApproval}
-                  disabled={submitting}
-                  className="inline-flex items-center px-4 py-2 rounded-lg bg-green-600 text-white text-sm font-medium hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {(course.status === 'draft' || course.status === 'rejected') && (
+                  <button
+                    onClick={handleSubmitForApproval}
+                    disabled={submitting || !canSubmit}
+                    className="inline-flex items-center px-4 py-2 rounded-lg bg-green-600 text-white text-sm font-medium hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                    title={!canSubmit && missingRequirements.length > 0 ? `Còn thiếu: ${missingRequirements.join(', ')}` : ''}
+                  >
+                    {submitting ? 'Đang gửi...' : course.status === 'rejected' ? 'Gửi lại để duyệt' : 'Gửi để Admin duyệt'}
+                  </button>
+                )}
+                <Link
+                  href={`/courses/${course.slug}`}
+                  target="_blank"
+                  className="inline-flex items-center px-4 py-2 rounded-lg border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-100"
                 >
-                  {submitting ? 'Đang gửi...' : course.status === 'rejected' ? 'Gửi lại để duyệt' : 'Gửi để Admin duyệt'}
-                </button>
-              )}
-              <Link
-                href={`/courses/${course.slug}`}
-                target="_blank"
-                className="inline-flex items-center px-4 py-2 rounded-lg border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-100"
-              >
-                Xem như học viên
-              </Link>
-              <Link
-                href={`/instructor/courses/${course._id}/edit`}
-                className="inline-flex items-center px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700"
-              >
-                Chỉnh sửa thông tin
-              </Link>
+                  Xem như học viên
+                </Link>
+                <Link
+                  href={`/instructor/courses/${course._id}/edit`}
+                  className="inline-flex items-center px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700"
+                >
+                  Chỉnh sửa thông tin
+                </Link>
+              </div>
             </div>
+
+            {/* Rejection Alert */}
+            {course.status === 'rejected' && course.rejectionReason && (
+              <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+                <div className="flex items-start">
+                  <XCircle className="w-5 h-5 text-red-600 mt-0.5 mr-3 flex-shrink-0" />
+                  <div className="flex-1">
+                    <h4 className="text-sm font-semibold text-red-900 mb-1">
+                      Khóa học đã bị từ chối
+                    </h4>
+                    <p className="text-sm text-red-700 mb-2">
+                      <strong>Lý do:</strong> {course.rejectionReason}
+                    </p>
+                    {course.rejectedAt && (
+                      <p className="text-xs text-red-600">
+                        Ngày từ chối: {formatDate(course.rejectedAt)}
+                      </p>
+                    )}
+                    <button
+                      onClick={() => router.push(`/instructor/courses/${course._id}/edit`)}
+                      className="mt-2 text-sm text-red-700 hover:text-red-900 underline"
+                    >
+                      Chỉnh sửa và gửi lại
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Pending Info */}
+            {course.status === 'pending' && (
+              <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                <div className="flex items-start">
+                  <Clock className="w-5 h-5 text-yellow-600 mt-0.5 mr-3 flex-shrink-0" />
+                  <div className="flex-1">
+                    <p className="text-sm text-yellow-800">
+                      Khóa học đang chờ Admin duyệt. Bạn sẽ nhận thông báo khi có kết quả.
+                    </p>
+                    {course.submittedAt && (
+                      <p className="text-xs text-yellow-600 mt-1">
+                        Đã gửi: {formatDate(course.submittedAt)}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Validation Checklist (if draft) */}
+            {course.status === 'draft' && (
+              <div className="mb-4 bg-white rounded-lg shadow p-5">
+                <h3 className="text-lg font-semibold mb-3">Kiểm tra trước khi gửi</h3>
+                <CourseValidationChecklist 
+                  course={course}
+                  onValidationChange={(isValid, missingItems) => {
+                    setCanSubmit(isValid);
+                    setMissingRequirements(missingItems);
+                  }}
+                />
+              </div>
+            )}
           </div>
 
           {/* Stats */}

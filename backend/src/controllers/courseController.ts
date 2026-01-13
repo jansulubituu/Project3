@@ -1,7 +1,8 @@
 import { Request, Response } from 'express';
-import { Course, Category, Section, Lesson, Review, Enrollment, User, Progress, Exam, Payment } from '../models';
+import { Course, Category, Section, Lesson, Review, Enrollment, User, Progress, Exam } from '../models';
 import mongoose from 'mongoose';
 import { uploadImageFromBuffer, deleteImage } from '../config/cloudinary';
+import { createNotification } from '../services/notificationService';
 
 // @desc    Get all published courses (Public catalog)
 // @route   GET /api/courses
@@ -371,11 +372,6 @@ export const getCourseById = async (req: Request, res: Response) => {
     }
 
     // Check if user can view (published or owner/admin)
-    // Allow access if:
-    // 1. Course is published, OR
-    // 2. User is the instructor (owner) of the course, OR
-    // 3. User is admin
-    const isPublished = course.status === 'published';
     // Handle both ObjectId and populated instructor
     let instructorId: string;
     if (typeof course.instructor === 'object' && course.instructor !== null && '_id' in course.instructor) {
@@ -384,9 +380,9 @@ export const getCourseById = async (req: Request, res: Response) => {
       instructorId = (course.instructor as mongoose.Types.ObjectId).toString();
     }
     const isOwner = req.user && instructorId === req.user.id;
-    const isAdminUser = req.user && req.user.role === 'admin';
+    const isAdmin = req.user && req.user.role === 'admin';
     
-    if (!isPublished && !isOwner && !isAdminUser) {
+    if (course.status !== 'published' && !isOwner && !isAdmin) {
       return res.status(403).json({
         success: false,
         message: 'Course is not published',
@@ -409,7 +405,8 @@ export const getCourseById = async (req: Request, res: Response) => {
 
     // 🎯 For public view, totalLessons = publishedLessonCount (all users see published only)
     // For instructors/admins, they can see all lessons via other endpoints
-    const isInstructor = req.user && instructorId === req.user.id;
+    // Use instructorId already extracted above
+    const isInstructor = isOwner; // Reuse isOwner from above
     
     // 🎯 Calculate enrollmentCount dynamically from actual enrollments
     const actualEnrollmentCount = await Enrollment.countDocuments({
@@ -418,11 +415,11 @@ export const getCourseById = async (req: Request, res: Response) => {
     });
     
     const courseObj = course.toObject();
-    if (!isInstructor && !isAdminUser) {
+    if (!isInstructor && !isAdmin) {
       // Public view: only show published lessons
       courseObj.totalLessons = courseObj.publishedLessonCount ?? 0;
     }
-    // For instructors/admins, keep totalLessons as is (they can see all lessons)
+    // For instructors/admins, keep totalLessons as is (they can see all)
     
     // ✅ Use dynamically calculated enrollmentCount
     courseObj.enrollmentCount = actualEnrollmentCount;
@@ -459,11 +456,17 @@ export const getCourseCurriculum = async (req: Request, res: Response) => {
     }
 
     // Check if user can view
-    if (
-      course.status !== 'published' &&
-      (!req.user ||
-        (req.user.id !== course.instructor.toString() && req.user.role !== 'admin'))
-    ) {
+    // Handle both ObjectId and populated instructor
+    let instructorId: string;
+    if (typeof course.instructor === 'object' && course.instructor !== null && '_id' in course.instructor) {
+      instructorId = (course.instructor as any)._id.toString();
+    } else {
+      instructorId = (course.instructor as mongoose.Types.ObjectId).toString();
+    }
+    const isOwner = req.user && instructorId === req.user.id;
+    const isAdmin = req.user && req.user.role === 'admin';
+    
+    if (course.status !== 'published' && !isOwner && !isAdmin) {
       return res.status(403).json({
         success: false,
         message: 'Course is not published',
@@ -484,8 +487,7 @@ export const getCourseCurriculum = async (req: Request, res: Response) => {
     }
 
     // Determine role for lesson visibility
-    const isInstructor = req.user && course.instructor.toString() === req.user.id;
-    const isAdmin = req.user && req.user.role === 'admin';
+    const isInstructor = isOwner; // Reuse isOwner from above
 
     // Get sections with lessons
     const sections = await Section.find({ course: course._id })
@@ -1150,6 +1152,24 @@ export const approveCourse = async (req: Request, res: Response) => {
     course.rejectedAt = undefined;
     await course.save();
 
+    // Create notification for instructor
+    try {
+      await createNotification({
+        userId: course.instructor as mongoose.Types.ObjectId,
+        type: 'course_approved',
+        title: 'Khóa học đã được duyệt',
+        message: `Khóa học "${course.title}" của bạn đã được Admin duyệt và đã được xuất bản.`,
+        link: `/instructor/courses/${course._id}`,
+        data: {
+          courseId: course._id.toString(),
+          courseTitle: course.title,
+        },
+      });
+    } catch (notificationError) {
+      // Log error but don't fail the approval
+      console.error('Failed to create approval notification:', notificationError);
+    }
+
     res.json({
       success: true,
       message: 'Course approved and published successfully',
@@ -1211,6 +1231,25 @@ export const rejectCourse = async (req: Request, res: Response) => {
     course.approvedBy = undefined;
     course.approvedAt = undefined;
     await course.save();
+
+    // Create notification for instructor
+    try {
+      await createNotification({
+        userId: course.instructor as mongoose.Types.ObjectId,
+        type: 'course_rejected',
+        title: 'Khóa học đã bị từ chối',
+        message: `Khóa học "${course.title}" của bạn đã bị từ chối. Lý do: ${reason.trim()}`,
+        link: `/instructor/courses/${course._id}`,
+        data: {
+          courseId: course._id.toString(),
+          courseTitle: course.title,
+          rejectionReason: reason.trim(),
+        },
+      });
+    } catch (notificationError) {
+      // Log error but don't fail the rejection
+      console.error('Failed to create rejection notification:', notificationError);
+    }
 
     res.json({
       success: true,
@@ -1683,129 +1722,5 @@ export const batchReorder = async (req: Request, res: Response) => {
     });
   } finally {
     session.endSession();
-  }
-};
-
-// @desc    Get instructor courses performance
-// @route   GET /api/instructor/courses/performance
-// @access  Private/Instructor
-export const getInstructorCoursesPerformance = async (req: Request, res: Response) => {
-  try {
-    if (!req.user) {
-      return res.status(401).json({
-        success: false,
-        error: 'Authentication required',
-      });
-    }
-
-    const instructorId = req.user.id;
-
-    // Get all courses for this instructor
-    const courses = await Course.find({ instructor: instructorId })
-      .select('_id title thumbnail enrollmentCount averageRating totalReviews')
-      .lean();
-
-    // Get performance data for each course
-    const courseIds = courses.map((c) => c._id);
-
-    // Get enrollment counts
-    const enrollmentCounts = await Enrollment.aggregate([
-      {
-        $match: {
-          course: { $in: courseIds },
-          status: { $in: ['active', 'completed'] },
-        },
-      },
-      {
-        $group: {
-          _id: '$course',
-          count: { $sum: 1 },
-        },
-      },
-    ]);
-
-    // Get revenue per course
-    const revenueData = await Payment.aggregate([
-      {
-        $match: {
-          course: { $in: courseIds },
-          status: 'completed',
-        },
-      },
-      {
-        $group: {
-          _id: '$course',
-          revenue: { $sum: '$finalAmount' },
-        },
-      },
-    ]);
-
-    // Get completion rates
-    const completionData = await Enrollment.aggregate([
-      {
-        $match: {
-          course: { $in: courseIds },
-          status: { $in: ['active', 'completed'] },
-        },
-      },
-      {
-        $group: {
-          _id: '$course',
-          total: { $sum: 1 },
-          completed: {
-            $sum: {
-              $cond: [{ $eq: ['$status', 'completed'] }, 1, 0],
-            },
-          },
-        },
-      },
-    ]);
-
-    // Create maps for quick lookup
-    const enrollmentMap = new Map<string, number>();
-    enrollmentCounts.forEach((item: { _id: mongoose.Types.ObjectId; count: number }) => {
-      enrollmentMap.set(item._id.toString(), item.count);
-    });
-
-    const revenueMap = new Map<string, number>();
-    revenueData.forEach((item: { _id: mongoose.Types.ObjectId; revenue: number }) => {
-      revenueMap.set(item._id.toString(), item.revenue);
-    });
-
-    const completionMap = new Map<string, number>();
-    completionData.forEach((item: { _id: mongoose.Types.ObjectId; total: number; completed: number }) => {
-      const rate = item.total > 0 ? Math.round((item.completed / item.total) * 100) : 0;
-      completionMap.set(item._id.toString(), rate);
-    });
-
-    // Build response
-    const coursesWithPerformance = courses.map((course) => {
-      const courseId = course._id.toString();
-      return {
-        _id: course._id,
-        title: course.title,
-        thumbnail: course.thumbnail,
-        enrollmentCount: enrollmentMap.get(courseId) || 0,
-        revenue: revenueMap.get(courseId) || 0,
-        averageRating: course.averageRating || 0,
-        totalReviews: course.totalReviews || 0,
-        completionRate: completionMap.get(courseId) || 0,
-      };
-    });
-
-    // Sort by enrollment count (descending)
-    coursesWithPerformance.sort((a, b) => b.enrollmentCount - a.enrollmentCount);
-
-    res.json({
-      success: true,
-      courses: coursesWithPerformance,
-    });
-  } catch (error) {
-    console.error('Get instructor courses performance error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Error fetching courses performance',
-      error: error instanceof Error ? error.message : 'Unknown error',
-    });
   }
 };

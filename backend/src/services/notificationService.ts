@@ -11,7 +11,9 @@ export type NotificationType =
   | 'payment' 
   | 'system' 
   | 'comment' 
-  | 'comment_reply';
+  | 'comment_reply'
+  | 'course_approved'
+  | 'course_rejected';
 
 interface CreateNotificationData {
   userId: mongoose.Types.ObjectId;
@@ -80,6 +82,8 @@ export function getNotificationIcon(type: NotificationType): string {
     system: '⚙️',
     comment: '💬',
     comment_reply: '↩️',
+    course_approved: '✅',
+    course_rejected: '❌',
   };
   return icons[type] || '🔔';
 }
