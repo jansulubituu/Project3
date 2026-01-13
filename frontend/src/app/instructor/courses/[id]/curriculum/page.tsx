@@ -1,11 +1,15 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import Header from '@/components/layout/Header';
 import Footer from '@/components/layout/Footer';
 import { api } from '@/lib/api';
+import LessonCreateModal from '@/components/instructor/LessonCreateModal';
+import ExamCreateModal from '@/components/instructor/ExamCreateModal';
+import SearchFilterBar from '@/components/instructor/SearchFilterBar';
+import ItemActionsMenu from '@/components/instructor/ItemActionsMenu';
 import {
   DndContext,
   DragOverlay,
@@ -39,6 +43,7 @@ import {
   Lock,
   Sparkles,
   PenTool,
+  MoreVertical,
 } from 'lucide-react';
 
 // ==================== TYPES ====================
@@ -80,6 +85,9 @@ interface ExamItem extends BaseItem {
 
 type CurriculumItem = SectionItem | LessonItem | ExamItem;
 
+// Export types for use in other components
+export type { CurriculumItem, SectionItem, LessonItem, ExamItem, ItemType };
+
 // Normalized state structure
 interface NormalizedState {
   sections: Record<string, SectionItem>;
@@ -100,11 +108,32 @@ interface SortableItemProps {
   onSelect: (item: CurriculumItem) => void;
   onDelete: (item: CurriculumItem) => void;
   onNavigate?: (item: CurriculumItem) => void;
+  onDuplicate?: (item: CurriculumItem) => void;
+  onPublish?: (item: CurriculumItem) => void;
+  onUnpublish?: (item: CurriculumItem) => void;
+  onArchive?: (item: CurriculumItem) => void;
+  onViewAnalytics?: (item: CurriculumItem) => void;
   isSelected: boolean;
   dragEnabled?: boolean;
+  showActionsMenu?: string | null;
+  onToggleActionsMenu?: (itemId: string | null) => void;
 }
 
-function SortableItem({ item, onSelect, onDelete, onNavigate, isSelected, dragEnabled = true }: SortableItemProps) {
+function SortableItem({ 
+  item, 
+  onSelect, 
+  onDelete, 
+  onNavigate,
+  onDuplicate,
+  onPublish,
+  onUnpublish,
+  onArchive,
+  onViewAnalytics,
+  isSelected, 
+  dragEnabled = true,
+  showActionsMenu,
+  onToggleActionsMenu,
+}: SortableItemProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: item._id,
     data: { type: item.type },
@@ -270,16 +299,75 @@ function SortableItem({ item, onSelect, onDelete, onNavigate, isSelected, dragEn
           </div>
         )}
       </div>
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          onDelete(item);
-        }}
-        className="p-1.5 text-red-500 hover:text-red-700 hover:bg-red-50 rounded transition-colors flex-shrink-0"
-        title="Xóa"
-      >
-        <Trash2 className="w-4 h-4" />
-      </button>
+      <div className="flex items-center gap-1 flex-shrink-0">
+        {/* Actions Menu Button */}
+        {onToggleActionsMenu && (
+          <div className="relative">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggleActionsMenu(showActionsMenu === item._id ? null : item._id);
+              }}
+              className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-50 rounded transition-colors"
+              title="Thao tác"
+            >
+              <MoreVertical className="w-4 h-4" />
+            </button>
+            {showActionsMenu === item._id && (
+              <>
+                <div
+                  className="fixed inset-0 z-10"
+                  onClick={() => onToggleActionsMenu(null)}
+                />
+                <ItemActionsMenu
+                  item={item}
+                  onEdit={() => {
+                    onNavigate?.(item);
+                    onToggleActionsMenu(null);
+                  }}
+                  onDuplicate={() => {
+                    onDuplicate?.(item);
+                    onToggleActionsMenu(null);
+                  }}
+                  onDelete={() => {
+                    onDelete(item);
+                    onToggleActionsMenu(null);
+                  }}
+                  onPublish={item.type === 'lesson' ? () => {
+                    onPublish?.(item);
+                    onToggleActionsMenu(null);
+                  } : undefined}
+                  onUnpublish={item.type === 'lesson' ? () => {
+                    onUnpublish?.(item);
+                    onToggleActionsMenu(null);
+                  } : undefined}
+                  onArchive={item.type === 'exam' ? () => {
+                    onArchive?.(item);
+                    onToggleActionsMenu(null);
+                  } : undefined}
+                  onViewAnalytics={item.type === 'exam' ? () => {
+                    onViewAnalytics?.(item);
+                    onToggleActionsMenu(null);
+                  } : undefined}
+                />
+              </>
+            )}
+          </div>
+        )}
+        {/* Delete Button (fallback if no actions menu) */}
+        {!onToggleActionsMenu && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete(item);
+            }}
+            className="p-1.5 text-red-500 hover:text-red-700 hover:bg-red-50 rounded transition-colors"
+            title="Xóa"
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
+        )}
+      </div>
     </div>
   );
 }
@@ -306,6 +394,17 @@ function CurriculumManagementContent() {
   const [isSaving, setIsSaving] = useState(false);
   const [dragMode, setDragMode] = useState(false); // Chế độ kéo thả
   const [showExamCreateMenu, setShowExamCreateMenu] = useState<string | null>(null); // sectionId đang mở menu
+  const [showLessonModal, setShowLessonModal] = useState(false);
+  const [showExamModal, setShowExamModal] = useState(false);
+  const [selectedSectionForModal, setSelectedSectionForModal] = useState<string | null>(null);
+  
+  // Search & Filter state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterType, setFilterType] = useState<'all' | 'section' | 'lesson' | 'exam'>('all');
+  const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [showActionsMenu, setShowActionsMenu] = useState<string | null>(null); // itemId đang mở menu
+  const [hasPendingChanges, setHasPendingChanges] = useState(false); // Có thay đổi chưa lưu
+  const [isSavingChanges, setIsSavingChanges] = useState(false); // Đang lưu thay đổi
 
   // Drag & Drop sensors
   const sensors = useSensors(
@@ -356,7 +455,7 @@ function CurriculumManagementContent() {
         const lessonIds: string[] = [];
         const examIds: string[] = [];
 
-        // Process lessons in section
+        // Process lessons in section (already sorted by backend with order: 1)
         if (sec.lessons && Array.isArray(sec.lessons)) {
           sec.lessons.forEach((les: any) => {
             const lessonId = les._id;
@@ -366,7 +465,7 @@ function CurriculumManagementContent() {
               type: 'lesson',
               title: les.title,
               description: les.description,
-              order: les.order || 0,
+              order: les.order ?? 0, // Use nullish coalescing to preserve 0 values
               sectionId,
               lessonType: les.type || 'video',
               duration: les.duration,
@@ -403,7 +502,7 @@ function CurriculumManagementContent() {
           type: 'exam',
           title: exam.title,
           description: exam.description,
-          order: 0, // Exams don't have order in the same way
+          order: exam.order || 0, // Use order from backend
           sectionId: sectionId,
           status: exam.status || 'draft',
           totalPoints: exam.totalPoints || 0,
@@ -440,7 +539,7 @@ function CurriculumManagementContent() {
     setActiveId(event.active.id as string);
   };
 
-  const handleDragEnd = async (event: DragEndEvent) => {
+  const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     setActiveId(null);
 
@@ -457,8 +556,8 @@ function CurriculumManagementContent() {
       return;
     }
 
-    // Save original state for rollback
-    const originalState = JSON.parse(JSON.stringify(normalizedState));
+    // Only update local state, don't call API yet
+    // Deep clone state for update
 
     // Deep clone state for optimistic update
     const newState = {
@@ -478,9 +577,8 @@ function CurriculumManagementContent() {
       };
     });
 
-    try {
-      // ==================== SECTION REORDERING ====================
-      if (activeData.type === 'section' && overData.type === 'section') {
+    // ==================== SECTION REORDERING ====================
+    if (activeData.type === 'section' && overData.type === 'section') {
         const oldIndex = newState.sectionOrder.indexOf(activeId);
         const newIndex = newState.sectionOrder.indexOf(overId);
         
@@ -490,10 +588,7 @@ function CurriculumManagementContent() {
 
         newState.sectionOrder = arrayMove(newState.sectionOrder, oldIndex, newIndex);
         setNormalizedState(newState);
-
-        await api.put(`/courses/${courseId}/sections/reorder`, {
-          sectionIds: newState.sectionOrder,
-        });
+        setHasPendingChanges(true);
         return;
       }
 
@@ -508,12 +603,16 @@ function CurriculumManagementContent() {
         let newSectionId: string | null = null;
         let insertIndex: number | null = null;
 
-        // Determine target section and position
+        // Determine target section and position (can drop on section, lesson, or exam)
         if (overData.type === 'section') {
           // Dropping on section header - add to end
           newSectionId = overId;
           const targetSection = newState.sections[newSectionId];
-          insertIndex = targetSection ? targetSection.lessonIds.length : null;
+          if (targetSection) {
+            // Merge lessons and exams to get total count
+            const allItems = [...targetSection.lessonIds, ...targetSection.examIds];
+            insertIndex = allItems.length;
+          }
         } else if (overData.type === 'lesson') {
           // Dropping on another lesson
           const overLesson = newState.lessons[overId];
@@ -522,28 +621,104 @@ function CurriculumManagementContent() {
           }
           newSectionId = overLesson.sectionId;
           
-          // Find insert position
+          // Find insert position in merged list
           const targetSection = newState.sections[newSectionId];
           if (targetSection) {
-            const overIndex = targetSection.lessonIds.indexOf(overId);
-            if (overIndex === -1) {
-              insertIndex = targetSection.lessonIds.length;
-            } else {
-              const activeIndex = oldSectionId === newSectionId 
-                ? targetSection.lessonIds.indexOf(activeId)
-                : -1;
-              
-              // Calculate correct insert position
-              if (activeIndex === -1) {
-                // Moving from different section
-                insertIndex = overIndex + 1;
-              } else if (activeIndex < overIndex) {
-                // Moving down in same section
-                insertIndex = overIndex;
-              } else {
-                // Moving up in same section
-                insertIndex = overIndex + 1;
+            // First, get list WITH activeId to determine drag direction
+            const allItemsWithActive: Array<{ id: string; type: 'lesson' | 'exam'; order: number }> = [];
+            targetSection.lessonIds.forEach((id) => {
+              const lesson = newState.lessons[id];
+              if (lesson) allItemsWithActive.push({ id, type: 'lesson', order: lesson.order });
+            });
+            targetSection.examIds.forEach((id) => {
+              const exam = newState.exams[id];
+              if (exam) allItemsWithActive.push({ id, type: 'exam', order: exam.order });
+            });
+            allItemsWithActive.sort((a, b) => a.order - b.order);
+            
+            // Determine if dragging up or down (only if same section)
+            const isSameSection = oldSectionId === newSectionId;
+            const activeIndexInFull = isSameSection 
+              ? allItemsWithActive.findIndex(item => item.id === activeId && item.type === 'lesson')
+              : -1;
+            const overIndexInFull = allItemsWithActive.findIndex(item => item.id === overId && item.type === 'lesson');
+            const isDraggingUp = isSameSection && activeIndexInFull !== -1 && activeIndexInFull > overIndexInFull;
+            
+            // Now get list WITHOUT activeId for correct insert position
+            const allItems: Array<{ id: string; type: 'lesson' | 'exam'; order: number }> = [];
+            targetSection.lessonIds.forEach((id) => {
+              if (id !== activeId) { // Exclude activeId to get correct index
+                const lesson = newState.lessons[id];
+                if (lesson) allItems.push({ id, type: 'lesson', order: lesson.order });
               }
+            });
+            targetSection.examIds.forEach((id) => {
+              const exam = newState.exams[id];
+              if (exam) allItems.push({ id, type: 'exam', order: exam.order });
+            });
+            allItems.sort((a, b) => a.order - b.order);
+            
+            // Find overIndex in the list WITHOUT activeId
+            const overIndex = allItems.findIndex(item => item.id === overId && item.type === 'lesson');
+            if (overIndex === -1) {
+              insertIndex = allItems.length;
+            } else {
+              // If dragging up, insert BEFORE overItem. If dragging down or from different section, insert AFTER overItem
+              insertIndex = isDraggingUp ? overIndex : overIndex + 1;
+            }
+          }
+        } else if (overData.type === 'exam') {
+          // Dropping on an exam - insert before/after that exam
+          const overExam = newState.exams[overId];
+          if (!overExam) {
+            return;
+          }
+          newSectionId = overExam.sectionId;
+          
+          // Find insert position in merged list
+          const targetSection = newState.sections[newSectionId];
+          if (targetSection) {
+            // First, get list WITH activeId to determine drag direction
+            const allItemsWithActive: Array<{ id: string; type: 'lesson' | 'exam'; order: number }> = [];
+            targetSection.lessonIds.forEach((id) => {
+              const lesson = newState.lessons[id];
+              if (lesson) allItemsWithActive.push({ id, type: 'lesson', order: lesson.order });
+            });
+            targetSection.examIds.forEach((id) => {
+              const exam = newState.exams[id];
+              if (exam) allItemsWithActive.push({ id, type: 'exam', order: exam.order });
+            });
+            allItemsWithActive.sort((a, b) => a.order - b.order);
+            
+            // Determine if dragging up or down (only if same section)
+            const isSameSection = oldSectionId === newSectionId;
+            const activeIndexInFull = isSameSection 
+              ? allItemsWithActive.findIndex(item => item.id === activeId && item.type === 'lesson')
+              : -1;
+            const overIndexInFull = allItemsWithActive.findIndex(item => item.id === overId && item.type === 'exam');
+            const isDraggingUp = isSameSection && activeIndexInFull !== -1 && activeIndexInFull > overIndexInFull;
+            
+            // Now get list WITHOUT activeId for correct insert position
+            const allItems: Array<{ id: string; type: 'lesson' | 'exam'; order: number }> = [];
+            targetSection.lessonIds.forEach((id) => {
+              const lesson = newState.lessons[id];
+              if (lesson) allItems.push({ id, type: 'lesson', order: lesson.order });
+            });
+            targetSection.examIds.forEach((id) => {
+              if (id !== activeId) { // Exclude activeId to get correct index
+                const exam = newState.exams[id];
+                if (exam) allItems.push({ id, type: 'exam', order: exam.order });
+              }
+            });
+            allItems.sort((a, b) => a.order - b.order);
+            
+            // Find overIndex in the list WITHOUT activeId
+            const overIndex = allItems.findIndex(item => item.id === overId && item.type === 'exam');
+            if (overIndex === -1) {
+              insertIndex = allItems.length;
+            } else {
+              // If dragging up, insert BEFORE overItem. If dragging down or from different section, insert AFTER overItem
+              insertIndex = isDraggingUp ? overIndex : overIndex + 1;
             }
           }
         }
@@ -567,56 +742,76 @@ function CurriculumManagementContent() {
         // Add to new section at correct position
         const newSection = newState.sections[newSectionId];
         if (newSection) {
-          const newLessonIds = [...newSection.lessonIds];
+          // Get merged list of lessons and exams (excluding activeId)
+          const allItems: Array<{ id: string; type: 'lesson' | 'exam' }> = [];
+          newSection.lessonIds.forEach((id) => {
+            if (id !== activeId) {
+              const lesson = newState.lessons[id];
+              if (lesson) allItems.push({ id, type: 'lesson' });
+            }
+          });
+          newSection.examIds.forEach((id) => {
+            const exam = newState.exams[id];
+            if (exam) allItems.push({ id, type: 'exam' });
+          });
           
-          // Remove activeId if it exists (in case of same-section reorder)
-          const existingIndex = newLessonIds.indexOf(activeId);
-          if (existingIndex !== -1) {
-            newLessonIds.splice(existingIndex, 1);
-          }
+          // Sort by current order
+          allItems.sort((a, b) => {
+            const aItem = a.type === 'lesson' ? newState.lessons[a.id] : newState.exams[a.id];
+            const bItem = b.type === 'lesson' ? newState.lessons[b.id] : newState.exams[b.id];
+            return (aItem?.order || 0) - (bItem?.order || 0);
+          });
           
           // Insert at correct position
-          if (insertIndex !== null && insertIndex <= newLessonIds.length) {
-            newLessonIds.splice(insertIndex, 0, activeId);
+          if (insertIndex !== null && insertIndex >= 0 && insertIndex <= allItems.length) {
+            allItems.splice(insertIndex, 0, { id: activeId, type: 'lesson' });
           } else {
-            newLessonIds.push(activeId);
+            allItems.push({ id: activeId, type: 'lesson' });
           }
+          
+          // Split back into lessonIds and examIds and update order
+          const newLessonIds: string[] = [];
+          const newExamIds: string[] = [];
+          allItems.forEach((item, index) => {
+            // Update order field for each item
+            if (item.type === 'lesson') {
+              newLessonIds.push(item.id);
+              newState.lessons[item.id] = {
+                ...newState.lessons[item.id],
+                order: index + 1,
+              };
+            } else {
+              newExamIds.push(item.id);
+              newState.exams[item.id] = {
+                ...newState.exams[item.id],
+                order: index + 1,
+              };
+            }
+          });
           
           newState.sections[newSectionId] = {
             ...newSection,
             lessonIds: newLessonIds,
+            examIds: newExamIds,
           };
-          newState.lessons[activeId] = {
-            ...activeLesson,
-            sectionId: newSectionId,
-          };
+          // Update order for the moved lesson
+          const activeItemIndex = allItems.findIndex(item => item.id === activeId && item.type === 'lesson');
+          if (activeItemIndex !== -1) {
+            newState.lessons[activeId] = {
+              ...activeLesson,
+              sectionId: newSectionId,
+              order: activeItemIndex + 1,
+            };
+          }
         }
 
         setNormalizedState(newState);
-
-        // API calls
-        try {
-          if (oldSectionId !== newSectionId) {
-            // Moved between sections - update lesson's section
-            await api.put(`/lessons/${activeId}`, {
-              section: newSectionId,
-            });
-          }
-          
-          // Reorder lessons in new section
-          await api.put(`/sections/${newSectionId}/lessons/reorder`, {
-            lessonIds: newState.sections[newSectionId].lessonIds,
-          });
-        } catch (apiError) {
-          // Revert on API error
-          setNormalizedState(originalState);
-          throw apiError;
-        }
+        setHasPendingChanges(true);
         return;
-      }
+    }
 
-      // ==================== EXAM HANDLING ====================
-      if (activeData.type === 'exam') {
+    // ==================== EXAM HANDLING ====================
+    if (activeData.type === 'exam') {
         const activeExam = newState.exams[activeId];
         if (!activeExam) {
           return;
@@ -626,12 +821,16 @@ function CurriculumManagementContent() {
         let newSectionId: string | null = null;
         let insertIndex: number | null = null;
 
-        // Determine target location (must be a section)
+        // Determine target location (can drop on section, lesson, or exam)
         if (overData.type === 'section') {
           // Dropping on section header - add to end
           newSectionId = overId;
           const targetSection = newState.sections[newSectionId];
-          insertIndex = targetSection ? targetSection.examIds.length : null;
+          if (targetSection) {
+            // Merge lessons and exams to get total count
+            const allItems = [...targetSection.lessonIds, ...targetSection.examIds];
+            insertIndex = allItems.length;
+          }
         } else if (overData.type === 'exam') {
           // Dropping on another exam - use that exam's section
           const overExam = newState.exams[overId];
@@ -646,27 +845,104 @@ function CurriculumManagementContent() {
             return;
           }
 
-          // Find insert position in section
+          // Find insert position in merged list
           const targetSection = newState.sections[newSectionId];
           if (targetSection) {
-            const overIndex = targetSection.examIds.indexOf(overId);
-            if (overIndex === -1) {
-              insertIndex = targetSection.examIds.length;
-            } else {
-              const activeIndex = oldSectionId === newSectionId 
-                ? targetSection.examIds.indexOf(activeId)
-                : -1;
-              
-              if (activeIndex === -1) {
-                // Moving from different section
-                insertIndex = overIndex + 1;
-              } else if (activeIndex < overIndex) {
-                // Moving down in same section
-                insertIndex = overIndex;
-              } else {
-                // Moving up in same section
-                insertIndex = overIndex + 1;
+            // First, get list WITH activeId to determine drag direction
+            const allItemsWithActive: Array<{ id: string; type: 'lesson' | 'exam'; order: number }> = [];
+            targetSection.lessonIds.forEach((id) => {
+              const lesson = newState.lessons[id];
+              if (lesson) allItemsWithActive.push({ id, type: 'lesson', order: lesson.order });
+            });
+            targetSection.examIds.forEach((id) => {
+              const exam = newState.exams[id];
+              if (exam) allItemsWithActive.push({ id, type: 'exam', order: exam.order });
+            });
+            allItemsWithActive.sort((a, b) => a.order - b.order);
+            
+            // Determine if dragging up or down (only if same section)
+            const isSameSection = oldSectionId === newSectionId;
+            const activeIndexInFull = isSameSection 
+              ? allItemsWithActive.findIndex(item => item.id === activeId && item.type === 'exam')
+              : -1;
+            const overIndexInFull = allItemsWithActive.findIndex(item => item.id === overId && item.type === 'exam');
+            const isDraggingUp = isSameSection && activeIndexInFull !== -1 && activeIndexInFull > overIndexInFull;
+            
+            // Now get list WITHOUT activeId for correct insert position
+            const allItems: Array<{ id: string; type: 'lesson' | 'exam'; order: number }> = [];
+            targetSection.lessonIds.forEach((id) => {
+              const lesson = newState.lessons[id];
+              if (lesson) allItems.push({ id, type: 'lesson', order: lesson.order });
+            });
+            targetSection.examIds.forEach((id) => {
+              if (id !== activeId) { // Exclude activeId to get correct index
+                const exam = newState.exams[id];
+                if (exam) allItems.push({ id, type: 'exam', order: exam.order });
               }
+            });
+            allItems.sort((a, b) => a.order - b.order);
+            
+            // Find overIndex in the list WITHOUT activeId
+            const overIndex = allItems.findIndex(item => item.id === overId && item.type === 'exam');
+            if (overIndex === -1) {
+              insertIndex = allItems.length;
+            } else {
+              // If dragging up, insert BEFORE overItem. If dragging down or from different section, insert AFTER overItem
+              insertIndex = isDraggingUp ? overIndex : overIndex + 1;
+            }
+          }
+        } else if (overData.type === 'lesson') {
+          // Dropping on a lesson - insert before/after that lesson
+          const overLesson = newState.lessons[overId];
+          if (!overLesson) {
+            return;
+          }
+          newSectionId = overLesson.sectionId;
+          
+          // Find insert position in merged list
+          const targetSection = newState.sections[newSectionId];
+          if (targetSection) {
+            // First, get list WITH activeId to determine drag direction
+            const allItemsWithActive: Array<{ id: string; type: 'lesson' | 'exam'; order: number }> = [];
+            targetSection.lessonIds.forEach((id) => {
+              const lesson = newState.lessons[id];
+              if (lesson) allItemsWithActive.push({ id, type: 'lesson', order: lesson.order });
+            });
+            targetSection.examIds.forEach((id) => {
+              const exam = newState.exams[id];
+              if (exam) allItemsWithActive.push({ id, type: 'exam', order: exam.order });
+            });
+            allItemsWithActive.sort((a, b) => a.order - b.order);
+            
+            // Determine if dragging up or down (only if same section)
+            const isSameSection = oldSectionId === newSectionId;
+            const activeIndexInFull = isSameSection 
+              ? allItemsWithActive.findIndex(item => item.id === activeId && item.type === 'exam')
+              : -1;
+            const overIndexInFull = allItemsWithActive.findIndex(item => item.id === overId && item.type === 'lesson');
+            const isDraggingUp = isSameSection && activeIndexInFull !== -1 && activeIndexInFull > overIndexInFull;
+            
+            // Now get list WITHOUT activeId for correct insert position
+            const allItems: Array<{ id: string; type: 'lesson' | 'exam'; order: number }> = [];
+            targetSection.lessonIds.forEach((id) => {
+              if (id !== activeId) { // Exclude activeId to get correct index
+                const lesson = newState.lessons[id];
+                if (lesson) allItems.push({ id, type: 'lesson', order: lesson.order });
+              }
+            });
+            targetSection.examIds.forEach((id) => {
+              const exam = newState.exams[id];
+              if (exam) allItems.push({ id, type: 'exam', order: exam.order });
+            });
+            allItems.sort((a, b) => a.order - b.order);
+            
+            // Find overIndex in the list WITHOUT activeId
+            const overIndex = allItems.findIndex(item => item.id === overId && item.type === 'lesson');
+            if (overIndex === -1) {
+              insertIndex = allItems.length;
+            } else {
+              // If dragging up, insert BEFORE overItem. If dragging down or from different section, insert AFTER overItem
+              insertIndex = isDraggingUp ? overIndex : overIndex + 1;
             }
           }
         } else {
@@ -691,54 +967,181 @@ function CurriculumManagementContent() {
           }
         }
 
-        // Add to new section
+        // Add to new section at correct position
         const newSection = newState.sections[newSectionId];
         if (newSection) {
-          const newExamIds = [...newSection.examIds];
+          // Get merged list of lessons and exams (excluding activeId)
+          const allItems: Array<{ id: string; type: 'lesson' | 'exam' }> = [];
+          newSection.lessonIds.forEach((id) => {
+            const lesson = newState.lessons[id];
+            if (lesson) allItems.push({ id, type: 'lesson' });
+          });
+          newSection.examIds.forEach((id) => {
+            if (id !== activeId) {
+              const exam = newState.exams[id];
+              if (exam) allItems.push({ id, type: 'exam' });
+            }
+          });
           
-          // Remove activeId if it exists (in case of same-section reorder)
-          const existingIndex = newExamIds.indexOf(activeId);
-          if (existingIndex !== -1) {
-            newExamIds.splice(existingIndex, 1);
-          }
+          // Sort by current order
+          allItems.sort((a, b) => {
+            const aItem = a.type === 'lesson' ? newState.lessons[a.id] : newState.exams[a.id];
+            const bItem = b.type === 'lesson' ? newState.lessons[b.id] : newState.exams[b.id];
+            return (aItem?.order || 0) - (bItem?.order || 0);
+          });
           
           // Insert at correct position
-          if (insertIndex !== null && insertIndex <= newExamIds.length) {
-            newExamIds.splice(insertIndex, 0, activeId);
+          if (insertIndex !== null && insertIndex >= 0 && insertIndex <= allItems.length) {
+            allItems.splice(insertIndex, 0, { id: activeId, type: 'exam' });
           } else {
-            newExamIds.push(activeId);
+            allItems.push({ id: activeId, type: 'exam' });
           }
+          
+          // Split back into lessonIds and examIds and update order
+          const newLessonIds: string[] = [];
+          const newExamIds: string[] = [];
+          allItems.forEach((item, index) => {
+            // Update order field for each item
+            if (item.type === 'lesson') {
+              newLessonIds.push(item.id);
+              newState.lessons[item.id] = {
+                ...newState.lessons[item.id],
+                order: index + 1,
+              };
+            } else {
+              newExamIds.push(item.id);
+              newState.exams[item.id] = {
+                ...newState.exams[item.id],
+                order: index + 1,
+              };
+            }
+          });
           
           newState.sections[newSectionId] = {
             ...newSection,
+            lessonIds: newLessonIds,
             examIds: newExamIds,
           };
-          newState.exams[activeId] = {
-            ...activeExam,
-            sectionId: newSectionId,
-          };
+          // Update order for the moved exam
+          const activeItemIndex = allItems.findIndex(item => item.id === activeId && item.type === 'exam');
+          if (activeItemIndex !== -1) {
+            newState.exams[activeId] = {
+              ...activeExam,
+              sectionId: newSectionId,
+              order: activeItemIndex + 1,
+            };
+          }
         }
 
         setNormalizedState(newState);
-
-        // API call
-        try {
-          await api.put(`/exams/${activeId}`, {
-            section: newSectionId,
-          });
-        } catch (apiError) {
-          // Revert on API error
-          setNormalizedState(originalState);
-          throw apiError;
-        }
+        setHasPendingChanges(true);
         return;
       }
+  };
+
+  // Save all pending changes - Batch Update API
+  const handleSaveChanges = async () => {
+    if (!hasPendingChanges || !courseId) return;
+
+    const confirmed = confirm('Bạn có chắc chắn muốn lưu các thay đổi thứ tự?');
+    if (!confirmed) return;
+
+    try {
+      setIsSavingChanges(true);
+
+      // Build batch update payload - chỉ gửi order và sectionId, không gửi status/isPublished
+      const payload = {
+        sections: normalizedState.sectionOrder.map((id, index) => ({
+          id,
+          order: index + 1,
+        })),
+        items: [] as Array<{
+          id: string;
+          type: 'lesson' | 'exam';
+          sectionId: string;
+          order: number;
+        }>,
+      };
+
+      // Collect all items (lessons + exams) with their new order
+      normalizedState.sectionOrder.forEach((sectionId) => {
+        const section = normalizedState.sections[sectionId];
+        if (!section) return;
+
+        // Merge lessons and exams, sorted by order
+        const allItems: Array<{ id: string; type: 'lesson' | 'exam'; order: number }> = [];
+        
+        section.lessonIds.forEach((lessonId) => {
+          const lesson = normalizedState.lessons[lessonId];
+          if (lesson) {
+            allItems.push({
+              id: lessonId,
+              type: 'lesson',
+              order: lesson.order,
+            });
+          }
+        });
+
+        section.examIds.forEach((examId) => {
+          const exam = normalizedState.exams[examId];
+          if (exam) {
+            allItems.push({
+              id: examId,
+              type: 'exam',
+              order: exam.order,
+            });
+          }
+        });
+
+        // Sort by order to ensure correct sequence
+        allItems.sort((a, b) => a.order - b.order);
+
+        // Add to payload with correct sectionId and order
+        allItems.forEach((item) => {
+          payload.items.push({
+            id: item.id,
+            type: item.type,
+            sectionId: sectionId,
+            order: item.order,
+          });
+        });
+      });
+
+      // Single API call for batch reorder
+      await api.put(`/courses/${courseId}/reorder`, payload);
+
+      // Reload curriculum to sync with backend
+      await loadCurriculum();
+      setHasPendingChanges(false);
+      
+      alert('Đã lưu thay đổi thành công!');
     } catch (err: any) {
-      console.error('Failed to reorder:', err);
-      // Revert to original state on error
-      setNormalizedState(originalState);
-      alert(err.response?.data?.message || 'Không thể sắp xếp lại. Vui lòng thử lại.');
+      console.error('Failed to save changes:', err);
+      
+      // Handle different error types
+      if (err.response?.status === 409) {
+        // Conflict - reload và show message
+        await loadCurriculum();
+        alert('Có thay đổi từ người khác. Đã reload.');
+      } else if (err.response?.status === 400) {
+        // Validation error
+        alert(err.response.data?.message || 'Dữ liệu không hợp lệ. Vui lòng thử lại.');
+      } else {
+        // Network error
+        alert('Lỗi kết nối. Vui lòng thử lại.');
+      }
+    } finally {
+      setIsSavingChanges(false);
     }
+  };
+
+  // Cancel pending changes and reload
+  const handleCancelChanges = async () => {
+    const confirmed = confirm('Bạn có chắc muốn hủy tất cả thay đổi chưa lưu?');
+    if (!confirmed) return;
+
+    await loadCurriculum();
+    setHasPendingChanges(false);
   };
 
   // ==================== CRUD OPERATIONS ====================
@@ -754,6 +1157,7 @@ function CurriculumManagementContent() {
       const res = await api.post(`/courses/${courseId}/sections`, { title });
       if (res.data?.success) {
         await loadCurriculum();
+        setHasPendingChanges(false); // Reset pending changes after reload
       }
     } catch (err: any) {
       alert(err.response?.data?.message || 'Không thể tạo section.');
@@ -762,56 +1166,15 @@ function CurriculumManagementContent() {
     }
   };
 
-  const handleCreateLesson = async (sectionId: string) => {
-    if (!courseId) return;
-
-    const title = prompt('Nhập tiêu đề bài học:');
-    if (!title) return;
-
-    try {
-      setIsSaving(true);
-      const res = await api.post(`/sections/${sectionId}/lessons`, {
-        title,
-        type: 'video',
-        isFree: false,
-      });
-      if (res.data?.success) {
-        await loadCurriculum();
-      }
-    } catch (err: any) {
-      alert(err.response?.data?.message || 'Không thể tạo bài học.');
-    } finally {
-      setIsSaving(false);
-    }
+  const handleCreateLesson = (sectionId: string) => {
+    setSelectedSectionForModal(sectionId);
+    setShowLessonModal(true);
   };
 
-  const handleCreateExamManually = async (sectionId: string) => {
-    if (!courseId || !sectionId) {
-      alert('Vui lòng chọn section để tạo bài kiểm tra.');
-      return;
-    }
-
-    const title = prompt('Nhập tiêu đề bài kiểm tra:');
-    if (!title) return;
-
-    try {
-      setIsSaving(true);
-      const res = await api.post(`/exams`, {
-        course: courseId,
-        section: sectionId,
-        title,
-        status: 'draft',
-        durationMinutes: 60,
-      });
-      if (res.data?.success) {
-        await loadCurriculum();
-      }
-    } catch (err: any) {
-      alert(err.response?.data?.message || 'Không thể tạo bài kiểm tra.');
-    } finally {
-      setIsSaving(false);
-      setShowExamCreateMenu(null);
-    }
+  const handleCreateExamManually = (sectionId: string) => {
+    setSelectedSectionForModal(sectionId);
+    setShowExamModal(true);
+    setShowExamCreateMenu(null);
   };
 
   const handleCreateExamWithAI = (sectionId: string) => {
@@ -856,6 +1219,133 @@ function CurriculumManagementContent() {
     }
   };
 
+  const handleDuplicate = async (item: CurriculumItem) => {
+    if (!courseId) return;
+
+    try {
+      setIsSaving(true);
+      setHasPendingChanges(false); // Reset pending changes when creating new item
+      
+      if (item.type === 'lesson') {
+        const lesson = normalizedState.lessons[item._id];
+        if (!lesson) return;
+        
+        // Get lesson details from API
+        const res = await api.get(`/lessons/${item._id}`);
+        if (res.data?.success) {
+          const lessonData = res.data.lesson;
+          // Create duplicate with "Copy of" prefix
+          const duplicateRes = await api.post(`/sections/${lesson.sectionId}/lessons`, {
+            title: `Copy of ${lessonData.title}`,
+            description: lessonData.description,
+            type: lessonData.type,
+            videoUrl: lessonData.videoUrl,
+            videoDuration: lessonData.videoDuration,
+            articleContent: lessonData.articleContent,
+            quizQuestions: lessonData.quizQuestions,
+            isFree: lessonData.isFree,
+            isPublished: false, // Always create as draft
+          });
+          
+          if (duplicateRes.data?.success) {
+            await loadCurriculum();
+          }
+        }
+      } else if (item.type === 'exam') {
+        const exam = normalizedState.exams[item._id];
+        if (!exam) return;
+        
+        // Get exam details from API
+        const res = await api.get(`/exams/${item._id}`);
+        if (res.data?.success) {
+          const examData = res.data.exam;
+          // Create duplicate with "Copy of" prefix
+          const duplicateRes = await api.post('/exams', {
+            course: courseId,
+            section: exam.sectionId,
+            title: `Copy of ${examData.title}`,
+            description: examData.description,
+            questions: examData.questions || [],
+            totalPoints: examData.totalPoints,
+            passingScore: examData.passingScore,
+            shuffleQuestions: examData.shuffleQuestions,
+            shuffleAnswers: examData.shuffleAnswers,
+            durationMinutes: examData.durationMinutes,
+            maxAttempts: examData.maxAttempts,
+            scoringMethod: examData.scoringMethod,
+            showCorrectAnswers: examData.showCorrectAnswers,
+            showScoreToStudent: examData.showScoreToStudent,
+            allowLateSubmission: examData.allowLateSubmission,
+            latePenaltyPercent: examData.latePenaltyPercent,
+            status: 'draft', // Always create as draft
+          });
+          
+          if (duplicateRes.data?.success) {
+            await loadCurriculum();
+          }
+        }
+      }
+    } catch (err: any) {
+      console.error('Failed to duplicate:', err);
+      alert(err.response?.data?.message || 'Không thể sao chép.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handlePublish = async (item: CurriculumItem) => {
+    if (item.type !== 'lesson') return;
+
+    try {
+      setIsSaving(true);
+      await api.put(`/lessons/${item._id}`, { isPublished: true });
+      await loadCurriculum();
+      setHasPendingChanges(false); // Reset pending changes after reload
+    } catch (err: any) {
+      console.error('Failed to publish:', err);
+      alert(err.response?.data?.message || 'Không thể xuất bản.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleUnpublish = async (item: CurriculumItem) => {
+    if (item.type !== 'lesson') return;
+
+    try {
+      setIsSaving(true);
+      await api.put(`/lessons/${item._id}`, { isPublished: false });
+      await loadCurriculum();
+      setHasPendingChanges(false); // Reset pending changes after reload
+    } catch (err: any) {
+      console.error('Failed to unpublish:', err);
+      alert(err.response?.data?.message || 'Không thể bỏ xuất bản.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleArchive = async (item: CurriculumItem) => {
+    if (item.type !== 'exam') return;
+
+    try {
+      setIsSaving(true);
+      await api.put(`/exams/${item._id}`, { status: 'archived' });
+      await loadCurriculum();
+      setHasPendingChanges(false); // Reset pending changes after reload
+    } catch (err: any) {
+      console.error('Failed to archive:', err);
+      alert(err.response?.data?.message || 'Không thể lưu trữ.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleViewAnalytics = (item: CurriculumItem) => {
+    if (item.type !== 'exam' || !courseId) return;
+    router.push(`/instructor/courses/${courseId}/exams/${item._id}/analytics`);
+  };
+
   // ==================== RENDER TREE ====================
 
   // Get all sortable item IDs (no duplicates)
@@ -875,13 +1365,98 @@ function CurriculumManagementContent() {
     return Array.from(ids);
   }, [normalizedState]);
 
+  // Filter logic
+  const getAllItems = useCallback((): CurriculumItem[] => {
+    const items: CurriculumItem[] = [];
+    
+    // Add sections
+    normalizedState.sectionOrder.forEach((sectionId) => {
+      const section = normalizedState.sections[sectionId];
+      if (section) items.push(section);
+    });
+    
+    // Add lessons
+    Object.values(normalizedState.lessons).forEach((lesson) => {
+      items.push(lesson);
+    });
+    
+    // Add exams
+    Object.values(normalizedState.exams).forEach((exam) => {
+      items.push(exam);
+    });
+    
+    return items;
+  }, [normalizedState]);
+
+  const filteredItems = useMemo(() => {
+    let items = getAllItems();
+    
+    // Filter by type
+    if (filterType !== 'all') {
+      items = items.filter(item => item.type === filterType);
+    }
+    
+    // Filter by search query
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      items = items.filter(item => 
+        item.title.toLowerCase().includes(query)
+      );
+    }
+    
+    // Filter by status (for lessons/exams)
+    if (filterStatus !== 'all') {
+      items = items.filter(item => {
+        if (item.type === 'lesson') {
+          return (item as LessonItem).isPublished === (filterStatus === 'published');
+        }
+        if (item.type === 'exam') {
+          return (item as ExamItem).status === filterStatus;
+        }
+        return true;
+      });
+    }
+    
+  return items;
+}, [getAllItems, searchQuery, filterType, filterStatus, normalizedState]);
+
   const renderTree = () => {
     const elements: JSX.Element[] = [];
+    
+    // Get filtered section IDs
+    const filteredSectionIds = new Set(
+      filteredItems
+        .filter(item => item.type === 'section')
+        .map(item => item._id)
+    );
+    
+    // Get filtered lesson/exam IDs
+    const filteredLessonIds = new Set(
+      filteredItems
+        .filter(item => item.type === 'lesson')
+        .map(item => item._id)
+    );
+    const filteredExamIds = new Set(
+      filteredItems
+        .filter(item => item.type === 'exam')
+        .map(item => item._id)
+    );
 
-    // Add sections with their children
+    // Add sections with their children (only if section passes filter or has filtered children)
     normalizedState.sectionOrder.forEach((sectionId) => {
       const section = normalizedState.sections[sectionId];
       if (!section) return;
+      
+      // Show section if:
+      // 1. Section itself matches filter, OR
+      // 2. Section has children that match filter
+      const hasFilteredChildren = 
+        section.lessonIds.some(id => filteredLessonIds.has(id)) ||
+        section.examIds.some(id => filteredExamIds.has(id));
+      
+      const sectionMatches = filteredSectionIds.has(sectionId);
+      
+      if (!sectionMatches && !hasFilteredChildren) return;
 
       elements.push(
         <div key={section._id} className="space-y-2 mb-4">
@@ -892,49 +1467,84 @@ function CurriculumManagementContent() {
             onNavigate={handleNavigate}
             isSelected={selectedItem?.id === section._id}
             dragEnabled={dragMode}
+            showActionsMenu={showActionsMenu}
+            onToggleActionsMenu={setShowActionsMenu}
           />
           {/* Section children */}
           <div className="ml-8 mt-2 space-y-2 border-l-2 border-gray-200 pl-4">
-            {/* Lessons in section */}
-            {section.lessonIds.length > 0 && (
-              <div className="space-y-1.5">
-                {section.lessonIds.map((lessonId) => {
-                  const lesson = normalizedState.lessons[lessonId];
-                  if (!lesson) return null;
-                  return (
-                    <SortableItem
-                      key={lesson._id}
-                      item={lesson}
-                      onSelect={(item) => setSelectedItem({ type: item.type, id: item._id })}
-                      onDelete={handleDelete}
-                      onNavigate={handleNavigate}
-                      isSelected={selectedItem?.id === lesson._id}
-                      dragEnabled={dragMode}
-                    />
-                  );
-                })}
-              </div>
-            )}
-            {/* Exams in section */}
-            {section.examIds.length > 0 && (
-              <div className="space-y-1.5">
-                {section.examIds.map((examId) => {
-                  const exam = normalizedState.exams[examId];
-                  if (!exam) return null;
-                  return (
-                    <SortableItem
-                      key={exam._id}
-                      item={exam}
-                      onSelect={(item) => setSelectedItem({ type: item.type, id: item._id })}
-                      onDelete={handleDelete}
-                      onNavigate={handleNavigate}
-                      isSelected={selectedItem?.id === exam._id}
-                      dragEnabled={dragMode}
-                    />
-                  );
-                })}
-              </div>
-            )}
+            {/* Lessons and Exams merged and sorted by order */}
+            {(() => {
+              // Combine lessons and exams, filter, and sort by order
+              const allItems: CurriculumItem[] = [];
+              
+              // Add lessons
+              section.lessonIds.forEach((lessonId) => {
+                const lesson = normalizedState.lessons[lessonId];
+                if (lesson && filteredLessonIds.has(lessonId)) {
+                  allItems.push(lesson);
+                }
+              });
+              
+              // Add exams
+              section.examIds.forEach((examId) => {
+                const exam = normalizedState.exams[examId];
+                if (exam && filteredExamIds.has(examId)) {
+                  allItems.push(exam);
+                }
+              });
+              
+              // Sort by order (ascending), then by title as fallback
+              allItems.sort((a, b) => {
+                if (a.order !== b.order) {
+                  return a.order - b.order;
+                }
+                return a.title.localeCompare(b.title);
+              });
+              
+              // Render sorted items
+              return (
+                <div className="space-y-1.5">
+                  {allItems.map((item) => {
+                    if (item.type === 'lesson') {
+                      return (
+                        <SortableItem
+                          key={item._id}
+                          item={item}
+                          onSelect={(item) => setSelectedItem({ type: item.type, id: item._id })}
+                          onDelete={handleDelete}
+                          onNavigate={handleNavigate}
+                          onDuplicate={handleDuplicate}
+                          onPublish={handlePublish}
+                          onUnpublish={handleUnpublish}
+                          isSelected={selectedItem?.id === item._id}
+                          dragEnabled={dragMode}
+                          showActionsMenu={showActionsMenu}
+                          onToggleActionsMenu={setShowActionsMenu}
+                        />
+                      );
+                    } else if (item.type === 'exam') {
+                      return (
+                        <SortableItem
+                          key={item._id}
+                          item={item}
+                          onSelect={(item) => setSelectedItem({ type: item.type, id: item._id })}
+                          onDelete={handleDelete}
+                          onNavigate={handleNavigate}
+                          onDuplicate={handleDuplicate}
+                          onArchive={handleArchive}
+                          onViewAnalytics={handleViewAnalytics}
+                          isSelected={selectedItem?.id === item._id}
+                          dragEnabled={dragMode}
+                          showActionsMenu={showActionsMenu}
+                          onToggleActionsMenu={setShowActionsMenu}
+                        />
+                      );
+                    }
+                    return null;
+                  })}
+                </div>
+              );
+            })()}
             {/* Add buttons for section */}
             <div className="flex gap-2 pt-1">
               <button
@@ -1050,9 +1660,53 @@ function CurriculumManagementContent() {
                 {dragMode ? 'Chế độ kéo thả - Kéo thả để sắp xếp' : 'Click để chỉnh sửa, bật chế độ kéo thả để sắp xếp'}
               </p>
             </div>
-            <div className="flex gap-2">
+          </div>
+
+          {/* Search & Filter Bar */}
+          <SearchFilterBar
+            searchQuery={searchQuery}
+            onSearchChange={setSearchQuery}
+            filterType={filterType}
+            onFilterTypeChange={setFilterType}
+            filterStatus={filterStatus}
+            onFilterStatusChange={setFilterStatus}
+          />
+
+          {/* Header Actions */}
+          <div className="flex items-center justify-between mb-6">
+            {/* Pending Changes Indicator */}
+            {hasPendingChanges && dragMode && (
+              <div className="flex items-center gap-2 px-4 py-2 bg-yellow-50 border border-yellow-200 rounded-lg">
+                <span className="text-sm text-yellow-800 font-medium">
+                  Có thay đổi chưa lưu
+                </span>
+                <button
+                  onClick={handleSaveChanges}
+                  disabled={isSavingChanges}
+                  className="inline-flex items-center px-3 py-1.5 rounded bg-green-600 text-white text-sm font-medium hover:bg-green-700 disabled:opacity-50"
+                >
+                  {isSavingChanges ? 'Đang lưu...' : 'Lưu thay đổi'}
+                </button>
+                <button
+                  onClick={handleCancelChanges}
+                  disabled={isSavingChanges}
+                  className="inline-flex items-center px-3 py-1.5 rounded border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                >
+                  Hủy
+                </button>
+              </div>
+            )}
+            
+            <div className="flex gap-2 ml-auto">
               <button
-                onClick={() => setDragMode(!dragMode)}
+                onClick={() => {
+                  if (dragMode && hasPendingChanges) {
+                    const confirmed = confirm('Bạn có thay đổi chưa lưu. Bạn có muốn hủy các thay đổi này không?');
+                    if (!confirmed) return;
+                    setHasPendingChanges(false);
+                  }
+                  setDragMode(!dragMode);
+                }}
                 className={`inline-flex items-center px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                   dragMode
                     ? 'bg-green-600 text-white hover:bg-green-700'
@@ -1073,7 +1727,7 @@ function CurriculumManagementContent() {
               </button>
               <button
                 onClick={handleCreateSection}
-                disabled={isSaving}
+                disabled={isSaving || dragMode}
                 className="inline-flex items-center px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 disabled:opacity-50"
               >
                 <Plus className="w-4 h-4 mr-2" />
@@ -1145,6 +1799,43 @@ function CurriculumManagementContent() {
       </main>
 
       <Footer />
+
+      {/* Modals */}
+      {showLessonModal && selectedSectionForModal && (
+        <LessonCreateModal
+          isOpen={showLessonModal}
+          sectionId={selectedSectionForModal}
+          courseId={courseId!}
+          onClose={() => {
+            setShowLessonModal(false);
+            setSelectedSectionForModal(null);
+          }}
+          onSuccess={() => {
+            loadCurriculum();
+            setHasPendingChanges(false); // Reset pending changes after reload
+            setShowLessonModal(false);
+            setSelectedSectionForModal(null);
+          }}
+        />
+      )}
+
+      {showExamModal && selectedSectionForModal && (
+        <ExamCreateModal
+          isOpen={showExamModal}
+          sectionId={selectedSectionForModal}
+          courseId={courseId!}
+          onClose={() => {
+            setShowExamModal(false);
+            setSelectedSectionForModal(null);
+          }}
+          onSuccess={() => {
+            loadCurriculum();
+            setHasPendingChanges(false); // Reset pending changes after reload
+            setShowExamModal(false);
+            setSelectedSectionForModal(null);
+          }}
+        />
+      )}
     </div>
   );
 }

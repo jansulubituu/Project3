@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { Course, Category, Section, Lesson, Review, Enrollment, User, Progress } from '../models';
+import { Course, Category, Section, Lesson, Review, Enrollment, User, Progress, Exam } from '../models';
 import mongoose from 'mongoose';
 import { uploadImageFromBuffer, deleteImage } from '../config/cloudinary';
 
@@ -1481,5 +1481,193 @@ export const syncEnrollmentCount = async (req: Request, res: Response) => {
       message: 'Error syncing enrollment count',
       error: error instanceof Error ? error.message : 'Unknown error',
     });
+  }
+};
+
+// @desc    Batch reorder sections, lessons, and exams
+// @route   PUT /api/courses/:courseId/reorder
+// @access  Private/Instructor (own course) or Admin
+export const batchReorder = async (req: Request, res: Response) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
+  try {
+    if (!req.user) {
+      await session.abortTransaction();
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required',
+      });
+    }
+
+    const { courseId } = req.params;
+    const { sections, items } = req.body;
+
+    // Validate course exists
+    const course = await Course.findById(courseId).session(session);
+    if (!course) {
+      await session.abortTransaction();
+      return res.status(404).json({
+        success: false,
+        message: 'Course not found',
+      });
+    }
+
+    // Check authorization
+    if (req.user.role !== 'admin' && course.instructor.toString() !== req.user.id) {
+      await session.abortTransaction();
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized to reorder items for this course',
+      });
+    }
+
+    // Validate payload structure
+    if (!Array.isArray(sections) || !Array.isArray(items)) {
+      await session.abortTransaction();
+      return res.status(400).json({
+        success: false,
+        message: 'sections and items must be arrays',
+      });
+    }
+
+    // Validate sections belong to course
+    const sectionIds = sections.map((s: { id: string }) => s.id);
+    const existingSections = await Section.find({
+      _id: { $in: sectionIds },
+      course: courseId,
+    }).session(session);
+
+    if (existingSections.length !== sectionIds.length) {
+      await session.abortTransaction();
+      return res.status(400).json({
+        success: false,
+        message: 'Some sections do not belong to this course',
+      });
+    }
+
+    // Separate lesson and exam IDs
+    const lessonIds = items
+      .filter((item: { type: string }) => item.type === 'lesson')
+      .map((item: { id: string }) => item.id);
+    const examIds = items
+      .filter((item: { type: string }) => item.type === 'exam')
+      .map((item: { id: string }) => item.id);
+
+    // Load lessons and exams
+    const lessons = lessonIds.length > 0
+      ? await Lesson.find({ _id: { $in: lessonIds } }).session(session)
+      : [];
+    const exams = examIds.length > 0
+      ? await Exam.find({ _id: { $in: examIds } }).session(session)
+      : [];
+
+    // Group items by section for validation
+    const itemsBySection: Record<string, Array<{ id: string; type: 'lesson' | 'exam'; order: number }>> = {};
+    items.forEach((item: { id: string; type: 'lesson' | 'exam'; sectionId: string; order: number }) => {
+      if (!itemsBySection[item.sectionId]) {
+        itemsBySection[item.sectionId] = [];
+      }
+      itemsBySection[item.sectionId].push({
+        id: item.id,
+        type: item.type,
+        order: item.order,
+      });
+    });
+
+    // Validate each item belongs to its section
+    for (const [sectionId, sectionItems] of Object.entries(itemsBySection)) {
+      const section = existingSections.find((s) => s._id.toString() === sectionId);
+      if (!section) {
+        await session.abortTransaction();
+        return res.status(400).json({
+          success: false,
+          message: `Section ${sectionId} not found`,
+        });
+      }
+
+      for (const item of sectionItems) {
+        if (item.type === 'lesson') {
+          const lesson = lessons.find((l) => l._id.toString() === item.id);
+          if (!lesson || lesson.section.toString() !== sectionId) {
+            await session.abortTransaction();
+            return res.status(400).json({
+              success: false,
+              message: `Lesson ${item.id} does not belong to section ${sectionId}`,
+            });
+          }
+        } else if (item.type === 'exam') {
+          const exam = exams.find((e) => e._id.toString() === item.id);
+          if (!exam || exam.section?.toString() !== sectionId) {
+            await session.abortTransaction();
+            return res.status(400).json({
+              success: false,
+              message: `Exam ${item.id} does not belong to section ${sectionId}`,
+            });
+          }
+        }
+      }
+    }
+
+    // Update sections order
+    const sectionUpdatePromises = sections.map((section: { id: string; order: number }) => {
+      return Section.findByIdAndUpdate(
+        section.id,
+        { $set: { order: section.order } },
+        { session, new: true }
+      );
+    });
+    await Promise.all(sectionUpdatePromises);
+
+    // Update items order and section (if moved) - CHỈ update order và section, preserve status
+    const itemUpdatePromises = items.map((item: { id: string; type: 'lesson' | 'exam'; sectionId: string; order: number }) => {
+      const updateData: { order: number; section?: mongoose.Types.ObjectId } = {
+        order: item.order,
+      };
+
+      // Check if item moved to different section
+      if (item.type === 'lesson') {
+        const lesson = lessons.find((l) => l._id.toString() === item.id);
+        if (lesson && lesson.section.toString() !== item.sectionId) {
+          updateData.section = new mongoose.Types.ObjectId(item.sectionId);
+        }
+        // CHỈ update order và section - preserve isPublished
+        return Lesson.findByIdAndUpdate(
+          item.id,
+          { $set: updateData },
+          { session, new: true }
+        );
+      } else {
+        const exam = exams.find((e) => e._id.toString() === item.id);
+        if (exam && exam.section?.toString() !== item.sectionId) {
+          updateData.section = new mongoose.Types.ObjectId(item.sectionId);
+        }
+        // CHỈ update order và section - preserve status (draft/published/archived)
+        return Exam.findByIdAndUpdate(
+          item.id,
+          { $set: updateData },
+          { session, new: true }
+        );
+      }
+    });
+    await Promise.all(itemUpdatePromises);
+
+    // Commit transaction
+    await session.commitTransaction();
+
+    res.json({
+      success: true,
+      message: 'Items reordered successfully',
+    });
+  } catch (error) {
+    await session.abortTransaction();
+    console.error('Error in batchReorder:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error reordering items',
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+  } finally {
+    session.endSession();
   }
 };

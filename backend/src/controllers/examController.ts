@@ -361,6 +361,78 @@ export const updateExam = async (req: AuthRequest, res: Response) => {
 };
 
 /**
+ * @desc    Reorder exams in a section
+ * @route   PUT /api/sections/:sectionId/exams/reorder
+ * @access  Private/Instructor (own course) or Admin
+ */
+export const reorderExams = async (req: AuthRequest, res: Response) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required',
+      });
+    }
+
+    const { sectionId } = req.params;
+    const { examIds } = req.body; // Array of exam IDs in new order
+
+    if (!Array.isArray(examIds) || examIds.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'examIds must be a non-empty array',
+      });
+    }
+
+    const section = await Section.findById(sectionId).populate('course');
+
+    if (!section) {
+      return res.status(404).json({
+        success: false,
+        message: 'Section not found',
+      });
+    }
+
+    const course = section.course as any;
+
+    // Check authorization
+    if (req.user.role !== 'admin' && course.instructor.toString() !== req.user.id) {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized to reorder exams for this section',
+      });
+    }
+
+    // Verify all exams belong to this section
+    const exams = await Exam.find({ _id: { $in: examIds }, section: sectionId });
+    if (exams.length !== examIds.length) {
+      return res.status(400).json({
+        success: false,
+        message: 'Some exams do not belong to this section',
+      });
+    }
+
+    // Update order for each exam
+    const updatePromises = examIds.map((examId: string, index: number) => {
+      return Exam.findByIdAndUpdate(examId, { order: index + 1 }, { new: true });
+    });
+
+    await Promise.all(updatePromises);
+
+    res.json({
+      success: true,
+      message: 'Exams reordered successfully',
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error reordering exams',
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+};
+
+/**
  * @desc    Delete exam
  * @route   DELETE /api/exams/:id
  * @access  Private/Instructor (own course) or Admin

@@ -16,6 +16,7 @@ import {
   uploadCourseThumbnail,
   getPlatformStats,
   syncEnrollmentCount,
+  batchReorder,
 } from '../controllers/courseController';
 import { createReview } from '../controllers/reviewController';
 import { protect, optionalAuth } from '../middleware/auth';
@@ -194,6 +195,54 @@ const reorderSectionsValidation = [
 ];
 router.post('/:courseId/sections', protect, instructorOrAdmin, createSectionValidation, createSection);
 router.put('/:courseId/sections/reorder', protect, instructorOrAdmin, reorderSectionsValidation, reorderSections);
+
+// Batch reorder validation
+const batchReorderValidation = [
+  body('sections')
+    .isArray()
+    .withMessage('sections must be an array'),
+  body('sections.*.id')
+    .isMongoId()
+    .withMessage('Each section ID must be a valid MongoDB ID'),
+  body('sections.*.order')
+    .isInt({ min: 1 })
+    .withMessage('Each section order must be a positive integer'),
+  body('items')
+    .isArray()
+    .withMessage('items must be an array'),
+  body('items.*.id')
+    .isMongoId()
+    .withMessage('Each item ID must be a valid MongoDB ID'),
+  body('items.*.type')
+    .isIn(['lesson', 'exam'])
+    .withMessage('Each item type must be either "lesson" or "exam"'),
+  body('items.*.sectionId')
+    .isMongoId()
+    .withMessage('Each item sectionId must be a valid MongoDB ID'),
+  body('items.*.order')
+    .isInt({ min: 1 })
+    .withMessage('Each item order must be a positive integer'),
+  // CRITICAL: Reject if payload contains status/isPublished fields
+  body('items.*.status')
+    .optional()
+    .custom((value) => {
+      if (value !== undefined) {
+        throw new Error('Status field is not allowed in reorder payload. Use separate endpoints to change status.');
+      }
+      return true;
+    }),
+  body('items.*.isPublished')
+    .optional()
+    .custom((value) => {
+      if (value !== undefined) {
+        throw new Error('isPublished field is not allowed in reorder payload. Use separate endpoints to change status.');
+      }
+      return true;
+    }),
+  validate,
+];
+
+router.put('/:courseId/reorder', protect, instructorOrAdmin, batchReorderValidation, batchReorder);
 
 export default router;
 

@@ -36,6 +36,8 @@ router.delete('/:id', protect, instructorOrAdmin, deleteSection);
 
 // Lesson routes nested under sections
 import { createLesson, reorderLessons } from '../controllers/lessonController';
+// Exam routes nested under sections
+import { reorderExams } from '../controllers/examController';
 const createLessonValidation = [
   body('title')
     .trim()
@@ -81,6 +83,18 @@ const reorderLessonsValidation = [
 ];
 router.post('/:sectionId/lessons', protect, instructorOrAdmin, createLessonValidation, createLesson);
 router.put('/:sectionId/lessons/reorder', protect, instructorOrAdmin, reorderLessonsValidation, reorderLessons);
+
+// Exam reorder route
+const reorderExamsValidation = [
+  body('examIds')
+    .isArray({ min: 1 })
+    .withMessage('examIds must be a non-empty array'),
+  body('examIds.*')
+    .isMongoId()
+    .withMessage('Each exam ID must be a valid MongoDB ID'),
+  validate,
+];
+router.put('/:sectionId/exams/reorder', protect, instructorOrAdmin, reorderExamsValidation, reorderExams);
 
 export default router;
 
