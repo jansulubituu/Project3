@@ -114,6 +114,7 @@ interface LessonProgress {
   lastPosition?: number;
   timeSpent?: number;
   updatedAt?: string;
+  quizScore?: number;
 }
 
 const lessonTypeIcon = (type?: string) => {
@@ -159,6 +160,8 @@ function LessonPage() {
   const [lesson, setLesson] = useState<LessonDetail | null>(null);
   const [sections, setSections] = useState<LessonSection[]>([]);
   const [isEnrolled, setIsEnrolled] = useState(false);
+  // enrollmentStatus: 'active' | 'completed' | null - used to unlock all lessons when course is completed
+  const [enrollmentStatus, setEnrollmentStatus] = useState<string | null>(null);
   const [progress, setProgress] = useState<LessonProgress | null>(null);
   const [lockedLessons, setLockedLessons] = useState<Set<string>>(new Set());
   const [lockedExams, setLockedExams] = useState<Set<string>>(new Set());
@@ -171,7 +174,7 @@ function LessonPage() {
   const [markingComplete, setMarkingComplete] = useState(false);
 
   // Function to calculate locked state
-  const calculateLockedState = useCallback((sectionsData: LessonSection[], enrolled: boolean, currentUser: any) => {
+  const calculateLockedState = useCallback((sectionsData: LessonSection[], enrolled: boolean, currentUser: { id?: string; role?: string } | null, enrollmentStatusValue?: string | null) => {
     if (!enrolled || !currentUser) {
       // If not enrolled or no user, lock all non-free lessons
       const lockedLessonsSet = new Set<string>();
@@ -194,6 +197,43 @@ function LessonPage() {
       
       setLockedLessons(lockedLessonsSet);
       setLockedExams(lockedExamsSet);
+      return;
+    }
+
+    // 🎯 If course is completed, unlock all lessons for review
+    // Students should be able to review all content after completion
+    if (enrollmentStatusValue === 'completed') {
+      const lockedLessonsSet = new Set<string>();
+      const lockedExamsSet = new Set<string>();
+      
+      // Only lock exams that are outside their time window
+      for (const section of sectionsData) {
+        const exams = section.exams || [];
+        const now = new Date();
+        
+        for (const exam of exams) {
+          const examOpenAt = exam.openAt ? new Date(exam.openAt) : null;
+          const examCloseAt = exam.closeAt ? new Date(exam.closeAt) : null;
+          const allowLateSubmission = exam.allowLateSubmission || false;
+          
+          // Lock if not open yet
+          if (examOpenAt && now < examOpenAt) {
+            lockedExamsSet.add(String(exam._id));
+            continue;
+          }
+          
+          // Lock if expired AND late submission not allowed
+          if (examCloseAt && now > examCloseAt && !allowLateSubmission) {
+            lockedExamsSet.add(String(exam._id));
+            continue;
+          }
+        }
+      }
+      
+      // All lessons are unlocked when course is completed
+      setLockedLessons(lockedLessonsSet);
+      setLockedExams(lockedExamsSet);
+      console.log('[Sidebar Debug] Course completed - all lessons unlocked for review');
       return;
     }
 
@@ -263,7 +303,7 @@ function LessonPage() {
         }
       } else if (content.type === 'exam') {
         const exam = content.item as ExamListItem;
-        const examProgress = exam.progress as any;
+        const examProgress = exam.progress;
         const isCompleted = examProgress && (examProgress.passed || examProgress.status === 'in_progress' || examProgress.status === 'passed' || examProgress.status === 'failed');
         if (!isCompleted) {
           firstUncompletedIndex = i;
@@ -341,7 +381,7 @@ function LessonPage() {
         );
         
         // Check if exam is completed
-        const examProgress = exam.progress as any;
+        const examProgress = exam.progress;
         const isCompleted = examProgress && (examProgress.passed || examProgress.status === 'in_progress' || examProgress.status === 'passed' || examProgress.status === 'failed');
         
         // Unlock if:
@@ -383,7 +423,9 @@ function LessonPage() {
 
       setCourse(courseResponse.data.course);
       const enrolledStatus = courseResponse.data.isEnrolled || false;
+      const enrollmentStatusValue = courseResponse.data.enrollmentStatus || null;
       setIsEnrolled(enrolledStatus);
+      setEnrollmentStatus(enrollmentStatusValue);
 
       const lessonData: LessonDetail = lessonResponse.data.lesson || lessonResponse.data.data || lessonResponse.data;
       setLesson(lessonData);
@@ -420,13 +462,13 @@ function LessonPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slug, lessonId]);
 
-  // Recalculate locked state when sections, isEnrolled, or user changes
+  // Recalculate locked state when sections, isEnrolled, enrollmentStatus, or user changes
   useEffect(() => {
     if (sections.length === 0) return;
     
-    calculateLockedState(sections, isEnrolled, user);
+    calculateLockedState(sections, isEnrolled, user, enrollmentStatus);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sections, isEnrolled, user, calculateLockedState]);
+  }, [sections, isEnrolled, enrollmentStatus, user, calculateLockedState]);
 
   const flattenedLessons = useMemo(() => {
     return sections.flatMap((section) =>
@@ -478,6 +520,7 @@ function LessonPage() {
           if (courseResponse.data?.success) {
             setCourse(courseResponse.data.course);
             setIsEnrolled(courseResponse.data.isEnrolled || false);
+            setEnrollmentStatus(courseResponse.data.enrollmentStatus || null);
             
             // Reload curriculum to update lesson progress in sidebar
             // Locked state will be automatically recalculated by useEffect when sections update
@@ -1160,10 +1203,10 @@ function LessonQuiz({
             Chọn đáp án cho mỗi câu hỏi bên dưới rồi nhấn &quot;Nộp bài&quot; để chấm điểm.
           </p>
         </div>
-        {typeof (progress as any)?.quizScore === 'number' && (
+        {typeof progress?.quizScore === 'number' && (
           <div className="text-right">
             <p className="text-xs text-gray-500">Điểm lần gần nhất</p>
-            <p className="text-lg font-semibold text-blue-600">{(progress as any).quizScore}%</p>
+            <p className="text-lg font-semibold text-blue-600">{progress.quizScore}%</p>
           </div>
         )}
       </div>

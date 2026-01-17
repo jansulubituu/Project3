@@ -144,14 +144,12 @@ export default function CertificateCard({
                 )}
               </p>
               <div className="flex flex-wrap gap-2 mt-3">
-                <a
-                  href={certificateUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                <Link
+                  href={`/certificates/view/${enrollmentId}`}
                   className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-medium"
                 >
                   Xem chứng chỉ
-                </a>
+                </Link>
                 <a
                   href={certificateUrl}
                   download

@@ -21,7 +21,7 @@ export const getCertificate = async (req: Request, res: Response) => {
 
     const enrollment = await Enrollment.findById(enrollmentId)
       .populate('student', 'fullName email')
-      .populate('course', 'title');
+      .populate('course', 'title slug');
 
     if (!enrollment) {
       return res.status(404).json({
@@ -55,6 +55,13 @@ export const getCertificate = async (req: Request, res: Response) => {
     // Check if there's new content since completion
     const hasNewContent = await enrollment.hasNewContentSinceCompletion();
 
+    // Populate course and student for response
+    await enrollment.populate('course', 'title slug');
+    await enrollment.populate('student', 'fullName email');
+
+    const course = enrollment.course as any;
+    const student = enrollment.student as any;
+
     return res.json({
       success: true,
       certificate: {
@@ -68,6 +75,14 @@ export const getCertificate = async (req: Request, res: Response) => {
           completedLessons: enrollment.completedLessons.length,
           progress: enrollment.progress,
         },
+        course: course ? {
+          title: course.title,
+          slug: course.slug,
+        } : null,
+        student: student ? {
+          fullName: student.fullName,
+          email: student.email,
+        } : null,
       },
     });
   } catch (error) {

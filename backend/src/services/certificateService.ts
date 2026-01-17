@@ -1,6 +1,18 @@
 import PDFDocument from 'pdfkit';
 import crypto from 'crypto';
 import { v2 as cloudinary } from 'cloudinary';
+import dotenv from 'dotenv';
+
+dotenv.config();
+
+// Configure Cloudinary if not already configured
+if (!cloudinary.config().cloud_name) {
+  cloudinary.config({
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key: process.env.CLOUDINARY_API_KEY,
+    api_secret: process.env.CLOUDINARY_API_SECRET,
+  });
+}
 
 interface CertificateData {
   enrollmentId: string;
@@ -242,31 +254,51 @@ export const uploadCertificateToCloudinary = async (
   certificateId: string
 ): Promise<string> => {
   try {
+    console.info('[Certificate] Uploading to Cloudinary', {
+      certificateId,
+      bufferSize: pdfBuffer.length,
+      cloudName: cloudinary.config().cloud_name || 'not configured',
+    });
+
+    // Check Cloudinary configuration
+    if (!cloudinary.config().cloud_name || !cloudinary.config().api_key || !cloudinary.config().api_secret) {
+      throw new Error('Cloudinary is not configured. Please set CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, and CLOUDINARY_API_SECRET environment variables.');
+    }
+
     return new Promise((resolve, reject) => {
-      const uploadStream = cloudinary.uploader.upload_stream(
+      // Convert buffer to base64 data URI for Cloudinary
+      const base64Data = pdfBuffer.toString('base64');
+      const dataUri = `data:application/pdf;base64,${base64Data}`;
+
+      cloudinary.uploader.upload(
+        dataUri,
         {
           folder: 'certificates',
           public_id: certificateId,
           resource_type: 'raw',
           format: 'pdf',
+          overwrite: true,
         },
         (error, result) => {
           if (error) {
             console.error('[Certificate] Cloudinary upload error:', error);
-            reject(new Error('Failed to upload certificate to Cloudinary'));
+            reject(new Error(`Failed to upload certificate to Cloudinary: ${error.message}`));
           } else if (result) {
+            console.info('[Certificate] Cloudinary upload success', {
+              certificateId,
+              url: result.secure_url,
+              publicId: result.public_id,
+            });
             resolve(result.secure_url);
           } else {
             reject(new Error('No result from Cloudinary upload'));
           }
         }
       );
-
-      uploadStream.end(pdfBuffer);
     });
   } catch (error) {
     console.error('[Certificate] Failed to upload to Cloudinary:', error);
-    throw new Error('Failed to upload certificate to cloud storage');
+    throw new Error(`Failed to upload certificate to cloud storage: ${error instanceof Error ? error.message : String(error)}`);
   }
 };
 

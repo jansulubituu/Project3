@@ -118,9 +118,7 @@ export const uploadFileHandler = async (req: Request, res: Response) => {
       });
     }    const folder = (req.query.folder as string) || 'edulearn/lesson-files';
 
-    const result = await uploadRawFromBuffer(req.file.buffer, folder);
-
-    return res.json({
+    const result = await uploadRawFromBuffer(req.file.buffer, folder);    return res.json({
       success: true,
       message: 'File uploaded successfully',
       url: result.secure_url,
@@ -168,9 +166,7 @@ export const listImagesHandler = async (req: Request, res: Response) => {
 
     if (nextCursor) {
       options.nextCursor = nextCursor as string;
-    }
-
-    if (tags) {
+    }    if (tags) {
       options.tags = Array.isArray(tags) ? (tags as string[]) : [tags as string];
     }
 
