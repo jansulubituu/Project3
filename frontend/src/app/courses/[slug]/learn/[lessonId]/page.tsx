@@ -686,11 +686,7 @@ function LessonPage() {
 
                 {/* Comment Section */}
                 {isEnrolled && lesson.isPublished && (
-                  <CommentSection 
-                    key={`${lesson._id}-${progress?.status || 'in_progress'}`}
-                    lessonId={lesson._id} 
-                    isEnrolled={isEnrolled} 
-                  />
+                  <CommentSection lessonId={lesson._id} isEnrolled={isEnrolled} />
                 )}
               </>
             )}

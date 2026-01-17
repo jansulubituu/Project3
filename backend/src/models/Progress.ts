@@ -161,6 +161,14 @@ progressSchema.index({ enrollment: 1, status: 1 });
 
 // Pre-save hook to set startedAt
 progressSchema.pre('save', function (next) {
+  // Ensure mutually exclusive fields to avoid unique index conflicts
+  if (this.type === 'exam') {
+    this.lesson = undefined;
+  }
+  if (this.type === 'lesson') {
+    this.exam = undefined;
+  }
+
   if (this.isModified('status')) {
     if (this.status === 'in_progress' && !this.startedAt) {
       this.startedAt = new Date();

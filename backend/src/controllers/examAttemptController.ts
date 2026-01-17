@@ -787,10 +787,14 @@ export const submitExamAttempt = async (req: AuthRequest, res: Response) => {
             lastPosition: 0,
             watchedDuration: 0,
           });
+          // Ensure lesson is unset for exam progress to avoid unique index conflicts
+          examProgress.lesson = undefined;
         } else {
           examProgress.examAttempts = (examProgress.examAttempts || 0) + 1;
           examProgress.examLatestScore = finalScore;
           examProgress.examLastAttemptAt = now;
+          // Ensure lesson is unset for exam progress to avoid unique index conflicts
+          examProgress.lesson = undefined;
 
           // Update best score based on exam.scoringMethod
           if (exam.scoringMethod === 'highest') {
@@ -823,6 +827,7 @@ export const submitExamAttempt = async (req: AuthRequest, res: Response) => {
           examProgress.markModified('examBestScore');
           examProgress.markModified('examPassed');
           examProgress.markModified('status');
+          examProgress.markModified('lesson');
         }
 
         await examProgress.save();

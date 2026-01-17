@@ -41,13 +41,12 @@ export const getLessonComments = async (req: AuthRequest, res: Response) => {
     }
 
     // Check enrollment (unless admin/instructor)
-    // Allow both 'active' and 'completed' enrollments to view comments
     const course = lesson.course as any;
     if (req.user.role === 'student') {
       const enrollment = await Enrollment.findOne({
         student: req.user.id,
         course: course._id,
-        status: { $in: ['active', 'completed'] },
+        status: 'active',
       });
 
       if (!enrollment) {
@@ -242,13 +241,12 @@ export const createComment = async (req: AuthRequest, res: Response) => {
     }
 
     // Check enrollment
-    // Allow both 'active' and 'completed' enrollments to comment
     const course = lesson.course as any;
     if (req.user.role === 'student') {
       const enrollment = await Enrollment.findOne({
         student: req.user.id,
         course: course._id,
-        status: { $in: ['active', 'completed'] },
+        status: 'active',
       });
 
       if (!enrollment) {
@@ -383,12 +381,11 @@ export const replyToComment = async (req: AuthRequest, res: Response) => {
     const course = lesson.course as any;
 
     // Check enrollment
-    // Allow both 'active' and 'completed' enrollments to reply
     if (req.user.role === 'student') {
       const enrollment = await Enrollment.findOne({
         student: req.user.id,
         course: course._id,
-        status: { $in: ['active', 'completed'] },
+        status: 'active',
       });
 
       if (!enrollment) {
