@@ -19,6 +19,7 @@ interface AdminCourse {
   createdAt: string;
   rejectionReason?: string;
   rejectedAt?: string;
+  submittedAt?: string;
   instructor?: {
     _id: string;
     fullName: string;
@@ -291,7 +292,12 @@ function AdminCoursesContent() {
                   </thead>
                   <tbody className="divide-y divide-gray-100">
                     {courses.map((course) => (
-                      <tr key={course._id} className="hover:bg-gray-50">
+                      <tr 
+                        key={course._id} 
+                        className={`hover:bg-gray-50 ${
+                          course.status === 'pending' ? 'bg-blue-50 border-l-4 border-l-blue-500' : ''
+                        }`}
+                      >
                         <td className="px-4 py-3">
                           <div className="max-w-xs">
                             <p className="font-semibold text-gray-900 truncate">{course.title}</p>
@@ -311,34 +317,41 @@ function AdminCoursesContent() {
                           )}
                         </td>
                         <td className="px-4 py-3">
-                          <span
-                            className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${
-                              course.status === 'published'
-                                ? 'bg-green-100 text-green-800'
+                          <div className="flex flex-col gap-1">
+                            <span
+                              className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${
+                                course.status === 'published'
+                                  ? 'bg-green-100 text-green-800'
+                                  : course.status === 'pending'
+                                  ? 'bg-blue-100 text-blue-800 border-2 border-blue-300'
+                                  : course.status === 'rejected'
+                                  ? 'bg-red-100 text-red-800'
+                                  : course.status === 'draft'
+                                  ? 'bg-yellow-100 text-yellow-800'
+                                  : 'bg-gray-100 text-gray-800'
+                              }`}
+                            >
+                              {course.status === 'published'
+                                ? '✅ Đã xuất bản'
                                 : course.status === 'pending'
-                                ? 'bg-blue-100 text-blue-800'
+                                ? '⏳ Chờ duyệt (Cần xử lý)'
                                 : course.status === 'rejected'
-                                ? 'bg-red-100 text-red-800'
+                                ? '❌ Đã từ chối'
                                 : course.status === 'draft'
-                                ? 'bg-yellow-100 text-yellow-800'
-                                : 'bg-gray-100 text-gray-800'
-                            }`}
-                          >
-                            {course.status === 'published'
-                              ? 'Đã xuất bản'
-                              : course.status === 'pending'
-                              ? 'Chờ duyệt'
-                              : course.status === 'rejected'
-                              ? 'Đã từ chối'
-                              : course.status === 'draft'
-                              ? 'Bản nháp'
-                              : 'Đã lưu trữ'}
-                          </span>
-                          {course.status === 'rejected' && course.rejectionReason && (
-                            <div className="mt-1 text-xs text-red-600 max-w-xs truncate" title={course.rejectionReason}>
-                              Lý do: {course.rejectionReason}
-                            </div>
-                          )}
+                                ? '📝 Bản nháp'
+                                : '📦 Đã lưu trữ'}
+                            </span>
+                            {course.status === 'pending' && course.submittedAt && (
+                              <div className="text-xs text-blue-600">
+                                Gửi: {formatDate(course.submittedAt)}
+                              </div>
+                            )}
+                            {course.status === 'rejected' && course.rejectionReason && (
+                              <div className="mt-1 text-xs text-red-600 max-w-xs truncate" title={course.rejectionReason}>
+                                Lý do: {course.rejectionReason}
+                              </div>
+                            )}
+                          </div>
                         </td>
                         <td className="px-4 py-3 text-right text-gray-900">
                           {formatPrice(course.price)}

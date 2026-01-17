@@ -325,20 +325,38 @@ function InstructorCourseDetailContent() {
               </div>
             )}
 
-            {/* Pending Info */}
+            {/* Pending Info - Instructor View */}
             {course.status === 'pending' && (
-              <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+              <div className="mb-4 p-4 bg-blue-50 border-2 border-blue-200 rounded-lg">
                 <div className="flex items-start">
-                  <Clock className="w-5 h-5 text-yellow-600 mt-0.5 mr-3 flex-shrink-0" />
+                  <Clock className="w-5 h-5 text-blue-600 mt-0.5 mr-3 flex-shrink-0" />
                   <div className="flex-1">
-                    <p className="text-sm text-yellow-800">
-                      Khóa học đang chờ Admin duyệt. Bạn sẽ nhận thông báo khi có kết quả.
+                    <h4 className="text-sm font-semibold text-blue-900 mb-1">
+                      ⏳ Khóa học đang chờ Admin duyệt
+                    </h4>
+                    <p className="text-sm text-blue-800 mb-2">
+                      Khóa học của bạn đã được gửi và đang chờ Admin xem xét. Bạn sẽ nhận thông báo khi có kết quả duyệt.
                     </p>
                     {course.submittedAt && (
-                      <p className="text-xs text-yellow-600 mt-1">
-                        Đã gửi: {formatDate(course.submittedAt)}
+                      <p className="text-xs text-blue-600 mt-1">
+                        📅 Đã gửi: {formatDate(course.submittedAt)}
                       </p>
                     )}
+                    <div className="mt-3 flex gap-2">
+                      <Link
+                        href={`/instructor/courses/${course._id}/edit`}
+                        className="text-sm text-blue-700 hover:text-blue-900 underline font-medium"
+                      >
+                        Chỉnh sửa khóa học
+                      </Link>
+                      <span className="text-blue-300">|</span>
+                      <Link
+                        href={`/instructor/courses/${course._id}/curriculum`}
+                        className="text-sm text-blue-700 hover:text-blue-900 underline font-medium"
+                      >
+                        Quản lý nội dung
+                      </Link>
+                    </div>
                   </div>
                 </div>
               </div>

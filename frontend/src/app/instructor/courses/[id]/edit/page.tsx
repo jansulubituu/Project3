@@ -8,7 +8,7 @@ import Footer from '@/components/layout/Footer';
 import { useAuth } from '@/contexts/AuthContext';
 import { api } from '@/lib/api';
 
-type CourseStatus = 'draft' | 'published' | 'archived';
+type CourseStatus = 'draft' | 'published' | 'archived' | 'pending' | 'rejected';
 
 interface CourseFormData {
   title: string;
@@ -45,6 +45,8 @@ function EditCourseContent() {
   const [success, setSuccess] = useState<string | null>(null);
   const [thumbnailUploading, setThumbnailUploading] = useState(false);
   const [thumbnailError, setThumbnailError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [courseStatus, setCourseStatus] = useState<CourseStatus>('draft');
 
   useEffect(() => {
     const fetchData = async () => {
@@ -91,6 +93,7 @@ function EditCourseContent() {
             language: c.language || 'English',
             status: c.status || 'draft',
           });
+          setCourseStatus(c.status || 'draft');
         } else {
           setError('Không tìm thấy khóa học.');
         }
@@ -192,6 +195,19 @@ function EditCourseContent() {
         delete payload.subcategory;
       }
 
+      // Remove status from payload if user is instructor (instructors cannot publish directly)
+      // Only allow draft and archived for instructors
+      if (user && user.role !== 'admin') {
+        // Instructors can only set to draft or archived, not published
+        if (payload.status === 'published') {
+          delete payload.status; // Don't send status if trying to publish
+        }
+        // If status is pending or rejected, don't allow changing it via edit
+        if (courseStatus === 'pending' || courseStatus === 'rejected') {
+          delete payload.status;
+        }
+      }
+
       const res = await api.put(`/courses/${courseId}`, payload);
       if (res.data?.success) {
         setSuccess('Cập nhật khóa học thành công.');
@@ -258,6 +274,41 @@ function EditCourseContent() {
       setThumbnailUploading(false);
       // reset input value
       e.target.value = '';
+    }
+  };
+
+  const handleSubmitForApproval = async () => {
+    if (!courseId) return;
+
+    setError(null);
+    setSubmitting(true);
+
+    try {
+      const res = await api.post(`/courses/${courseId}/submit`);
+      if (res.data?.success) {
+        setSuccess('Đã gửi yêu cầu duyệt khóa học thành công. Admin sẽ xem xét và phê duyệt.');
+        setCourseStatus('pending');
+        // Refresh course data
+        const courseRes = await api.get(`/courses/${courseId}`);
+        if (courseRes.data?.success) {
+          const c = courseRes.data.course;
+          setForm(prev => prev ? {
+            ...prev,
+            status: c.status || 'draft',
+          } : null);
+        }
+      } else {
+        setError(res.data?.message || 'Gửi yêu cầu duyệt thất bại.');
+      }
+    } catch (err: any) {
+      console.error('Failed to submit course:', err);
+      const message =
+        err?.response?.data?.message ||
+        err?.response?.data?.error ||
+        'Không thể gửi yêu cầu duyệt. Vui lòng kiểm tra lại thông tin và thử lại.';
+      setError(message);
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -595,24 +646,70 @@ function EditCourseContent() {
                 </div>
               </div>
 
-              {/* Status (readonly for instructor if needed – backend vẫn enforce) */}
+              {/* Status */}
               <div>
                 <label className="block text-sm font-medium text-gray-700">
-                  Trạng thái <span className="text-xs text-gray-500 font-normal">(Tùy chọn)</span>
+                  Trạng thái
                 </label>
-                <select
-                  name="status"
-                  value={form.status}
-                  onChange={handleChange}
-                  className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                >
-                  <option value="draft">Bản nháp (Mặc định)</option>
-                  <option value="published">Đã xuất bản</option>
-                  <option value="archived">Đã lưu trữ</option>
-                </select>
-                <p className="mt-1 text-xs text-gray-500">
-                  <strong>Bản nháp:</strong> Chỉ bạn có thể xem và chỉnh sửa. <strong>Đã xuất bản:</strong> Khóa học hiển thị công khai cho học viên. <strong>Đã lưu trữ:</strong> Ẩn khỏi danh sách nhưng vẫn giữ dữ liệu. Lưu ý: Backend sẽ kiểm tra quyền khi thay đổi trạng thái.
-                </p>
+                {user?.role === 'admin' ? (
+                  <>
+                    <select
+                      name="status"
+                      value={form.status}
+                      onChange={handleChange}
+                      className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    >
+                      <option value="draft">Bản nháp</option>
+                      <option value="published">Đã xuất bản</option>
+                      <option value="archived">Đã lưu trữ</option>
+                      <option value="pending">Đang chờ duyệt</option>
+                      <option value="rejected">Đã từ chối</option>
+                    </select>
+                    <p className="mt-1 text-xs text-gray-500">
+                      Admin có thể thay đổi trạng thái khóa học trực tiếp.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <div className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm bg-gray-50 text-gray-600">
+                      {courseStatus === 'draft' && 'Bản nháp'}
+                      {courseStatus === 'pending' && 'Đang chờ Admin duyệt'}
+                      {courseStatus === 'published' && 'Đã xuất bản (bởi Admin)'}
+                      {courseStatus === 'rejected' && 'Đã bị từ chối'}
+                      {courseStatus === 'archived' && 'Đã lưu trữ'}
+                    </div>
+                    {courseStatus === 'draft' || courseStatus === 'rejected' ? (
+                      <div className="mt-3">
+                        <button
+                          type="button"
+                          onClick={handleSubmitForApproval}
+                          disabled={submitting || saving}
+                          className="w-full px-4 py-2 rounded-lg bg-green-600 text-white text-sm font-medium hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        >
+                          {submitting ? 'Đang gửi...' : courseStatus === 'rejected' ? 'Gửi lại để Admin duyệt' : 'Gửi để Admin duyệt'}
+                        </button>
+                        <p className="mt-2 text-xs text-gray-500">
+                          <strong>Lưu ý:</strong> Giảng viên không thể xuất bản khóa học trực tiếp. Bạn cần gửi yêu cầu để Admin duyệt. Khóa học phải có thumbnail và ít nhất 1 bài học để được gửi duyệt.
+                        </p>
+                      </div>
+                    ) : courseStatus === 'pending' ? (
+                      <div className="mt-2 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                        <p className="text-sm text-yellow-800">
+                          <strong>⏳ Đang chờ duyệt:</strong> Khóa học của bạn đã được gửi và đang chờ Admin xem xét. Bạn vẫn có thể chỉnh sửa thông tin khóa học.
+                        </p>
+                      </div>
+                    ) : courseStatus === 'published' ? (
+                      <div className="mt-2 p-3 bg-green-50 border border-green-200 rounded-lg">
+                        <p className="text-sm text-green-800">
+                          <strong>✅ Đã xuất bản:</strong> Khóa học của bạn đã được Admin duyệt và đã được xuất bản công khai.
+                        </p>
+                      </div>
+                    ) : null}
+                    <p className="mt-2 text-xs text-gray-500">
+                      <strong>Bản nháp:</strong> Chỉ bạn có thể xem và chỉnh sửa. <strong>Đã xuất bản:</strong> Khóa học hiển thị công khai cho học viên (chỉ Admin có thể xuất bản). <strong>Đã lưu trữ:</strong> Ẩn khỏi danh sách nhưng vẫn giữ dữ liệu.
+                    </p>
+                  </>
+                )}
               </div>
 
               <div className="flex items-center justify-end gap-3 pt-4 border-t">

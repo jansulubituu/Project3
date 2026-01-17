@@ -117,29 +117,45 @@ function MyLearningContent() {
       } else {
         setError(response.data.message || 'Không thể tải danh sách khóa học');
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Failed to load enrollments:', err);
-      console.error('Error details:', {
-        message: err?.message,
-        response: err?.response?.data,
-        status: err?.response?.status,
-        statusText: err?.response?.statusText,
-      });
       
-      // Extract validation errors if any
-      const errorData = err?.response?.data;
+      // Extract error message
       let errorMessage = 'Không thể tải danh sách khóa học';
       
-      if (errorData) {
-        if (errorData.message) {
-          errorMessage = errorData.message;
-        } else if (errorData.errors && Array.isArray(errorData.errors)) {
-          errorMessage = errorData.errors.map((e: any) => e.msg || e.message).join(', ');
-        } else if (typeof errorData === 'string') {
-          errorMessage = errorData;
+      if (err && typeof err === 'object' && 'response' in err) {
+        const axiosError = err as { 
+          response?: { 
+            data?: { 
+              message?: string;
+              errors?: Array<{ msg?: string; message?: string }>;
+            };
+            status?: number;
+            statusText?: string;
+          };
+          message?: string;
+        };
+        
+        console.error('Error details:', {
+          message: axiosError?.message,
+          response: axiosError?.response?.data,
+          status: axiosError?.response?.status,
+          statusText: axiosError?.response?.statusText,
+        });
+        
+        const errorData = axiosError?.response?.data;
+        if (errorData) {
+          if (errorData.message) {
+            errorMessage = errorData.message;
+          } else if (errorData.errors && Array.isArray(errorData.errors)) {
+            errorMessage = errorData.errors.map((e) => e.msg || e.message || '').filter(Boolean).join(', ');
+          } else if (typeof errorData === 'string') {
+            errorMessage = errorData;
+          }
         }
-      } else if (err?.message) {
-        errorMessage = err.message;
+      } else if (err && typeof err === 'object' && 'message' in err) {
+        const errorWithMessage = err as { message: string };
+        errorMessage = errorWithMessage.message;
       }
       
       setError(errorMessage);

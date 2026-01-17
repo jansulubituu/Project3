@@ -974,6 +974,25 @@ export const updateCourse = async (req: Request, res: Response) => {
       }
     }
 
+    // Prevent instructor from setting status to 'published' directly
+    // Instructors must submit course for approval via /submit endpoint
+    if (updateData.status === 'published' && req.user!.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Instructors cannot publish courses directly. Please submit the course for admin approval.',
+      });
+    }
+
+    // If instructor tries to change status from published to something else, allow it
+    // But if trying to set to published, block it (handled above)
+    // Also prevent changing from pending to published (must go through approval)
+    if (updateData.status === 'published' && course.status === 'pending' && req.user!.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Course is pending approval. Only admin can approve and publish.',
+      });
+    }
+
     // Update course
     Object.assign(course, updateData);
     await course.save();

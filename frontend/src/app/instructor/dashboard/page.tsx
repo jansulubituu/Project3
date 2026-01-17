@@ -335,12 +335,22 @@ function InstructorDashboardContent() {
                             className={`ml-4 px-3 py-1 rounded-full text-xs font-semibold ${
                               course.status === 'published'
                                 ? 'bg-green-100 text-green-800'
+                                : course.status === 'pending'
+                                ? 'bg-blue-100 text-blue-800'
+                                : course.status === 'rejected'
+                                ? 'bg-red-100 text-red-800'
                                 : course.status === 'draft'
                                 ? 'bg-yellow-100 text-yellow-800'
                                 : 'bg-gray-100 text-gray-800'
                             }`}
                           >
-                            {course.status === 'published' ? 'Đã xuất bản' : 'Bản nháp'}
+                            {course.status === 'published'
+                              ? 'Đã xuất bản'
+                              : course.status === 'pending'
+                              ? '⏳ Chờ duyệt'
+                              : course.status === 'rejected'
+                              ? '❌ Đã từ chối'
+                              : 'Bản nháp'}
                           </span>
                         </div>
                         <div className="flex items-center space-x-6 mt-2 text-sm text-gray-600">
