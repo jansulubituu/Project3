@@ -36,6 +36,18 @@ export default function RegisterPage() {
   const { register } = useAuth();
   const fullNameRef = useRef<HTMLInputElement>(null);
 
+  const updateFieldError = (name: keyof FieldErrors, message?: string) => {
+    setFieldErrors((prev) => {
+      const next = { ...prev };
+      if (message) {
+        next[name] = message;
+      } else {
+        delete next[name];
+      }
+      return next;
+    });
+  };
+
   // Auto-focus first field on mount
   useEffect(() => {
     fullNameRef.current?.focus();
@@ -80,16 +92,9 @@ export default function RegisterPage() {
         }
         // Check confirm password match if it exists
         if (formData.confirmPassword && value !== formData.confirmPassword) {
-          setFieldErrors(prev => ({
-            ...prev,
-            confirmPassword: 'Mật khẩu xác nhận không khớp'
-          }));
+          updateFieldError('confirmPassword', 'Mật khẩu xác nhận không khớp');
         } else if (formData.confirmPassword && value === formData.confirmPassword) {
-          setFieldErrors(prev => {
-            const newErrors = { ...prev };
-            delete newErrors.confirmPassword;
-            return newErrors;
-          });
+          updateFieldError('confirmPassword');
         }
         return undefined;
 
@@ -122,10 +127,7 @@ export default function RegisterPage() {
     // Real-time validation for touched fields
     if (touched[name]) {
       const fieldError = validateField(name, value);
-      setFieldErrors(prev => ({
-        ...prev,
-        [name]: fieldError,
-      }));
+      updateFieldError(name as keyof FieldErrors, fieldError);
     }
   };
 
@@ -134,10 +136,7 @@ export default function RegisterPage() {
     setTouched(prev => ({ ...prev, [name]: true }));
     
     const fieldError = validateField(name, value);
-    setFieldErrors(prev => ({
-      ...prev,
-      [name]: fieldError,
-    }));
+    updateFieldError(name as keyof FieldErrors, fieldError);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -216,7 +215,7 @@ export default function RegisterPage() {
       /\d/.test(formData.password) &&
       formData.password === formData.confirmPassword &&
       termsAccepted &&
-      Object.keys(fieldErrors).length === 0
+      Object.values(fieldErrors).every((value) => !value)
     );
   };
 
