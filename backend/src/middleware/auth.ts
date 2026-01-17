@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { AppError } from './errorHandler';
+import { User } from '../models';
 
 // Extend Express Request type
 export interface AuthRequest extends Request {
@@ -53,6 +54,57 @@ export const protect = async (
   } catch (error) {
     next(new AppError('Not authorized, token failed', 401));
   }
+};
+
+// Require email verification - check if user has verified their email
+// Use this middleware after protect() to enforce email verification
+// For routes that should be accessible without verification, use allowUnverified()
+export const requireEmailVerification = async (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    if (!req.user) {
+      return next(new AppError('Not authorized', 401));
+    }
+
+    // Get user from database to check email verification status
+    const user = await User.findById(req.user.id).select('isEmailVerified isActive');
+
+    if (!user) {
+      return next(new AppError('User not found', 404));
+    }
+
+    if (!user.isActive) {
+      return next(new AppError('Account has been deactivated', 401));
+    }
+
+    if (!user.isEmailVerified) {
+      return res.status(403).json({
+        success: false,
+        error: 'Email verification required',
+        message: 'Please verify your email address before accessing this resource.',
+        requiresVerification: true,
+      });
+    }
+
+    next();
+  } catch (error) {
+    next(new AppError('Error checking email verification', 500));
+  }
+};
+
+// Allow unverified users - use this to bypass email verification check
+// This is useful for routes like verify-otp, resend-otp that need to be accessible before verification
+export const allowUnverified = (
+  _req: AuthRequest,
+  _res: Response,
+  next: NextFunction
+) => {
+  // This middleware does nothing, it's just a marker
+  // Routes using this will not have requireEmailVerification applied
+  next();
 };
 
 // Optional auth - attach user if token exists, but don't fail if missing/invalid

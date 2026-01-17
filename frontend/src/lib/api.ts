@@ -44,6 +44,19 @@ api.interceptors.response.use(
         // window.location.href = '/login';
       }
     }
+    
+    // Handle email verification required (403 with requiresVerification flag)
+    if (error.response?.status === 403 && error.response?.data?.requiresVerification) {
+      // User needs to verify email - redirect to verify-otp page
+      if (typeof window !== 'undefined') {
+        const userEmail = error.response?.data?.user?.email || '';
+        // Only redirect if not already on verify-otp page
+        if (!window.location.pathname.includes('/verify-otp')) {
+          window.location.href = `/verify-otp${userEmail ? `?email=${encodeURIComponent(userEmail)}` : ''}`;
+        }
+      }
+    }
+    
     return Promise.reject(error);
   }
 );

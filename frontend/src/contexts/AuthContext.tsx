@@ -120,17 +120,18 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         
         // For registration, default to sessionStorage (not rememberMe)
         // User can login later with rememberMe if they want
+        // Token is limited - only usable for verify-otp and resend-otp until email is verified
         sessionStorage.setItem('token', token);
         localStorage.removeItem('token'); // Clear any existing localStorage token
         localStorage.removeItem('rememberMe'); // Clear rememberMe preference
         
         setUser(user);
         
-        // If requires email verification, redirect to OTP page
+        // Always redirect to OTP page after registration (requiresVerification should always be true)
         if (requiresVerification) {
           router.push(`/verify-otp?email=${encodeURIComponent(user.email)}`);
         } else {
-          // Redirect based on role
+          // Fallback: redirect based on role (shouldn't happen normally)
           if (user.role === 'admin') {
             router.push('/admin/dashboard');
           } else if (user.role === 'instructor') {

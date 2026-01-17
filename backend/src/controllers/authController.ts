@@ -591,9 +591,13 @@ export const verifyOTP = async (req: Request, res: Response) => {
     // Send welcome email
     await sendWelcomeEmail(user.email, user.fullName);
 
+    // Generate new token after verification (with full access)
+    const token = user.generateAuthToken();
+
     res.json({
       success: true,
       message: 'Email verified successfully',
+      token, // Return new token with full access
       user: {
         id: user._id,
         email: user.email,

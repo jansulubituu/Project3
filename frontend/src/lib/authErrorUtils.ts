@@ -28,6 +28,17 @@ export function getAuthErrorMessage(error: any): AuthError {
   }
 
   // Handle API response errors
+  // Check for validation errors array first (from express-validator)
+  const validationErrors = error?.response?.data?.errors;
+  if (Array.isArray(validationErrors) && validationErrors.length > 0) {
+    const firstError = validationErrors[0];
+    return {
+      message: firstError.message || 'Dữ liệu không hợp lệ',
+      type: 'validation',
+      field: firstError.field,
+    };
+  }
+  
   const errorMessage = error?.response?.data?.error || error?.response?.data?.message || error?.message || '';
   const statusCode = error?.response?.status;
   const field = error?.response?.data?.field;

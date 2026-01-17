@@ -80,10 +80,18 @@ function VerifyOTPContent() {
       const response = await api.post('/auth/verify-otp', { otp: otpCode });
       
       if (response.data.success) {
+        const { token, user } = response.data;
+        
+        // Update token after verification (new token with full access)
+        if (token) {
+          sessionStorage.setItem('token', token);
+          localStorage.removeItem('token');
+        }
+        
         // Show success message
         alert('Xác thực email thành công! 🎉');
+        
         // Redirect based on role
-        const user = response.data.user;
         if (user?.role === 'admin') {
           router.push('/admin/dashboard');
         } else if (user?.role === 'instructor') {

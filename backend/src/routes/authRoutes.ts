@@ -11,7 +11,7 @@ import {
   verifyOTP,
   resendOTP,
 } from '../controllers/authController';
-import { protect, optionalAuth } from '../middleware/auth';
+import { protect, optionalAuth, requireEmailVerification } from '../middleware/auth';
 import { body } from 'express-validator';
 import { validate } from '../middleware/validation';
 
@@ -106,12 +106,14 @@ router.post('/forgot-password', forgotPasswordValidation, forgotPassword);
 router.post('/reset-password/:resetToken', optionalAuth, resetPasswordValidation, resetPassword);
 router.get('/verify-email/:token', verifyEmail);
 
-// Protected routes
-router.get('/me', protect, getMe);
-router.post('/logout', protect, logout);
-router.put('/update-password', protect, updatePasswordValidation, updatePassword);
+// Protected routes (require token only, no email verification needed)
 router.post('/verify-otp', protect, verifyOTPValidation, verifyOTP);
 router.post('/resend-otp', protect, resendOTP);
+
+// Protected routes (require token + email verification)
+router.get('/me', protect, requireEmailVerification, getMe);
+router.post('/logout', protect, requireEmailVerification, logout);
+router.put('/update-password', protect, requireEmailVerification, updatePasswordValidation, updatePassword);
 
 export default router;
 
